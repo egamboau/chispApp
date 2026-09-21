@@ -10,13 +10,7 @@ pipeline {
   }
 
   stages {
-    stage('Test') {
-      steps {
-        sh 'npm ci && npm test'
-      }
-    }
-
-    stage('Build, push and deploy') {
+    stage('Test, build, push and deploy') {
       steps {
         sh '''
           set -eu

@@ -24,7 +24,9 @@ async function json(url, options = {}) {
 }
 
 test.before(async () => {
-  server = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'), env: { ...process.env, PORT: String(port), DATABASE_PATH: path.join(tempDir, 'test.db') }, stdio: 'inherit' });
+  const env = { ...process.env, PORT: String(port), DATABASE_PATH: path.join(tempDir, 'test.db') };
+  delete env.NODE_TEST_CONTEXT;
+  server = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'), env, stdio: 'inherit' });
   await waitForServer();
 });
 

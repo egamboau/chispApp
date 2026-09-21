@@ -36,7 +36,7 @@ El volumen `tournament-data` conserva la base de datos al reiniciar o reemplazar
 
 ## Docker Swarm
 
-El despliegue usa Jenkins en un nodo manager. Cada cambio en `main` ejecuta las pruebas, construye una imagen con etiqueta `sha-...`, la publica en `nas-server.local:5000` y actualiza el stack.
+El despliegue usa Jenkins en un nodo manager. Cada cambio en `main` ejecuta las pruebas durante la construcción de la imagen, la etiqueta como `sha-...`, la publica en `nas-server.local:5000` y actualiza el stack.
 
 Antes del primer despliegue, crea la red y prepara el export NFS:
 
@@ -45,7 +45,7 @@ docker swarm init # solo la primera vez
 docker network create --driver overlay --attachable public-ingress
 ```
 
-Configura un job **Pipeline from SCM** apuntando a `main` y usando `Jenkinsfile`. El agente con etiqueta `swarm-manager` necesita Node.js 20+, Docker y acceso al daemon de un manager. No habilites builds de pull requests: ese agente controla Docker del servidor.
+Configura un job **Pipeline from SCM** apuntando a `main` y usando `Jenkinsfile`. El agente con etiqueta `swarm-manager` solo necesita Docker y acceso al daemon de un manager; Node.js y npm corren dentro de la construcción. No habilites builds de pull requests: ese agente controla Docker del servidor.
 
 Configura en Jenkins:
 
