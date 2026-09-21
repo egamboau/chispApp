@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Administrar torneo</title>
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body>
+  <header><h1>Administrar torneo</h1><a href="/display" target="_blank">Abrir pantalla pública</a></header>
+  <main>
+    <section class="panel form-panel">
+      <h2 id="form-title">Crear partido</h2>
+      <form id="match-form">
+        <input type="hidden" id="match-id">
+        <label>Torneo<select id="tournamentType" required><option value="MALE">Masculino</option><option value="FEMALE">Femenino</option></select></label>
+        <label>Fecha<input id="date" type="date" required></label>
+        <label>Hora<input id="time" type="time" required></label>
+        <label>Cancha<input id="court" type="number" min="1" step="1" inputmode="numeric" required></label>
+        <label>Equipo A<input id="teamA" type="text" maxlength="100" required></label>
+        <label>Equipo B<input id="teamB" type="text" maxlength="100" required></label>
+        <label>Equipo de línea<input id="lineTeam" type="text" maxlength="100" required></label>
+        <div class="form-actions"><button class="primary" type="submit">GUARDAR PARTIDO</button><button id="cancel-edit" type="button" hidden>CANCELAR</button></div>
+      </form>
+      <p id="message" role="alert"></p>
+    </section>
+    <section class="matches-section">
+      <div class="list-heading"><h2>Partidos</h2><div class="filters"><label>Fecha<input id="filter-date" type="date"></label><label>Torneo<select id="filter-tournament"><option value="">Todos</option><option value="MALE">Masculino</option><option value="FEMALE">Femenino</option></select></label><label>Cancha<input id="filter-court" type="number" min="1" inputmode="numeric" placeholder="Todas"></label></div></div>
+      <div id="matches" aria-live="polite"></div>
+    </section>
+  </main>
+  <script src="/admin/admin.js"></script>
+</body>
+</html>

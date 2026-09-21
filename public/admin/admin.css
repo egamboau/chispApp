@@ -1,0 +1,57 @@
+:root { --bg: #eef3f8; --panel: #fff; --text: #172235; --muted: #5b6b7c; --primary: #0878bd; --danger: #b32635; --male: #168ac5; --female: #d73f82; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem max(1rem, calc((100% - 1400px)/2)); background: #10223a; color: white; }
+header h1 { margin: 0; font-size: clamp(1.5rem, 3vw, 2.5rem); }
+a { min-height: 48px; display: grid; place-items: center; padding: .6rem 1rem; border: 2px solid #7dc8f5; border-radius: 10px; color: white; font-weight: 700; text-decoration: none; }
+main { display: grid; grid-template-columns: minmax(300px, 430px) 1fr; gap: 1.5rem; max-width: 1400px; margin: auto; padding: 1.5rem; align-items: start; }
+.panel, .match-card { background: var(--panel); border-radius: 14px; box-shadow: 0 4px 16px #17324d18; }
+.form-panel { position: sticky; top: 1rem; padding: 1.3rem; }
+h2 { margin-top: 0; }
+form { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
+label { display: grid; gap: .35rem; color: var(--muted); font-weight: 700; }
+label:nth-of-type(n+5) { grid-column: 1 / -1; }
+input, select, button { min-height: 48px; border: 2px solid #bac7d5; border-radius: 9px; background: white; color: var(--text); font: 700 1rem system-ui; }
+input, select { width: 100%; padding: .6rem .7rem; }
+button { padding: .65rem 1rem; cursor: pointer; }
+button:disabled { opacity: .35; cursor: not-allowed; }
+.primary { background: var(--primary); border-color: var(--primary); color: white; }
+.danger { border-color: var(--danger); color: var(--danger); }
+.finish { background: #19734b; border-color: #19734b; color: white; }
+.form-actions { grid-column: 1 / -1; display: flex; gap: .7rem; }
+.form-actions button { flex: 1; }
+#message { min-height: 1.5rem; margin-bottom: 0; font-weight: 700; }
+.error { color: var(--danger); }.success { color: #19734b; }
+.list-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+.filters { display: flex; gap: .7rem; }
+.filters label { min-width: 130px; font-size: .85rem; }
+#matches { display: grid; gap: 1rem; }
+.match-card { padding: 1.2rem; border-left: 8px solid; }
+.match-card.male { border-color: var(--male); }.match-card.female { border-color: var(--female); }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem 1rem; }
+.badge, .status { padding: .35rem .7rem; border-radius: 999px; font-weight: 800; text-transform: uppercase; }
+.male .badge { color: #086a9c; background: #d9f2ff; }.female .badge { color: #9c205a; background: #ffe1ee; }
+.status { margin-left: auto; font-size: .8rem; }.status.live { color: white; background: #c72f3f; }.status.finished { background: #dce3ea; }.status.scheduled { background: #fff0bd; }
+.match-card h3 { font-size: 1.5rem; }
+.score-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+.score-controls > div { display: grid; gap: .6rem; text-align: center; font-size: 1.3rem; }
+.score-controls span { display: grid; grid-template-columns: 58px 1fr 58px; align-items: center; gap: .5rem; }
+.score-controls button { min-height: 58px; background: #e5edf5; font-size: 2rem; }
+.score-controls b { font-size: 2.5rem; }
+.actions { display: flex; flex-wrap: wrap; gap: .7rem; }
+.actions button { flex: 1; min-width: 110px; }
+.empty { padding: 2rem; text-align: center; color: var(--muted); }
+@media (max-width: 900px) {
+  main { grid-template-columns: 1fr; padding: 1rem; }
+  .form-panel { position: static; }
+  .list-heading { display: block; }
+  .filters { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 1rem; }
+  .filters label:last-child { grid-column: 1 / -1; }
+}
+@media (max-width: 520px) {
+  header { align-items: stretch; flex-direction: column; }
+  form, .score-controls { grid-template-columns: 1fr; }
+  form label { grid-column: 1 / -1; }
+  .meta time { width: 100%; order: 3; }
+  .status { margin-left: 0; }
+}

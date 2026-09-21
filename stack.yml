@@ -1,0 +1,31 @@
+services:
+  tournament:
+    image: ${TOURNAMENT_IMAGE:-tournament-display:latest}
+    ports:
+      - target: 3000
+        published: 3000
+        protocol: tcp
+        mode: ingress
+    environment:
+      PORT: 3000
+      DATABASE_PATH: /data/tournament.db
+    volumes:
+      - tournament-data:/data
+    networks:
+      - public-ingress
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+volumes:
+  tournament-data:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=${NFS_SERVER},rw,nfsvers=4
+      device: :${NFS_EXPORT}
+
+networks:
+  public-ingress:
+    external: true

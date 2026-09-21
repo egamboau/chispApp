@@ -1,0 +1,15 @@
+services:
+  tournament:
+    build: .
+    image: ${TOURNAMENT_IMAGE:-tournament-display:latest}
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      DATABASE_PATH: /data/tournament.db
+    volumes:
+      - tournament-data:/data
+    restart: unless-stopped
+
+volumes:
+  tournament-data:
