@@ -17,19 +17,13 @@ pipeline {
     }
 
     stage('Build, push and deploy') {
-      environment {
-        GHCR = credentials('ghcr')
-      }
       steps {
         sh '''
           set -eu
-          : "${GHCR_IMAGE:?Set GHCR_IMAGE in Jenkins}"
           : "${NFS_SERVER:?Set NFS_SERVER in Jenkins}"
           : "${NFS_EXPORT:?Set NFS_EXPORT in Jenkins}"
 
-          IMAGE="${GHCR_IMAGE}:sha-$(git rev-parse --short=12 HEAD)"
-          echo "$GHCR_PSW" | docker login ghcr.io -u "$GHCR_USR" --password-stdin
-          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          IMAGE="nas-server.local:5000/jupas-app:sha-$(git rev-parse --short=12 HEAD)"
 
           docker build --pull -t "$IMAGE" .
           docker push "$IMAGE"

@@ -36,7 +36,7 @@ El volumen `tournament-data` conserva la base de datos al reiniciar o reemplazar
 
 ## Docker Swarm
 
-El despliegue usa Jenkins en un nodo manager. Cada cambio en `main` ejecuta las pruebas, construye una imagen con etiqueta `sha-...`, la publica en GHCR y actualiza el stack.
+El despliegue usa Jenkins en un nodo manager. Cada cambio en `main` ejecuta las pruebas, construye una imagen con etiqueta `sha-...`, la publica en `nas-server.local:5000` y actualiza el stack.
 
 Antes del primer despliegue, crea la red y prepara el export NFS:
 
@@ -49,14 +49,14 @@ Configura un job **Pipeline from SCM** apuntando a `main` y usando `Jenkinsfile`
 
 Configura en Jenkins:
 
-- Credencial `ghcr`, tipo **Username with password**, usando un PAT classic con permiso `write:packages`.
-- Variable `GHCR_IMAGE`, por ejemplo `ghcr.io/PROPIETARIO/REPOSITORIO`.
 - Variables `NFS_SERVER` y `NFS_EXPORT`.
 
-El export NFS debe existir y ser escribible desde todos los nodos del Swarm. El pipeline consulta Git cada dos minutos, publica la imagen privada y ejecuta:
+El registry debe ser accesible como `nas-server.local:5000` desde Jenkins y todos los nodos. Usa TLS; si requiere autenticación, ejecuta `docker login nas-server.local:5000` con el usuario de Jenkins. Verifica resolución con `getent hosts nas-server.local` en cada nodo.
+
+El export NFS debe existir y ser escribible desde todos los nodos del Swarm. El pipeline consulta Git cada dos minutos, publica la imagen y ejecuta:
 
 ```bash
-TOURNAMENT_IMAGE=ghcr.io/PROPIETARIO/REPOSITORIO:sha-COMMIT \
+TOURNAMENT_IMAGE=nas-server.local:5000/jupas-app:sha-COMMIT \
   docker stack deploy --with-registry-auth --resolve-image always -c stack.yml tournament
 ```
 
