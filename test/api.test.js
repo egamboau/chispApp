@@ -44,6 +44,20 @@ test('migra horas existentes a jornadas sin perder el partido', async () => {
   assert.equal(result.body[0].jornada, 'MORNING');
   assert.equal(result.body[0].teamA, 'Legado A');
   assert.equal('time' in result.body[0], false);
+  const teams = await json('/api/teams?tournamentType=MALE');
+  assert.deepEqual(teams.body.map(({ name }) => name), ['Legado A', 'Legado B', 'Legado Línea']);
+});
+
+test('guarda equipos separados por torneo', async () => {
+  let result = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentType: 'FEMALE', name: ' Panteras ' }) });
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.name, 'Panteras');
+
+  result = await json('/api/teams?tournamentType=FEMALE');
+  assert.deepEqual(result.body.map(({ name }) => name), ['Panteras']);
+
+  result = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentType: 'FEMALE', name: 'panteras' }) });
+  assert.equal(result.response.status, 409);
 });
 
 test.after(() => {

@@ -20,7 +20,8 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .finish { background: #19734b; border-color: #19734b; color: white; }
 .form-actions { grid-column: 1 / -1; display: flex; gap: .7rem; }
 .form-actions button { flex: 1; }
-#message { min-height: 1.5rem; margin-bottom: 0; font-weight: 700; }
+#message, #team-message { min-height: 1.5rem; margin-bottom: 0; font-weight: 700; }
+#team-message { margin-top: .5rem; }
 .error { color: var(--danger); }.success { color: #19734b; }
 .list-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
 .filters { display: flex; gap: .7rem; }

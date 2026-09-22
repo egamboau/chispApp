@@ -29,6 +29,14 @@ const createMatchesTable = `
   )
 `;
 db.exec(createMatchesTable);
+db.exec(`
+  CREATE TABLE IF NOT EXISTS teams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tournamentType TEXT NOT NULL CHECK (tournamentType IN ('MALE', 'FEMALE')),
+    name TEXT NOT NULL COLLATE NOCASE CHECK (length(name) BETWEEN 1 AND 100),
+    UNIQUE (tournamentType, name)
+  )
+`);
 
 if (db.prepare('PRAGMA table_info(matches)').all().some(({ name }) => name === 'time')) {
   db.transaction(() => {
@@ -43,6 +51,13 @@ if (db.prepare('PRAGMA table_info(matches)').all().some(({ name }) => name === '
     db.exec('DROP TABLE matches_with_time');
   })();
 }
+
+db.exec(`
+  INSERT OR IGNORE INTO teams (tournamentType, name)
+  SELECT tournamentType, teamA FROM matches
+  UNION SELECT tournamentType, teamB FROM matches
+  UNION SELECT tournamentType, lineTeam FROM matches
+`);
 
 app.use(express.json({ limit: '20kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -88,6 +103,26 @@ const updateMatch = db.prepare(`
     teamA=@teamA, teamB=@teamB, lineTeam=@lineTeam, court=@court, updatedAt=CURRENT_TIMESTAMP
   WHERE id=@id
 `);
+
+app.get('/api/teams', (req, res) => {
+  if (req.query.tournamentType && !['MALE', 'FEMALE'].includes(req.query.tournamentType)) return res.status(400).json({ error: 'Torneo inválido.' });
+  res.json(req.query.tournamentType
+    ? db.prepare('SELECT * FROM teams WHERE tournamentType = ? ORDER BY name COLLATE NOCASE').all(req.query.tournamentType)
+    : db.prepare('SELECT * FROM teams ORDER BY tournamentType, name COLLATE NOCASE').all());
+});
+
+app.post('/api/teams', (req, res) => {
+  const team = { tournamentType: req.body.tournamentType, name: cleanText(req.body.name) };
+  if (!['MALE', 'FEMALE'].includes(team.tournamentType)) return res.status(400).json({ error: 'Torneo inválido.' });
+  if (!team.name || team.name.length > 100) return res.status(400).json({ error: 'El nombre debe tener entre 1 y 100 caracteres.' });
+  try {
+    const result = db.prepare('INSERT INTO teams (tournamentType, name) VALUES (@tournamentType, @name)').run(team);
+    res.status(201).json(db.prepare('SELECT * FROM teams WHERE id = ?').get(result.lastInsertRowid));
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(409).json({ error: 'Ese equipo ya existe en el torneo.' });
+    throw error;
+  }
+});
 
 app.get('/', (_req, res) => res.redirect('/display'));
 

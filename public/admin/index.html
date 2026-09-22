@@ -10,6 +10,13 @@
   <header><h1>Administrar torneo</h1><a href="/display" target="_blank">Abrir pantalla pública</a></header>
   <main>
     <section class="panel form-panel">
+      <h2>Equipos</h2>
+      <form id="team-form">
+        <label>Torneo<select id="team-tournament" required><option value="MALE">Masculino</option><option value="FEMALE">Femenino</option></select></label>
+        <label>Nombre<input id="team-name" type="text" maxlength="100" required></label>
+        <div class="form-actions"><button class="primary" type="submit">GUARDAR EQUIPO</button></div>
+      </form>
+      <p id="team-message" role="alert"></p>
       <h2 id="form-title">Crear partido</h2>
       <form id="match-form">
         <input type="hidden" id="match-id">
@@ -17,9 +24,9 @@
         <label>Fecha<input id="date" type="date" required></label>
         <label>Jornada<select id="jornada" required><option value="MORNING">Mañana</option><option value="AFTERNOON">Tarde</option></select></label>
         <label>Cancha<input id="court" type="number" min="1" step="1" inputmode="numeric" required></label>
-        <label>Equipo A<input id="teamA" type="text" maxlength="100" required></label>
-        <label>Equipo B<input id="teamB" type="text" maxlength="100" required></label>
-        <label>Equipo de línea<input id="lineTeam" type="text" maxlength="100" required></label>
+        <label>Equipo A<select id="teamA" required></select></label>
+        <label>Equipo B<select id="teamB" required></select></label>
+        <label>Equipo de línea<select id="lineTeam" required></select></label>
         <div class="form-actions"><button class="primary" type="submit">GUARDAR PARTIDO</button><button id="cancel-edit" type="button" hidden>CANCELAR</button></div>
       </form>
       <p id="message" role="alert"></p>

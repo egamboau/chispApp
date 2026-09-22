@@ -3,6 +3,7 @@ const jornadaLabels = { MORNING: 'Mañana', AFTERNOON: 'Tarde' };
 const statusLabels = { SCHEDULED: 'Programado', LIVE: 'En juego', FINISHED: 'Final' };
 const form = document.querySelector('#match-form');
 let matches = [];
+let teams = [];
 
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
 
@@ -15,8 +16,8 @@ async function request(url, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
-function showMessage(text, error = false) {
-  const message = document.querySelector('#message');
+function showMessage(text, error = false, selector = '#message') {
+  const message = document.querySelector(selector);
   message.textContent = text;
   message.className = error ? 'error' : 'success';
   if (!error) setTimeout(() => { message.textContent = ''; }, 2500);
@@ -24,9 +25,27 @@ function showMessage(text, error = false) {
 
 function resetForm() {
   form.reset();
+  renderTeamOptions();
   document.querySelector('#match-id').value = '';
   document.querySelector('#form-title').textContent = 'Crear partido';
   document.querySelector('#cancel-edit').hidden = true;
+}
+
+function renderTeamOptions(values = {}) {
+  const tournamentType = document.querySelector('#tournamentType').value;
+  const options = teams.filter((team) => team.tournamentType === tournamentType)
+    .map((team) => `<option value="${escapeHtml(team.name)}">${escapeHtml(team.name)}</option>`).join('');
+  for (const id of ['teamA', 'teamB', 'lineTeam']) {
+    const select = document.querySelector(`#${id}`);
+    const selected = values[id] ?? select.value;
+    select.innerHTML = `<option value="">Seleccione un equipo</option>${options}`;
+    select.value = selected;
+  }
+}
+
+async function loadTeams(values) {
+  teams = await request('/api/teams');
+  renderTeamOptions(values);
 }
 
 function card(match) {
@@ -68,7 +87,19 @@ form.addEventListener('submit', async (event) => {
   } catch (error) { showMessage(error.message, true); }
 });
 
+document.querySelector('#team-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const body = { tournamentType: document.querySelector('#team-tournament').value, name: document.querySelector('#team-name').value };
+  try {
+    await request('/api/teams', { method: 'POST', body: JSON.stringify(body) });
+    document.querySelector('#team-name').value = '';
+    await loadTeams();
+    showMessage('Equipo guardado.', false, '#team-message');
+  } catch (error) { showMessage(error.message, true, '#team-message'); }
+});
+
 document.querySelector('#cancel-edit').addEventListener('click', resetForm);
+document.querySelector('#tournamentType').addEventListener('change', () => renderTeamOptions());
 document.querySelectorAll('.filters input, .filters select').forEach((input) => input.addEventListener('input', render));
 
 document.querySelector('#matches').addEventListener('click', async (event) => {
@@ -78,7 +109,8 @@ document.querySelector('#matches').addEventListener('click', async (event) => {
   const match = matches.find((item) => item.id === Number(id));
   try {
     if (button.dataset.action === 'edit') {
-      for (const key of ['tournamentType', 'date', 'jornada', 'court', 'teamA', 'teamB', 'lineTeam']) document.querySelector(`#${key}`).value = match[key];
+      for (const key of ['tournamentType', 'date', 'jornada', 'court']) document.querySelector(`#${key}`).value = match[key];
+      renderTeamOptions(match);
       document.querySelector('#match-id').value = id;
       document.querySelector('#form-title').textContent = 'Editar partido';
       document.querySelector('#cancel-edit').hidden = false;
@@ -99,4 +131,5 @@ document.querySelector('#matches').addEventListener('click', async (event) => {
 
 const events = new EventSource('/api/events');
 events.addEventListener('matches', loadMatches);
+loadTeams().catch((error) => showMessage(error.message, true));
 loadMatches();
