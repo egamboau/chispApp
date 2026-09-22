@@ -1,4 +1,5 @@
 const labels = { MALE: 'Masculino', FEMALE: 'Femenino' };
+const jornadaLabels = { MORNING: 'Mañana', AFTERNOON: 'Tarde' };
 const statusLabels = { SCHEDULED: 'Programado', LIVE: 'En juego', FINISHED: 'Final' };
 const form = document.querySelector('#match-form');
 let matches = [];
@@ -34,7 +35,7 @@ function card(match) {
     <div><strong>${escapeHtml(match.teamB)}</strong><span><button data-action="score" data-team="B" data-delta="-1" ${match.scoreB === 0 ? 'disabled' : ''} aria-label="Restar punto a ${escapeHtml(match.teamB)}">−</button><b>${match.scoreB}</b><button data-action="score" data-team="B" data-delta="1" aria-label="Sumar punto a ${escapeHtml(match.teamB)}">+</button></span></div>
   </div>` : `<h3>${escapeHtml(match.teamA)} <small>vs</small> ${escapeHtml(match.teamB)}${match.status === 'FINISHED' ? ` · ${match.scoreA}–${match.scoreB}` : ''}</h3>`;
   return `<article class="match-card ${match.tournamentType.toLowerCase()}" data-id="${match.id}">
-    <div class="meta"><span class="badge">${labels[match.tournamentType]}</span><strong>Cancha ${match.court}</strong><time>${match.date} · ${match.time}</time><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span></div>
+    <div class="meta"><span class="badge">${labels[match.tournamentType]}</span><strong>Cancha ${match.court}</strong><span class="jornada">${match.date} · ${jornadaLabels[match.jornada]}</span><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span></div>
     ${score}<p>Línea: <strong>${escapeHtml(match.lineTeam)}</strong></p>
     <div class="actions"><button data-action="edit">EDITAR</button><button class="danger" data-action="delete">ELIMINAR</button>${match.status === 'SCHEDULED' ? '<button class="primary" data-action="start">INICIAR</button>' : ''}${match.status === 'LIVE' ? '<button class="finish" data-action="finish">FINALIZAR PARTIDO</button>' : ''}</div>
   </article>`;
@@ -58,7 +59,7 @@ async function loadMatches() {
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   const id = document.querySelector('#match-id').value;
-  const body = Object.fromEntries(['tournamentType', 'date', 'time', 'court', 'teamA', 'teamB', 'lineTeam'].map((key) => [key, document.querySelector(`#${key}`).value]));
+  const body = Object.fromEntries(['tournamentType', 'date', 'jornada', 'court', 'teamA', 'teamB', 'lineTeam'].map((key) => [key, document.querySelector(`#${key}`).value]));
   try {
     await request(id ? `/api/matches/${id}` : '/api/matches', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
     resetForm();
@@ -77,7 +78,7 @@ document.querySelector('#matches').addEventListener('click', async (event) => {
   const match = matches.find((item) => item.id === Number(id));
   try {
     if (button.dataset.action === 'edit') {
-      for (const key of ['tournamentType', 'date', 'time', 'court', 'teamA', 'teamB', 'lineTeam']) document.querySelector(`#${key}`).value = match[key];
+      for (const key of ['tournamentType', 'date', 'jornada', 'court', 'teamA', 'teamB', 'lineTeam']) document.querySelector(`#${key}`).value = match[key];
       document.querySelector('#match-id').value = id;
       document.querySelector('#form-title').textContent = 'Editar partido';
       document.querySelector('#cancel-edit').hidden = false;

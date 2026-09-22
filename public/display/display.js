@@ -1,5 +1,6 @@
 const labels = { MALE: 'Masculino', FEMALE: 'Femenino' };
 const statusLabels = { SCHEDULED: 'PROGRAMADO', LIVE: 'EN JUEGO', FINISHED: 'FINAL' };
+const jornadaLabels = { MORNING: 'MAÑANA', AFTERNOON: 'TARDE' };
 let matches = [];
 let filter = 'ALL';
 
@@ -17,7 +18,7 @@ function liveCard(match) {
 
 function upcomingCard(match) {
   return `<article class="upcoming-card ${match.tournamentType.toLowerCase()}">
-    <div class="time">${match.time}</div>
+    <div class="jornada">${jornadaLabels[match.jornada]}</div>
     <div>${badge(match)} <strong>CANCHA ${match.court}</strong></div>
     <h3>${escapeHtml(match.teamA)} <small>vs</small> ${escapeHtml(match.teamB)}</h3>
     <p>Línea: <strong>${escapeHtml(match.lineTeam)}</strong></p>
@@ -44,7 +45,7 @@ function renderResults() {
   }, {});
   document.querySelector('#results').innerHTML = Object.entries(days).reverse().map(([date, dayMatches]) => `
     <section class="day"><h2>${shortDate(date)}</h2>${dayMatches.map((match) => `<article class="calendar-match ${match.tournamentType.toLowerCase()}">
-      <time>${match.time}</time><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${escapeHtml(match.teamA)} <b>${match.scoreA} – ${match.scoreB}</b> ${escapeHtml(match.teamB)}</h3><p>Línea: ${escapeHtml(match.lineTeam)}</p></div><span class="status finished">FINAL</span>
+      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${escapeHtml(match.teamA)} <b>${match.scoreA} – ${match.scoreB}</b> ${escapeHtml(match.teamB)}</h3><p>Línea: ${escapeHtml(match.lineTeam)}</p></div><span class="status finished">FINAL</span>
     </article>`).join('')}</section>`).join('') || '<div class="empty"><h2>No hay resultados anteriores</h2></div>';
 }
 
@@ -56,7 +57,7 @@ function renderCalendar() {
   }, {});
   document.querySelector('#calendar-list').innerHTML = Object.entries(days).map(([date, dayMatches]) => `
     <section class="day"><h2>${shortDate(date)}</h2>${dayMatches.map((match) => `<article class="calendar-match ${match.tournamentType.toLowerCase()}">
-      <time>${match.time}</time><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${escapeHtml(match.teamA)} ${match.status === 'SCHEDULED' ? '<small>vs</small>' : `<b>${match.scoreA} – ${match.scoreB}</b>`} ${escapeHtml(match.teamB)}</h3><p>Línea: ${escapeHtml(match.lineTeam)}</p></div><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span>
+      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${escapeHtml(match.teamA)} ${match.status === 'SCHEDULED' ? '<small>vs</small>' : `<b>${match.scoreA} – ${match.scoreB}</b>`} ${escapeHtml(match.teamB)}</h3><p>Línea: ${escapeHtml(match.lineTeam)}</p></div><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span>
     </article>`).join('')}</section>`).join('') || '<div class="empty"><h2>No hay partidos</h2></div>';
 }
 

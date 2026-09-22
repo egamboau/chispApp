@@ -11,12 +11,12 @@ fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 const db = new Database(databasePath);
 db.pragma('journal_mode = DELETE');
 db.pragma('foreign_keys = ON');
-db.exec(`
+const createMatchesTable = `
   CREATE TABLE IF NOT EXISTS matches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tournamentType TEXT NOT NULL CHECK (tournamentType IN ('MALE', 'FEMALE')),
     date TEXT NOT NULL CHECK (date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-    time TEXT NOT NULL CHECK (time GLOB '[0-9][0-9]:[0-9][0-9]'),
+    jornada TEXT NOT NULL CHECK (jornada IN ('MORNING', 'AFTERNOON')),
     teamA TEXT NOT NULL,
     teamB TEXT NOT NULL,
     lineTeam TEXT NOT NULL,
@@ -27,7 +27,22 @@ db.exec(`
     createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )
-`);
+`;
+db.exec(createMatchesTable);
+
+if (db.prepare('PRAGMA table_info(matches)').all().some(({ name }) => name === 'time')) {
+  db.transaction(() => {
+    db.exec('ALTER TABLE matches RENAME TO matches_with_time');
+    db.exec(createMatchesTable);
+    db.exec(`
+      INSERT INTO matches (id, tournamentType, date, jornada, teamA, teamB, lineTeam, court, scoreA, scoreB, status, createdAt, updatedAt)
+      SELECT id, tournamentType, date, CASE WHEN time < '12:00' THEN 'MORNING' ELSE 'AFTERNOON' END,
+        teamA, teamB, lineTeam, court, scoreA, scoreB, status, createdAt, updatedAt
+      FROM matches_with_time
+    `);
+    db.exec('DROP TABLE matches_with_time');
+  })();
+}
 
 app.use(express.json({ limit: '20kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -46,7 +61,7 @@ function validateMatch(body) {
   const match = {
     tournamentType: body.tournamentType,
     date: cleanText(body.date),
-    time: cleanText(body.time),
+    jornada: body.jornada,
     teamA: cleanText(body.teamA),
     teamB: cleanText(body.teamB),
     lineTeam: cleanText(body.lineTeam),
@@ -55,7 +70,7 @@ function validateMatch(body) {
   const errors = [];
   if (!['MALE', 'FEMALE'].includes(match.tournamentType)) errors.push('Torneo inválido.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(match.date) || Number.isNaN(Date.parse(`${match.date}T00:00:00Z`))) errors.push('Fecha inválida.');
-  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(match.time)) errors.push('Hora inválida.');
+  if (!['MORNING', 'AFTERNOON'].includes(match.jornada)) errors.push('Jornada inválida.');
   if (!Number.isInteger(match.court) || match.court < 1) errors.push('La cancha debe ser un entero positivo.');
   if (!match.teamA || !match.teamB || !match.lineTeam) errors.push('Todos los equipos son requeridos.');
   const names = [match.teamA, match.teamB, match.lineTeam].map((name) => name.toLocaleLowerCase('es'));
@@ -65,11 +80,11 @@ function validateMatch(body) {
 
 const selectOne = db.prepare('SELECT * FROM matches WHERE id = ?');
 const insertMatch = db.prepare(`
-  INSERT INTO matches (tournamentType, date, time, teamA, teamB, lineTeam, court)
-  VALUES (@tournamentType, @date, @time, @teamA, @teamB, @lineTeam, @court)
+  INSERT INTO matches (tournamentType, date, jornada, teamA, teamB, lineTeam, court)
+  VALUES (@tournamentType, @date, @jornada, @teamA, @teamB, @lineTeam, @court)
 `);
 const updateMatch = db.prepare(`
-  UPDATE matches SET tournamentType=@tournamentType, date=@date, time=@time,
+  UPDATE matches SET tournamentType=@tournamentType, date=@date, jornada=@jornada,
     teamA=@teamA, teamB=@teamB, lineTeam=@lineTeam, court=@court, updatedAt=CURRENT_TIMESTAMP
   WHERE id=@id
 `);
@@ -95,7 +110,7 @@ app.get('/api/matches', (req, res) => {
     params.date = req.query.date;
   }
   const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
-  res.json(db.prepare(`SELECT * FROM matches${where} ORDER BY date, time, court, id`).all(params));
+  res.json(db.prepare(`SELECT * FROM matches${where} ORDER BY date, CASE jornada WHEN 'MORNING' THEN 0 ELSE 1 END, court, id`).all(params));
 });
 
 app.get('/api/matches/:id', (req, res) => {

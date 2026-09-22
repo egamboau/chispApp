@@ -52,6 +52,6 @@ button:disabled { opacity: .35; cursor: not-allowed; }
   header { align-items: stretch; flex-direction: column; }
   form, .score-controls { grid-template-columns: 1fr; }
   form label { grid-column: 1 / -1; }
-  .meta time { width: 100%; order: 3; }
+  .meta .jornada { width: 100%; order: 3; }
   .status { margin-left: 0; }
 }

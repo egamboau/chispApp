@@ -24,10 +24,26 @@ async function json(url, options = {}) {
 }
 
 test.before(async () => {
+  const legacyDb = new (require('better-sqlite3'))(path.join(tempDir, 'test.db'));
+  legacyDb.exec(`CREATE TABLE matches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, tournamentType TEXT NOT NULL, date TEXT NOT NULL, time TEXT NOT NULL,
+    teamA TEXT NOT NULL, teamB TEXT NOT NULL, lineTeam TEXT NOT NULL, court INTEGER NOT NULL,
+    scoreA INTEGER NOT NULL DEFAULT 0, scoreB INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'SCHEDULED',
+    createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  ); INSERT INTO matches (tournamentType, date, time, teamA, teamB, lineTeam, court)
+    VALUES ('MALE', '2026-09-19', '07:00', 'Legado A', 'Legado B', 'Legado Línea', 3)`);
+  legacyDb.close();
   const env = { ...process.env, PORT: String(port), DATABASE_PATH: path.join(tempDir, 'test.db') };
   delete env.NODE_TEST_CONTEXT;
   server = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'), env, stdio: 'inherit' });
   await waitForServer();
+});
+
+test('migra horas existentes a jornadas sin perder el partido', async () => {
+  const result = await json('/api/matches?date=2026-09-19');
+  assert.equal(result.body[0].jornada, 'MORNING');
+  assert.equal(result.body[0].teamA, 'Legado A');
+  assert.equal('time' in result.body[0], false);
 });
 
 test.after(() => {
@@ -36,7 +52,7 @@ test.after(() => {
 });
 
 test('flujo completo de partidos y validaciones', async () => {
-  const match = { tournamentType: 'MALE', date: '2026-09-20', time: '14:30', teamA: 'Tigres', teamB: 'Leones', lineTeam: 'Halcones', court: 1 };
+  const match = { tournamentType: 'MALE', date: '2026-09-20', jornada: 'AFTERNOON', teamA: 'Tigres', teamB: 'Leones', lineTeam: 'Halcones', court: 1 };
   let result = await json('/api/matches', { method: 'POST', body: JSON.stringify(match) });
   assert.equal(result.response.status, 201);
   const id = result.body.id;
@@ -62,7 +78,7 @@ test('flujo completo de partidos y validaciones', async () => {
 });
 
 test('rechaza equipos repetidos', async () => {
-  const result = await json('/api/matches', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', date: '2026-09-20', time: '10:00', teamA: 'Tigres', teamB: 'tigres', lineTeam: 'Halcones', court: 1 }) });
+  const result = await json('/api/matches', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', date: '2026-09-20', jornada: 'MORNING', teamA: 'Tigres', teamB: 'tigres', lineTeam: 'Halcones', court: 1 }) });
   assert.equal(result.response.status, 400);
 });
 
@@ -71,7 +87,7 @@ test('notifica cambios por SSE', async () => {
   const stream = await fetch(`${base}/api/events`, { signal: controller.signal });
   const reader = stream.body.getReader();
   await reader.read();
-  const created = await json('/api/matches', { method: 'POST', body: JSON.stringify({ tournamentType: 'FEMALE', date: '2026-09-21', time: '10:00', teamA: 'Águilas', teamB: 'Panteras', lineTeam: 'Lobas', court: 2 }) });
+  const created = await json('/api/matches', { method: 'POST', body: JSON.stringify({ tournamentType: 'FEMALE', date: '2026-09-21', jornada: 'MORNING', teamA: 'Águilas', teamB: 'Panteras', lineTeam: 'Lobas', court: 2 }) });
   const event = new TextDecoder().decode((await reader.read()).value);
   assert.match(event, /event: matches/);
   assert.match(event, new RegExp(`"id":${created.body.id}`));

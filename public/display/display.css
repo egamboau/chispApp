@@ -25,7 +25,7 @@ main { height: 85dvh; padding: 2.5vh 3vw; }
 .upcoming-grid { align-content: start; overflow-y: auto; grid-template-columns: repeat(3, 1fr); }
 .upcoming-grid.compact { height: auto; margin-top: 2vh; }
 .upcoming-card { min-height: 28vh; padding: 2vh 1.8vw; border-left-width: 8px; }
-.upcoming-card .time { color: var(--accent); font-size: clamp(2.5rem, 4vw, 4.5rem); font-weight: 900; }
+.upcoming-card .jornada { color: var(--accent); font-size: clamp(2.5rem, 4vw, 4.5rem); font-weight: 900; }
 .upcoming-card h3 { margin: 2.5vh 0; text-align: center; font-size: clamp(1.5rem, 2.3vw, 2.6rem); }
 small { color: var(--muted); font-size: .65em; font-weight: 600; }
 .empty { padding: 4vh; text-align: center; color: var(--muted); }
@@ -34,7 +34,7 @@ small { color: var(--muted); font-size: .65em; font-weight: 600; }
 .filters { position: sticky; top: 0; z-index: 2; justify-content: center; padding: .5rem; background: #07111fe8; }
 .day h2 { margin: 2rem 0 1rem; text-transform: uppercase; font-size: clamp(1.5rem, 2.5vw, 2.8rem); }
 .calendar-match { display: grid; grid-template-columns: 130px 1fr auto; align-items: center; gap: 1.5rem; margin-bottom: 1rem; padding: 1.2rem 1.5rem; border-left-width: 8px; }
-.calendar-match time { color: var(--accent); font-size: 2.3rem; font-weight: 900; }
+.calendar-match .jornada { color: var(--accent); font-size: 2.3rem; font-weight: 900; }
 .calendar-match h3 { margin: .7rem 0 .2rem; font-size: 1.7rem; }
 .calendar-match h3 b { color: var(--accent); margin: 0 .6rem; }
 .calendar-match p { margin: 0; color: var(--muted); }
