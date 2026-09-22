@@ -1,5 +1,6 @@
 const express = require('express');
 const Database = require('better-sqlite3');
+const { randomUUID } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -59,6 +60,17 @@ db.exec(`
   UNION SELECT tournamentType, lineTeam FROM matches
 `);
 
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api')) return next();
+  const startedAt = Date.now();
+  req.requestId = randomUUID();
+  res.set('X-Request-Id', req.requestId);
+  res.on('finish', () => {
+    const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
+    console[level](JSON.stringify({ timestamp: new Date().toISOString(), level, event: 'request', requestId: req.requestId, method: req.method, path: req.originalUrl, status: res.statusCode, durationMs: Date.now() - startedAt }));
+  });
+  next();
+});
 app.use(express.json({ limit: '20kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -218,12 +230,12 @@ app.get('/api/events', (req, res) => {
 });
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }));
-app.use((error, _req, res, _next) => {
-  console.error(error);
+app.use((error, req, res, _next) => {
+  console.error(JSON.stringify({ timestamp: new Date().toISOString(), level: 'error', event: 'request_error', requestId: req.requestId, method: req.method, path: req.originalUrl, error: { name: error.name, message: error.message, stack: error.stack } }));
   res.status(500).json({ error: 'Error interno del servidor.' });
 });
 
-const server = app.listen(port, '0.0.0.0', () => console.log(`Tournament display listening on 0.0.0.0:${port}`));
+const server = app.listen(port, '0.0.0.0', () => console.log(JSON.stringify({ timestamp: new Date().toISOString(), level: 'info', event: 'server_started', address: `0.0.0.0:${port}`, databasePath })));
 
 function shutdown() {
   server.close(() => {

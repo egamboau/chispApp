@@ -9,6 +9,7 @@ const port = 3217;
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tournament-test-'));
 const base = `http://127.0.0.1:${port}`;
 let server;
+let serverLogs = '';
 
 async function waitForServer() {
   for (let attempt = 0; attempt < 40; attempt++) {
@@ -16,6 +17,14 @@ async function waitForServer() {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error('Server did not start');
+}
+
+async function waitForLog(text) {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (serverLogs.includes(text)) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`Log not found: ${text}`);
 }
 
 async function json(url, options = {}) {
@@ -35,7 +44,9 @@ test.before(async () => {
   legacyDb.close();
   const env = { ...process.env, PORT: String(port), DATABASE_PATH: path.join(tempDir, 'test.db') };
   delete env.NODE_TEST_CONTEXT;
-  server = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'), env, stdio: 'inherit' });
+  server = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'] });
+  server.stdout.on('data', (chunk) => { serverLogs += chunk; });
+  server.stderr.on('data', (chunk) => { serverLogs += chunk; });
   await waitForServer();
 });
 
@@ -94,6 +105,15 @@ test('flujo completo de partidos y validaciones', async () => {
 test('rechaza equipos repetidos', async () => {
   const result = await json('/api/matches', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', date: '2026-09-20', jornada: 'MORNING', teamA: 'Tigres', teamB: 'tigres', lineTeam: 'Halcones', court: 1 }) });
   assert.equal(result.response.status, 400);
+});
+
+test('registra peticiones API con un identificador', async () => {
+  const result = await json('/api/no-existe');
+  assert.equal(result.response.status, 404);
+  const requestId = result.response.headers.get('x-request-id');
+  assert.match(requestId, /^[0-9a-f-]{36}$/);
+  await waitForLog(requestId);
+  assert.match(serverLogs, new RegExp(`"event":"request","requestId":"${requestId}".*"status":404`));
 });
 
 test('notifica cambios por SSE', async () => {
