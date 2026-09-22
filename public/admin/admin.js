@@ -43,9 +43,18 @@ function renderTeamOptions(values = {}) {
   }
 }
 
+function renderTeams() {
+  document.querySelector('#teams').innerHTML = ['MALE', 'FEMALE'].map((tournamentType) => {
+    const rows = teams.filter((team) => team.tournamentType === tournamentType)
+      .map((team) => `<div class="team-row"><span>${escapeHtml(team.name)}</span><button class="danger" data-team-id="${team.id}" aria-label="Eliminar ${escapeHtml(team.name)}">ELIMINAR</button></div>`).join('');
+    return `<section class="team-group"><h3>${labels[tournamentType]}</h3>${rows || '<p>No hay equipos.</p>'}</section>`;
+  }).join('');
+}
+
 async function loadTeams(values) {
   teams = await request('/api/teams');
   renderTeamOptions(values);
+  renderTeams();
 }
 
 function card(match) {
@@ -101,6 +110,18 @@ document.querySelector('#team-form').addEventListener('submit', async (event) =>
 document.querySelector('#cancel-edit').addEventListener('click', resetForm);
 document.querySelector('#tournamentType').addEventListener('change', () => renderTeamOptions());
 document.querySelectorAll('.filters input, .filters select').forEach((input) => input.addEventListener('input', render));
+
+document.querySelector('#teams').addEventListener('click', async (event) => {
+  const button = event.target.closest('button[data-team-id]');
+  if (!button) return;
+  const team = teams.find((item) => item.id === Number(button.dataset.teamId));
+  if (!confirm(`¿Eliminar ${team.name} del torneo ${labels[team.tournamentType].toLowerCase()}?`)) return;
+  try {
+    await request(`/api/teams/${team.id}`, { method: 'DELETE' });
+    await loadTeams();
+    showMessage('Equipo eliminado. Los partidos anteriores no cambiaron.', false, '#team-message');
+  } catch (error) { showMessage(error.message, true, '#team-message'); }
+});
 
 document.querySelector('#matches').addEventListener('click', async (event) => {
   const button = event.target.closest('button[data-action]');

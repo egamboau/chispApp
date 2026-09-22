@@ -22,6 +22,11 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .form-actions button { flex: 1; }
 #message, #team-message { min-height: 1.5rem; margin-bottom: 0; font-weight: 700; }
 #team-message { margin-top: .5rem; }
+.team-group { border-top: 1px solid #dce3ea; padding: .6rem 0; }
+.team-group h3, .team-group p { margin: .35rem 0; }
+#teams { max-height: 280px; margin-bottom: 1.2rem; overflow-y: auto; }
+.team-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .3rem 0; }
+.team-row button { min-height: 38px; padding: .3rem .6rem; font-size: .8rem; }
 .error { color: var(--danger); }.success { color: #19734b; }
 .list-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
 .filters { display: flex; gap: .7rem; }

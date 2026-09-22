@@ -30,6 +30,7 @@ const createMatchesTable = `
   )
 `;
 db.exec(createMatchesTable);
+const teamsTableExists = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'teams'").get();
 db.exec(`
   CREATE TABLE IF NOT EXISTS teams (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,12 +54,14 @@ if (db.prepare('PRAGMA table_info(matches)').all().some(({ name }) => name === '
   })();
 }
 
-db.exec(`
-  INSERT OR IGNORE INTO teams (tournamentType, name)
-  SELECT tournamentType, teamA FROM matches
-  UNION SELECT tournamentType, teamB FROM matches
-  UNION SELECT tournamentType, lineTeam FROM matches
-`);
+if (!teamsTableExists) {
+  db.exec(`
+    INSERT OR IGNORE INTO teams (tournamentType, name)
+    SELECT tournamentType, teamA FROM matches
+    UNION SELECT tournamentType, teamB FROM matches
+    UNION SELECT tournamentType, lineTeam FROM matches
+  `);
+}
 
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api')) return next();
@@ -134,6 +137,12 @@ app.post('/api/teams', (req, res) => {
     if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(409).json({ error: 'Ese equipo ya existe en el torneo.' });
     throw error;
   }
+});
+
+app.delete('/api/teams/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM teams WHERE id = ?').run(req.params.id);
+  if (!result.changes) return res.status(404).json({ error: 'Equipo no encontrado.' });
+  res.status(204).end();
 });
 
 app.get('/', (_req, res) => res.redirect('/display'));

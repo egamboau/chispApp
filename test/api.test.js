@@ -63,12 +63,20 @@ test('guarda equipos separados por torneo', async () => {
   let result = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentType: 'FEMALE', name: ' Panteras ' }) });
   assert.equal(result.response.status, 201);
   assert.equal(result.body.name, 'Panteras');
+  const id = result.body.id;
 
   result = await json('/api/teams?tournamentType=FEMALE');
   assert.deepEqual(result.body.map(({ name }) => name), ['Panteras']);
 
   result = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentType: 'FEMALE', name: 'panteras' }) });
   assert.equal(result.response.status, 409);
+
+  result = await json(`/api/teams/${id}`, { method: 'DELETE' });
+  assert.equal(result.response.status, 204);
+  result = await json('/api/teams?tournamentType=FEMALE');
+  assert.deepEqual(result.body, []);
+  result = await json(`/api/teams/${id}`, { method: 'DELETE' });
+  assert.equal(result.response.status, 404);
 });
 
 test.after(() => {
