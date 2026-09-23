@@ -10,30 +10,37 @@
   <header><h1>Administrar torneo</h1><a href="/display" target="_blank">Abrir pantalla pública</a></header>
   <main>
     <section class="panel form-panel">
-      <h2>Equipos</h2>
-      <form id="team-form">
-        <label>Torneo<select id="team-tournament" required><option value="MALE">Masculino</option><option value="FEMALE">Femenino</option></select></label>
-        <label>Nombre<input id="team-name" type="text" maxlength="100" required></label>
-        <div class="form-actions"><button class="primary" type="submit">GUARDAR EQUIPO</button></div>
-      </form>
-      <p id="team-message" role="alert"></p>
-      <div id="teams" aria-live="polite"></div>
+      <h2>Configuración</h2>
+      <label>Torneo<select id="admin-tournament"></select></label>
+      <label>Fase<select id="admin-phase"></select></label>
+      <div class="quick-forms">
+        <form id="tournament-form"><label>Nuevo torneo<input id="tournament-name" maxlength="100" required></label><button class="primary">CREAR</button></form>
+        <form id="phase-form"><label>Nueva fase<input id="phase-name" maxlength="100" required></label><label>Tipo<select id="phase-type"><option value="TABLE">Tabla</option><option value="ELIMINATION">Eliminatoria</option></select></label><button class="primary">CREAR</button></form>
+        <form id="group-form"><label>Nuevo grupo<input id="group-name" maxlength="100" required></label><button class="primary">CREAR</button></form>
+        <form id="team-form"><label>Nuevo equipo<input id="team-name" maxlength="100" required></label><button class="primary">CREAR</button></form>
+        <form id="membership-form"><label>Equipo<select id="membership-team"></select></label><label>Grupo<select id="membership-group"></select></label><button class="primary">INSCRIBIR</button></form>
+        <form id="rule-form"><label>Desde<input id="rule-start" type="number" min="1" required></label><label>Hasta<input id="rule-end" type="number" min="1" required></label><label>Destino<input id="rule-label" maxlength="100" required></label><button class="primary">AÑADIR RANGO</button></form>
+        <form id="sanction-form"><label>Equipo<select id="sanction-team"></select></label><label>Motivo<input id="sanction-reason" required></label><button class="danger">SANCIONAR</button></form>
+      </div>
+      <p id="config-message" role="alert"></p>
+      <div id="configuration" aria-live="polite"></div>
       <h2 id="form-title">Crear partido</h2>
       <form id="match-form">
         <input type="hidden" id="match-id">
-        <label>Torneo<select id="tournamentType" required><option value="MALE">Masculino</option><option value="FEMALE">Femenino</option></select></label>
+        <label>Fase<select id="phaseId" required></select></label>
+        <label>Grupo<select id="groupId" required></select></label>
         <label>Fecha<input id="date" type="date" required></label>
         <label>Jornada<select id="jornada" required><option value="MORNING">Mañana</option><option value="AFTERNOON">Tarde</option></select></label>
         <label>Cancha<input id="court" type="number" min="1" step="1" inputmode="numeric" required></label>
-        <label>Equipo A<select id="teamA" required></select></label>
-        <label>Equipo B<select id="teamB" required></select></label>
-        <label>Equipo de línea<select id="lineTeam" required></select></label>
+        <label>Equipo A<select id="teamAId" required></select></label>
+        <label>Equipo B<select id="teamBId" required></select></label>
+        <label>Equipo de línea<select id="lineTeamId" required></select></label>
         <div class="form-actions"><button class="primary" type="submit">GUARDAR PARTIDO</button><button id="cancel-edit" type="button" hidden>CANCELAR</button></div>
       </form>
       <p id="message" role="alert"></p>
     </section>
     <section class="matches-section">
-      <div class="list-heading"><h2>Partidos</h2><div class="filters"><label>Fecha<input id="filter-date" type="date"></label><label>Torneo<select id="filter-tournament"><option value="">Todos</option><option value="MALE">Masculino</option><option value="FEMALE">Femenino</option></select></label><label>Cancha<input id="filter-court" type="number" min="1" inputmode="numeric" placeholder="Todas"></label></div></div>
+      <div class="list-heading"><h2>Partidos</h2><div class="filters"><label>Fecha<input id="filter-date" type="date"></label><label>Fase<select id="filter-phase"><option value="">Todas</option></select></label><label>Cancha<input id="filter-court" type="number" min="1" inputmode="numeric" placeholder="Todas"></label></div></div>
       <div id="matches" aria-live="polite"></div>
     </section>
   </main>

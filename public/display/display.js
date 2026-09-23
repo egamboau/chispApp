@@ -3,6 +3,7 @@ const statusLabels = { SCHEDULED: 'PROGRAMADO', LIVE: 'EN JUEGO', FINISHED: 'FIN
 const jornadaLabels = { MORNING: 'MAÑANA', AFTERNOON: 'TARDE' };
 let matches = [];
 let filter = 'ALL';
+let tournaments = [];
 
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
 const badge = (match) => `<span class="badge ${match.tournamentType.toLowerCase()}">${labels[match.tournamentType]}</span>`;
@@ -61,9 +62,49 @@ function renderCalendar() {
     </article>`).join('')}</section>`).join('') || '<div class="empty"><h2>No hay partidos</h2></div>';
 }
 
+function renderStandings(data) {
+  const target = document.querySelector('#standings');
+  if (!data.hasStandings) { target.innerHTML = `<div class="empty"><h2>${escapeHtml(data.message)}</h2></div>`; return; }
+  const legend = data.rules.map((rule) => `<span>${rule.startPosition === rule.endPosition ? `${rule.startPosition}.º` : `${rule.startPosition}.º–${rule.endPosition}.º`}: ${escapeHtml(rule.label)}</span>`).join('');
+  target.innerHTML = `<div class="standings-legend">${legend || 'Sin destinos configurados'}</div>${data.groups.map((group) => `<section class="standings-group"><h2>${escapeHtml(group.name)}</h2><div class="table-scroll"><table><thead><tr><th>Pos.</th><th>Equipo</th><th>PJ</th><th>G</th><th>E</th><th>P</th><th>GF</th><th>GC</th><th>DG</th><th>Pts.</th><th>🟥</th><th>🟨</th><th>Destino</th></tr></thead><tbody>${group.standings.map((row, index) => {
+    const boundary = index && row.destination !== group.standings[index - 1].destination ? ' class="range-start"' : '';
+    const destination = row.destination || (row.possibleDestinations.length ? `Pendiente: ${row.possibleDestinations.map(escapeHtml).join(' / ')}` : '—');
+    return `<tr${boundary}><td>${row.position}.º${row.requiresTiebreaker ? '*' : ''}</td><td>${escapeHtml(row.teamName)}${row.sanctioned ? ` <abbr title="${escapeHtml(row.sanctionReason)}">Sancionado</abbr>` : ''}</td><td>${row.played}</td><td>${row.wins}</td><td>${row.draws}</td><td>${row.losses}</td><td>${row.goalsFor}</td><td>${row.goalsAgainst}</td><td>${row.goalDifference}</td><td><strong>${row.points}</strong></td><td>${row.redCards}</td><td>${row.yellowCards}</td><td>${destination}</td></tr>`;
+  }).join('')}</tbody></table></div>${group.standings.some((row) => row.requiresTiebreaker) ? '<p class="tiebreaker">* Partido extra: dos tiempos de 5 minutos y penales si persiste el empate.</p>' : ''}</section>`).join('')}`;
+}
+
+async function loadStandings() {
+  const phaseId = document.querySelector('#phase-select').value;
+  if (!phaseId) return;
+  const response = await fetch(`/api/phases/${phaseId}/standings`);
+  if (response.ok) renderStandings(await response.json());
+}
+
+async function loadSelectors() {
+  tournaments = await (await fetch('/api/tournaments?active=true')).json();
+  const tournamentSelect = document.querySelector('#tournament-select');
+  const previous = Number(tournamentSelect.value);
+  tournamentSelect.innerHTML = tournaments.map((tournament) => `<option value="${tournament.id}">${escapeHtml(tournament.name)}</option>`).join('');
+  if (tournaments.some((tournament) => tournament.id === previous)) tournamentSelect.value = previous;
+  await loadPhases();
+}
+
+async function loadPhases() {
+  const tournament = tournaments.find((item) => item.id === Number(document.querySelector('#tournament-select').value));
+  if (!tournament) return;
+  const phases = await (await fetch(`/api/tournaments/${tournament.id}/phases`)).json();
+  const select = document.querySelector('#phase-select');
+  const previous = Number(select.value);
+  select.innerHTML = phases.map((phase) => `<option value="${phase.id}">${escapeHtml(phase.name)}</option>`).join('');
+  if (phases.some((phase) => phase.id === previous)) select.value = previous;
+  else if (phases.some((phase) => phase.id === tournament.currentPhaseId)) select.value = tournament.currentPhaseId;
+  await Promise.all([loadStandings(), loadMatches()]);
+}
+
 async function loadMatches() {
   try {
-    const response = await fetch('/api/matches');
+    const phaseId = document.querySelector('#phase-select').value;
+    const response = await fetch(`/api/matches${phaseId ? `?phaseId=${phaseId}` : ''}`);
     if (!response.ok) throw new Error();
     matches = await response.json();
     render();
@@ -88,8 +129,11 @@ document.querySelector('.filters').addEventListener('click', (event) => {
   document.querySelectorAll('.filters button').forEach((item) => item.classList.toggle('active', item === button));
   renderCalendar();
 });
+document.querySelector('#tournament-select').addEventListener('change', loadPhases);
+document.querySelector('#phase-select').addEventListener('change', () => { loadStandings(); loadMatches(); });
 
 const events = new EventSource('/api/events');
-events.addEventListener('matches', loadMatches);
+events.addEventListener('matches', () => { loadMatches(); loadSelectors(); });
 events.onerror = () => { document.querySelector('#connection').textContent = 'Reconectando…'; };
 loadMatches();
+loadSelectors();

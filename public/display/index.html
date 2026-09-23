@@ -9,11 +9,16 @@
 <body>
   <header>
     <h1>TORNEO</h1>
+    <div class="selectors">
+      <label>Torneo<select id="tournament-select" aria-label="Torneo activo"></select></label>
+      <label>Fase<select id="phase-select" aria-label="Fase"></select></label>
+    </div>
     <nav aria-label="Vistas del torneo">
       <button class="active" data-view="live">EN JUEGO</button>
       <button data-view="upcoming">PRÓXIMOS</button>
       <button data-view="calendar">CALENDARIO</button>
       <button data-view="results">RESULTADOS</button>
+      <button data-view="standings">TABLA</button>
     </nav>
   </header>
   <main>
@@ -28,6 +33,7 @@
       <div id="calendar-list"></div>
     </section>
     <section id="results" class="view" aria-live="polite"></section>
+    <section id="standings" class="view" aria-live="polite"></section>
   </main>
   <div id="connection" role="status"></div>
   <script src="/display/display.js"></script>

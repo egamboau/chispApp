@@ -59,6 +59,13 @@ test('migra horas existentes a jornadas sin perder el partido', async () => {
   assert.deepEqual(teams.body.map(({ name }) => name), ['Legado A', 'Legado B', 'Legado Línea']);
 });
 
+test('sirve administración y pantalla pública con selectores y tabla responsive', async () => {
+  const [admin, display, css] = await Promise.all([fetch(`${base}/admin/`), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);
+  assert.match(await admin.text(), /id="rule-form"/);
+  assert.match(await display.text(), /data-view="standings"/);
+  assert.match(await css.text(), /@media \(max-width: 900px\)/);
+});
+
 test('guarda equipos separados por torneo', async () => {
   let result = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentType: 'FEMALE', name: ' Panteras ' }) });
   assert.equal(result.response.status, 201);
@@ -104,6 +111,10 @@ test('flujo completo de partidos y validaciones', async () => {
 
   result = await json(`/api/matches/${id}/finish`, { method: 'POST' });
   assert.equal(result.body.status, 'FINISHED');
+  result = await json(`/api/matches/${id}/cards`, { method: 'PATCH', body: JSON.stringify({ yellowCardsA: 2, redCardsA: 0, yellowCardsB: 1, redCardsB: 1 }) });
+  assert.deepEqual([result.body.yellowCardsA, result.body.redCardsB], [2, 1]);
+  result = await json(`/api/matches/${id}/score`, { method: 'PATCH', body: JSON.stringify({ team: 'A', delta: 1 }) });
+  assert.equal(result.response.status, 409);
   result = await json(`/api/matches/${id}`, { method: 'DELETE' });
   assert.equal(result.response.status, 204);
   result = await json(`/api/matches/${id}`);
@@ -134,4 +145,48 @@ test('notifica cambios por SSE', async () => {
   assert.match(event, /event: matches/);
   assert.match(event, new RegExp(`"id":${created.body.id}`));
   controller.abort();
+});
+
+test('administra fases, rangos, grupos y sanciones con destinos compartidos', async () => {
+  let result = await json('/api/tournaments', { method: 'POST', body: JSON.stringify({ name: 'Mixto' }) });
+  const tournamentId = result.body.id;
+  result = await json(`/api/tournaments/${tournamentId}/phases`, { method: 'POST', body: JSON.stringify({ name: 'Liga', type: 'TABLE', sortOrder: 1 }) });
+  const phaseId = result.body.id;
+  const groupIds = [];
+  for (const name of ['A', 'B']) {
+    result = await json(`/api/phases/${phaseId}/groups`, { method: 'POST', body: JSON.stringify({ name }) });
+    groupIds.push(result.body.id);
+  }
+  const teamIds = [];
+  for (const name of ['Uno', 'Dos', 'Tres', 'Cuatro']) {
+    result = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentId, name }) });
+    teamIds.push(result.body.id);
+  }
+  for (let index = 0; index < teamIds.length; index++) {
+    result = await json(`/api/phases/${phaseId}/memberships`, { method: 'POST', body: JSON.stringify({ teamId: teamIds[index], groupId: groupIds[Math.floor(index / 2)] }) });
+    assert.equal(result.response.status, 201);
+  }
+  result = await json(`/api/phases/${phaseId}/classification-rules`, { method: 'POST', body: JSON.stringify({ startPosition: 1, endPosition: 1, label: 'Segunda fase' }) });
+  assert.equal(result.response.status, 201);
+  result = await json(`/api/phases/${phaseId}/classification-rules`, { method: 'POST', body: JSON.stringify({ startPosition: 1, endPosition: 2, label: 'Copa' }) });
+  assert.equal(result.response.status, 409);
+  result = await json(`/api/phases/${phaseId}/classification-rules`, { method: 'POST', body: JSON.stringify({ startPosition: 2, endPosition: 2, label: 'Copa' }) });
+  assert.equal(result.response.status, 201);
+
+  result = await json(`/api/phases/${phaseId}/standings`);
+  assert.equal(result.body.groups.length, 2);
+  for (const group of result.body.groups) assert.deepEqual(group.standings[0].possibleDestinations, ['Segunda fase', 'Copa']);
+
+  result = await json(`/api/phases/${phaseId}/teams/${teamIds[0]}/sanction`, { method: 'PUT', body: JSON.stringify({ reason: 'Artículo 19' }) });
+  assert.equal(result.response.status, 200);
+  result = await json(`/api/phases/${phaseId}/standings`);
+  const groupA = result.body.groups.find((group) => group.name === 'A').standings;
+  const groupB = result.body.groups.find((group) => group.name === 'B').standings;
+  assert.deepEqual(groupA.map((row) => row.teamName), ['Dos', 'Uno']);
+  assert.deepEqual(groupA.map((row) => row.destination), ['Segunda fase', 'Copa']);
+  assert.equal(groupB[0].requiresTiebreaker, true);
+
+  result = await json(`/api/tournaments/${tournamentId}/phases`, { method: 'POST', body: JSON.stringify({ name: 'Final', type: 'ELIMINATION', sortOrder: 2 }) });
+  result = await json(`/api/phases/${result.body.id}/standings`);
+  assert.equal(result.body.hasStandings, false);
 });
