@@ -83,7 +83,7 @@ def sendGitHubStatus(String state, String description, String context) {
       curl --fail --silent --show-error \
         --request POST \
         --header 'Accept: application/vnd.github+json' \
-        --header 'Authorization: Bearer \$GITHUB_TOKEN' \
+        --header "Authorization: Bearer \$GITHUB_TOKEN" \
         --header 'X-GitHub-Api-Version: 2022-11-28' \
         --data '{"state":"${state}","description":"${description}","context":"${context}","target_url":"${env.BUILD_URL}"}' \
         'https://api.github.com/repos/${env.GITHUB_REPO}/statuses/${env.COMMIT_SHA}'
