@@ -19,7 +19,9 @@ npm start
 La base de datos local se crea en `./data/tournament.db`. Abre:
 
 - Pantalla pública: <http://localhost:3000/display>
-- Administración: <http://localhost:3000/admin>
+- Torneos, fases y grupos: <http://localhost:3000/admin>
+- Inscripción de equipos: <http://localhost:3000/admin/teams.html>
+- Calendario de la fase actual: <http://localhost:3000/admin/calendar.html>
 
 Para desarrollo con reinicio automático:
 

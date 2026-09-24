@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Equipos | Administración</title>
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body data-page="teams">
+  <header><h1>Administración</h1><nav aria-label="Administración"><a href="/admin/">Torneos</a><a class="active" href="/admin/teams.html">Equipos</a><a href="/admin/calendar.html">Calendario</a><a href="/display" target="_blank">Pantalla pública</a></nav></header>
+  <main class="management-layout">
+    <section class="panel">
+      <h2>Inscribir equipos</h2>
+      <label>Torneo<select id="admin-tournament"></select></label>
+      <label>Fase<select id="admin-phase"></select></label>
+      <p id="phase-help" class="hint"></p>
+
+      <h3>Crear equipo nuevo</h3>
+      <form id="team-form" class="compact-form">
+        <label>Nombre<input id="team-name" maxlength="100" required></label>
+        <label>Grupo opcional<select id="new-team-group"><option value="">Sin asignar</option></select></label>
+        <button class="primary">CREAR EQUIPO</button>
+      </form>
+
+      <h3>Usar equipo existente</h3>
+      <form id="membership-form" class="compact-form">
+        <label>Equipo<select id="membership-team" required></select></label>
+        <label>Grupo<select id="membership-group" required></select></label>
+        <button class="primary">ASIGNAR AL GRUPO</button>
+      </form>
+      <p id="message" role="alert"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Equipos del torneo</h2>
+      <div id="teams" aria-live="polite"></div>
+
+      <h3>Sanciones de la fase</h3>
+      <form id="sanction-form" class="compact-form">
+        <label>Equipo<select id="sanction-team" required></select></label>
+        <label>Motivo<input id="sanction-reason" maxlength="200" required></label>
+        <button class="danger">GUARDAR SANCIÓN</button>
+      </form>
+      <div id="sanctions" aria-live="polite"></div>
+    </section>
+  </main>
+  <script src="/admin/admin.js"></script>
+</body>
+</html>

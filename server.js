@@ -112,8 +112,17 @@ app.put('/api/phases/:id', (req, res) => {
   db.prepare('UPDATE phases SET name=?,type=?,sortOrder=? WHERE id=?').run(name, req.body.type, sortOrder, phase.id); notify('phase', phase.id); res.json(one('phases', phase.id));
 });
 app.delete('/api/phases/:id', (req, res) => {
-  if (db.prepare('SELECT 1 FROM tournaments WHERE currentPhaseId=?').get(req.params.id)) return fail(res, 409, 'No se puede eliminar la fase actual del torneo.');
-  return guardedDelete('phases', 'Fase')(req, res);
+  const phase = one('phases', req.params.id);
+  if (!phase) return fail(res, 404, 'Fase no encontrada.');
+  if (db.prepare('SELECT 1 FROM matches WHERE phaseId=?').get(phase.id)) return fail(res, 409, 'No se puede eliminar: la fase tiene partidos asociados.');
+  db.transaction(() => {
+    db.prepare('UPDATE tournaments SET currentPhaseId=NULL WHERE currentPhaseId=?').run(phase.id);
+    db.prepare('DELETE FROM phase_memberships WHERE phaseId=?').run(phase.id);
+    db.prepare('DELETE FROM sanctions WHERE phaseId=?').run(phase.id);
+    db.prepare('DELETE FROM groups_table WHERE phaseId=?').run(phase.id);
+    db.prepare('DELETE FROM phases WHERE id=?').run(phase.id);
+  })();
+  res.status(204).end();
 });
 
 app.get('/api/phases/:id/groups', (req, res) => res.json(db.prepare('SELECT * FROM groups_table WHERE phaseId=? ORDER BY name').all(req.params.id)));
@@ -189,7 +198,8 @@ function matchInput(body) {
   const match = { phaseId: phase?.id, groupId: group?.id, teamAId: a?.id, teamBId: b?.id, lineTeamId: line?.id, tournamentType: tournament && legacyType(tournament), teamA: a?.name, teamB: b?.name, lineTeam: line?.name, date: clean(body.date), jornada: body.jornada, court: Number(body.court) }, errors = [];
   if (!phase || !group || group.phaseId !== phase.id) errors.push('Fase o grupo inválido.'); if (!/^\d{4}-\d{2}-\d{2}$/.test(match.date) || Number.isNaN(Date.parse(`${match.date}T00:00:00Z`))) errors.push('Fecha inválida.'); if (!['MORNING', 'AFTERNOON'].includes(match.jornada)) errors.push('Jornada inválida.'); if (!Number.isInteger(match.court) || match.court < 1) errors.push('Cancha inválida.');
   if (!a || !b || !line || new Set([a?.id, b?.id, line?.id]).size !== 3) errors.push('Los tres equipos deben existir y ser diferentes.');
-  if (phase && group && a && b && [a, b].some((team) => !db.prepare('SELECT 1 FROM phase_memberships WHERE phaseId=? AND groupId=? AND teamId=?').get(phase.id, group.id, team.id))) errors.push('Los contendientes deben pertenecer al grupo.');
+  if (phase && group && a && !db.prepare('SELECT 1 FROM phase_memberships WHERE phaseId=? AND groupId=? AND teamId=?').get(phase.id, group.id, a.id)) errors.push('El equipo A debe pertenecer al grupo seleccionado.');
+  if (phase && b && !db.prepare('SELECT 1 FROM phase_memberships WHERE phaseId=? AND teamId=?').get(phase.id, b.id)) errors.push('El equipo B debe pertenecer a la fase.');
   return { match, errors };
 }
 app.get('/api/matches', (req, res) => { const clauses = [], params = {}; for (const key of ['phaseId', 'groupId']) if (req.query[key]) { if (!id(req.query[key])) return fail(res, 400, `${key} inválido.`); clauses.push(`m.${key}=@${key}`); params[key] = Number(req.query[key]); } if (req.query.tournamentType) { if (!['MALE', 'FEMALE'].includes(req.query.tournamentType)) return fail(res, 400, 'Torneo inválido.'); clauses.push('m.tournamentType=@tournamentType'); params.tournamentType = req.query.tournamentType; } if (req.query.status) { if (!['SCHEDULED', 'LIVE', 'FINISHED'].includes(req.query.status)) return fail(res, 400, 'Estado inválido.'); clauses.push('m.status=@status'); params.status = req.query.status; } if (req.query.date) { clauses.push('m.date=@date'); params.date = req.query.date; } const statement = db.prepare(`${matchSelect}${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''} ORDER BY m.date,CASE m.jornada WHEN 'MORNING' THEN 0 ELSE 1 END,m.court,m.id`); res.json(clauses.length ? statement.all(params) : statement.all()); });
@@ -206,7 +216,11 @@ app.patch('/api/matches/:id/cards', (req, res) => { const cards = Object.fromEnt
 const destinationAt = (rules, position) => rules.find((rule) => position >= rule.startPosition && position <= rule.endPosition)?.label || null;
 function calculateGroupStandings(members, matches, rules, sanctions) {
   const rows = new Map(members.map((team) => [team.id, { teamId: team.id, teamName: team.name, played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, goalDifference: 0, points: 0, yellowCards: 0, redCards: 0, sanctioned: sanctions.has(team.id), sanctionReason: sanctions.get(team.id) || null }]));
-  for (const match of matches) { const a = rows.get(match.teamAId), b = rows.get(match.teamBId); if (!a || !b) continue; a.played++; b.played++; a.goalsFor += match.scoreA; a.goalsAgainst += match.scoreB; b.goalsFor += match.scoreB; b.goalsAgainst += match.scoreA; a.yellowCards += match.yellowCardsA; a.redCards += match.redCardsA; b.yellowCards += match.yellowCardsB; b.redCards += match.redCardsB; if (match.scoreA === match.scoreB) { a.draws++; b.draws++; a.points++; b.points++; } else { const winner = match.scoreA > match.scoreB ? a : b, loser = winner === a ? b : a; winner.wins++; winner.points += 3; loser.losses++; } }
+  for (const match of matches) {
+    const a = rows.get(match.teamAId), b = rows.get(match.teamBId), draw = match.scoreA === match.scoreB;
+    if (a) { a.played++; a.goalsFor += match.scoreA; a.goalsAgainst += match.scoreB; a.yellowCards += match.yellowCardsA; a.redCards += match.redCardsA; if (draw) { a.draws++; a.points++; } else if (match.scoreA > match.scoreB) { a.wins++; a.points += 3; } else a.losses++; }
+    if (b) { b.played++; b.goalsFor += match.scoreB; b.goalsAgainst += match.scoreA; b.yellowCards += match.yellowCardsB; b.redCards += match.redCardsB; if (draw) { b.draws++; b.points++; } else if (match.scoreB > match.scoreA) { b.wins++; b.points += 3; } else b.losses++; }
+  }
   for (const row of rows.values()) row.goalDifference = row.goalsFor - row.goalsAgainst;
   const split = (items, value) => { const groups = []; for (const item of items) { const key = value(item), last = groups.at(-1); if (!last || last.key !== key) groups.push({ key, items: [item] }); else last.items.push(item); } return groups.map(({ items: group }) => group); };
   const direct = (items) => { const stats = new Map(items.map(({ teamId }) => [teamId, { points: 0, goalDifference: 0, goalsFor: 0 }])); for (const match of matches) { if (!stats.has(match.teamAId) || !stats.has(match.teamBId)) continue; const a = stats.get(match.teamAId), b = stats.get(match.teamBId); a.goalsFor += match.scoreA; a.goalDifference += match.scoreA - match.scoreB; b.goalsFor += match.scoreB; b.goalDifference += match.scoreB - match.scoreA; if (match.scoreA === match.scoreB) { a.points++; b.points++; } else stats.get(match.scoreA > match.scoreB ? match.teamAId : match.teamBId).points += 3; } return stats; };
@@ -215,7 +229,7 @@ function calculateGroupStandings(members, matches, rules, sanctions) {
   const result = []; let position = 1; for (const tied of ordered) { const destinations = Array.from({ length: tied.length }, (_, index) => destinationAt(rules, position + index)), same = destinations.every((item) => item === destinations[0]), possibleDestinations = [...new Set(destinations.filter(Boolean))]; for (const row of tied) result.push({ ...row, position, requiresTiebreaker: tied.length > 1, destination: same ? destinations[0] : null, possibleDestinations: same ? [] : possibleDestinations, tiebreakerRule: tied.length > 1 ? 'Dos tiempos de 5 minutos y penales si persiste el empate.' : null }); position += tied.length; }
   return result;
 }
-app.get('/api/phases/:id/standings', (req, res) => { const phase = one('phases', req.params.id); if (!phase) return fail(res, 404, 'Fase no encontrada.'); if (phase.type !== 'TABLE') return res.json({ phase, hasStandings: false, message: 'Esta fase eliminatoria no tiene tabla.', rules: [], groups: [] }); const rules = db.prepare('SELECT * FROM classification_rules WHERE phaseId=? ORDER BY startPosition').all(phase.id), sanctions = new Map(db.prepare('SELECT teamId,reason FROM sanctions WHERE phaseId=?').all(phase.id).map((item) => [item.teamId, item.reason])), groups = db.prepare('SELECT * FROM groups_table WHERE phaseId=? ORDER BY name').all(phase.id).map((group) => { const members = db.prepare('SELECT t.* FROM phase_memberships pm JOIN teams t ON t.id=pm.teamId WHERE pm.phaseId=? AND pm.groupId=?').all(phase.id, group.id), matches = db.prepare("SELECT * FROM matches WHERE phaseId=? AND groupId=? AND status='FINISHED'").all(phase.id, group.id); return { ...group, standings: calculateGroupStandings(members, matches, rules, sanctions) }; }); res.json({ phase, hasStandings: true, rules, groups }); });
+app.get('/api/phases/:id/standings', (req, res) => { const phase = one('phases', req.params.id); if (!phase) return fail(res, 404, 'Fase no encontrada.'); if (phase.type !== 'TABLE') return res.json({ phase, hasStandings: false, message: 'Esta fase eliminatoria no tiene tabla.', rules: [], groups: [] }); const rules = db.prepare('SELECT * FROM classification_rules WHERE phaseId=? ORDER BY startPosition').all(phase.id), sanctions = new Map(db.prepare('SELECT teamId,reason FROM sanctions WHERE phaseId=?').all(phase.id).map((item) => [item.teamId, item.reason])), matches = db.prepare("SELECT * FROM matches WHERE phaseId=? AND status='FINISHED'").all(phase.id), groups = db.prepare('SELECT * FROM groups_table WHERE phaseId=? ORDER BY name').all(phase.id).map((group) => { const members = db.prepare('SELECT t.* FROM phase_memberships pm JOIN teams t ON t.id=pm.teamId WHERE pm.phaseId=? AND pm.groupId=?').all(phase.id, group.id); return { ...group, standings: calculateGroupStandings(members, matches, rules, sanctions) }; }); res.json({ phase, hasStandings: true, rules, groups }); });
 
 app.get('/api/events', (req, res) => { res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' }); res.flushHeaders(); res.write('event: connected\ndata: {}\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); });
 app.use('/api', (_req, res) => fail(res, 404, 'Ruta no encontrada.'));

@@ -25,6 +25,11 @@ test('aplica diferencia y goles generales antes del enfrentamiento directo', () 
   assert.deepEqual(result.slice(0, 2).map((row) => row.teamId), [1, 2]);
 });
 
+test('contabiliza un partido contra un equipo de otro grupo', () => {
+  const [row] = order([1], [game(1, 2, 2, 1)]);
+  assert.deepEqual({ played: row.played, wins: row.wins, goalsFor: row.goalsFor, goalsAgainst: row.goalsAgainst, points: row.points }, { played: 1, wins: 1, goalsFor: 2, goalsAgainst: 1, points: 3 });
+});
+
 test('aplica puntos directos tras igualar puntos, diferencia y goles generales', () => {
   const result = order([1, 2, 3, 4, 5, 6], [game(1, 2, 1, 0), game(1, 3, 0, 1), game(2, 4, 1, 0), game(1, 5, 0, 0), game(2, 6, 0, 0)]);
   assert.deepEqual(result.slice(0, 2).map((row) => row.teamId), [1, 2]);

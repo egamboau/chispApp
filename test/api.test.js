@@ -59,9 +59,11 @@ test('migra horas existentes a jornadas sin perder el partido', async () => {
   assert.deepEqual(teams.body.map(({ name }) => name), ['Legado A', 'Legado B', 'Legado Línea']);
 });
 
-test('sirve administración y pantalla pública con selectores y tabla responsive', async () => {
-  const [admin, display, css] = await Promise.all([fetch(`${base}/admin/`), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);
-  assert.match(await admin.text(), /id="rule-form"/);
+test('sirve las tres páginas administrativas y la pantalla pública', async () => {
+  const [tournamentsAdmin, teamsAdmin, calendarAdmin, display, css] = await Promise.all([fetch(`${base}/admin/`), fetch(`${base}/admin/teams.html`), fetch(`${base}/admin/calendar.html`), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);
+  assert.match(await tournamentsAdmin.text(), /id="rule-form"/);
+  assert.match(await teamsAdmin.text(), /id="membership-form"/);
+  assert.match(await calendarAdmin.text(), /id="match-form"/);
   assert.match(await display.text(), /data-view="standings"/);
   assert.match(await css.text(), /@media \(max-width: 900px\)/);
 });
@@ -186,7 +188,26 @@ test('administra fases, rangos, grupos y sanciones con destinos compartidos', as
   assert.deepEqual(groupA.map((row) => row.destination), ['Segunda fase', 'Copa']);
   assert.equal(groupB[0].requiresTiebreaker, true);
 
+  result = await json('/api/matches', { method: 'POST', body: JSON.stringify({ phaseId, groupId: groupIds[0], date: '2026-09-22', jornada: 'MORNING', court: 1, teamAId: teamIds[0], teamBId: teamIds[2], lineTeamId: teamIds[1] }) });
+  assert.equal(result.response.status, 201);
+  const crossGroupMatchId = result.body.id;
+  await json(`/api/matches/${crossGroupMatchId}/start`, { method: 'POST' });
+  await json(`/api/matches/${crossGroupMatchId}/finish`, { method: 'POST' });
+  result = await json(`/api/phases/${phaseId}/standings`);
+  assert.equal(result.body.groups.find((group) => group.id === groupIds[0]).standings.find((row) => row.teamId === teamIds[0]).played, 1);
+  assert.equal(result.body.groups.find((group) => group.id === groupIds[1]).standings.find((row) => row.teamId === teamIds[2]).played, 1);
+  await json(`/api/matches/${crossGroupMatchId}`, { method: 'DELETE' });
+
   result = await json(`/api/tournaments/${tournamentId}/phases`, { method: 'POST', body: JSON.stringify({ name: 'Final', type: 'ELIMINATION', sortOrder: 2 }) });
   result = await json(`/api/phases/${result.body.id}/standings`);
   assert.equal(result.body.hasStandings, false);
+
+  result = await json(`/api/tournaments/${tournamentId}`, { method: 'PUT', body: JSON.stringify({ name: 'Mixto', active: true, currentPhaseId: phaseId }) });
+  assert.equal(result.body.currentPhaseId, phaseId);
+  result = await json(`/api/phases/${phaseId}`, { method: 'DELETE' });
+  assert.equal(result.response.status, 204);
+  result = await json(`/api/tournaments/${tournamentId}/phases`);
+  assert.deepEqual(result.body.map(({ name }) => name), ['Final']);
+  result = await json('/api/tournaments');
+  assert.equal(result.body.find(({ id }) => id === tournamentId).currentPhaseId, null);
 });
