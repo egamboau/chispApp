@@ -16,6 +16,8 @@ pipeline {
           set -eu
           : "${NFS_SERVER:?Set NFS_SERVER in Jenkins}"
           : "${NFS_EXPORT:?Set NFS_EXPORT in Jenkins}"
+          : "${CF_ACCESS_TEAM_DOMAIN:?Set CF_ACCESS_TEAM_DOMAIN in Jenkins}"
+          : "${CF_ACCESS_AUD:?Set CF_ACCESS_AUD in Jenkins}"
 
           IMAGE="nas-server.local:5000/jupas-app:sha-$(git rev-parse --short=12 HEAD)"
 

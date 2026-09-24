@@ -6,6 +6,13 @@ const path = require('node:path');
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
+const accessTeamDomain = process.env.CF_ACCESS_TEAM_DOMAIN?.replace(/\/$/, '');
+const accessAudience = process.env.CF_ACCESS_AUD;
+if (process.env.NODE_ENV === 'production' && (!accessTeamDomain || !accessAudience)) throw new Error('CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD are required in production.');
+const accessVerifier = accessTeamDomain && accessAudience ? import('jose').then(({ createRemoteJWKSet, jwtVerify }) => {
+  const keys = createRemoteJWKSet(new URL(accessTeamDomain + '/cdn-cgi/access/certs'));
+  return (token) => jwtVerify(token, keys, { issuer: accessTeamDomain, audience: accessAudience });
+}) : null;
 const databasePath = process.env.DATABASE_PATH || path.join(__dirname, 'data', 'tournament.db');
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 const db = new Database(databasePath);
@@ -69,6 +76,30 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '20kb' }));
+async function requireAccess(req, res) {
+  if (!accessVerifier) return true;
+  const token = req.get('Cf-Access-Jwt-Assertion');
+  if (!token) { res.status(403).json({ error: 'Acceso administrativo requerido.' }); return false; }
+  try { await (await accessVerifier)(token); return true; }
+  catch (error) {
+    const unavailable = error instanceof TypeError || ['ERR_JWKS_TIMEOUT', 'ERR_JOSE_GENERIC'].includes(error.code);
+    console.error(JSON.stringify({ timestamp: new Date().toISOString(), level: 'error', event: 'access_validation_failed', error: { name: error.name, message: error.message } }));
+    res.status(unavailable ? 503 : 403).json({ error: unavailable ? 'No se pudo validar el acceso.' : 'Acceso administrativo inválido.' });
+    return false;
+  }
+}
+const publicApiPaths = [/^\/api\/tournaments$/, /^\/api\/tournaments\/\d+\/phases$/, /^\/api\/matches$/, /^\/api\/phases\/\d+\/standings$/, /^\/api\/events$/];
+app.use(async (req, res, next) => {
+  const adminPage = req.path === '/admin' || req.path.startsWith('/admin/');
+  const adminApi = req.path === '/api/admin' || req.path.startsWith('/api/admin/');
+  if (adminPage || adminApi) {
+    if (!await requireAccess(req, res)) return;
+    if (adminApi) { req.isAdmin = true; req.url = req.url.replace(/^\/api\/admin(?=\/|$)/, '/api'); }
+    return next();
+  }
+  if (req.path.startsWith('/api/') && (!['GET', 'HEAD'].includes(req.method) || !publicApiPaths.some((pattern) => pattern.test(req.path)))) return res.status(404).json({ error: 'Ruta no encontrada.' });
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 const clients = new Set();
@@ -82,7 +113,7 @@ const getMatch = db.prepare(`${matchSelect} WHERE m.id=?`);
 const legacyType = (tournament) => tournament.legacyType || (tournament.id % 2 ? 'MALE' : 'FEMALE');
 app.get('/', (_req, res) => res.redirect('/display'));
 
-app.get('/api/tournaments', (req, res) => res.json(db.prepare(`SELECT * FROM tournaments ${req.query.active === 'true' ? 'WHERE active=1' : ''} ORDER BY name`).all()));
+app.get('/api/tournaments', (req, res) => res.json(db.prepare(`SELECT * FROM tournaments ${!req.isAdmin || req.query.active === 'true' ? 'WHERE active=1' : ''} ORDER BY name`).all()));
 app.post('/api/tournaments', (req, res) => {
   const name = clean(req.body.name); if (!name || name.length > 100) return fail(res, 400, 'Nombre de torneo inválido.');
   try { const result = db.prepare('INSERT INTO tournaments(name,active) VALUES(?,?)').run(name, req.body.active === false ? 0 : 1); res.status(201).json(one('tournaments', result.lastInsertRowid)); }
@@ -231,6 +262,7 @@ function calculateGroupStandings(members, matches, rules, sanctions) {
 }
 app.get('/api/phases/:id/standings', (req, res) => { const phase = one('phases', req.params.id); if (!phase) return fail(res, 404, 'Fase no encontrada.'); if (phase.type !== 'TABLE') return res.json({ phase, hasStandings: false, message: 'Esta fase eliminatoria no tiene tabla.', rules: [], groups: [] }); const rules = db.prepare('SELECT * FROM classification_rules WHERE phaseId=? ORDER BY startPosition').all(phase.id), sanctions = new Map(db.prepare('SELECT teamId,reason FROM sanctions WHERE phaseId=?').all(phase.id).map((item) => [item.teamId, item.reason])), matches = db.prepare("SELECT * FROM matches WHERE phaseId=? AND status='FINISHED'").all(phase.id), groups = db.prepare('SELECT * FROM groups_table WHERE phaseId=? ORDER BY name').all(phase.id).map((group) => { const members = db.prepare('SELECT t.* FROM phase_memberships pm JOIN teams t ON t.id=pm.teamId WHERE pm.phaseId=? AND pm.groupId=?').all(phase.id, group.id); return { ...group, standings: calculateGroupStandings(members, matches, rules, sanctions) }; }); res.json({ phase, hasStandings: true, rules, groups }); });
 
+app.head('/api/events', (_req, res) => res.status(200).end());
 app.get('/api/events', (req, res) => { res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' }); res.flushHeaders(); res.write('event: connected\ndata: {}\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); });
 app.use('/api', (_req, res) => fail(res, 404, 'Ruta no encontrada.'));
 app.use((error, req, res, _next) => { console.error(JSON.stringify({ timestamp: new Date().toISOString(), level: 'error', event: 'request_error', requestId: req.requestId, method: req.method, path: req.originalUrl, error: { name: error.name, message: error.message, stack: error.stack } })); res.status(500).json({ error: 'Error interno del servidor.' }); });

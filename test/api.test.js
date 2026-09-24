@@ -2,21 +2,25 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 
-const port = 3217;
+const port = 43127;
+const jwksPort = 43128;
+const audience = 'test-audience';
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tournament-test-'));
 const base = `http://127.0.0.1:${port}`;
-let server;
+const teamDomain = `http://127.0.0.1:${jwksPort}`;
+let server, jwksServer, accessToken, expiredToken, wrongAudienceToken, wrongIssuerToken;
 let serverLogs = '';
 
 async function waitForServer() {
   for (let attempt = 0; attempt < 40; attempt++) {
-    try { if ((await fetch(`${base}/api/matches`)).ok) return; } catch {}
+    try { if ((await fetch(`${base}/api/matches`)).ok) return; } catch (error) { serverLogs += `\nprobe: ${error.cause?.message || error.message}`; }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error('Server did not start');
+  throw new Error(`Server did not start: ${serverLogs}`);
 }
 
 async function waitForLog(text) {
@@ -28,11 +32,33 @@ async function waitForLog(text) {
 }
 
 async function json(url, options = {}) {
-  const response = await fetch(`${base}${url}`, { headers: { 'content-type': 'application/json' }, ...options });
+  const { headers, ...init } = options;
+  const adminUrl = url.replace(/^\/api(?=\/|$)/, '/api/admin');
+  const response = await fetch(`${base}${adminUrl}`, { ...init, headers: { 'content-type': 'application/json', 'cf-access-jwt-assertion': accessToken, ...headers } });
+  return { response, body: response.status === 204 ? null : await response.json() };
+}
+
+async function publicJson(url, options = {}) {
+  const response = await fetch(`${base}${url}`, options);
   return { response, body: response.status === 204 ? null : await response.json() };
 }
 
 test.before(async () => {
+  const { exportJWK, generateKeyPair, SignJWT } = await import('jose');
+  const { publicKey, privateKey } = await generateKeyPair('RS256');
+  const jwk = { ...await exportJWK(publicKey), alg: 'RS256', kid: 'test-key', use: 'sig' };
+  jwksServer = http.createServer((req, res) => {
+    if (req.url !== '/cdn-cgi/access/certs') { res.writeHead(404).end(); return; }
+    res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ keys: [jwk] }));
+  });
+  await new Promise((resolve) => jwksServer.listen(jwksPort, '127.0.0.1', resolve));
+  const sign = (issuer, tokenAudience, expiration) => new SignJWT({ email: 'admin@example.com', type: 'app' })
+    .setProtectedHeader({ alg: 'RS256', kid: jwk.kid }).setIssuer(issuer).setAudience(tokenAudience).setIssuedAt().setExpirationTime(expiration).sign(privateKey);
+  accessToken = await sign(teamDomain, audience, '1h');
+  expiredToken = await sign(teamDomain, audience, Math.floor(Date.now() / 1000) - 60);
+  wrongAudienceToken = await sign(teamDomain, 'wrong-audience', '1h');
+  wrongIssuerToken = await sign(teamDomain + '/wrong', audience, '1h');
+
   const legacyDb = new (require('better-sqlite3'))(path.join(tempDir, 'test.db'));
   legacyDb.exec(`CREATE TABLE matches (
     id INTEGER PRIMARY KEY AUTOINCREMENT, tournamentType TEXT NOT NULL, date TEXT NOT NULL, time TEXT NOT NULL,
@@ -42,12 +68,30 @@ test.before(async () => {
   ); INSERT INTO matches (tournamentType, date, time, teamA, teamB, lineTeam, court)
     VALUES ('MALE', '2026-09-19', '07:00', 'Legado A', 'Legado B', 'Legado Línea', 3)`);
   legacyDb.close();
-  const env = { ...process.env, PORT: String(port), DATABASE_PATH: path.join(tempDir, 'test.db') };
+  const env = { ...process.env, NODE_ENV: 'production', PORT: String(port), DATABASE_PATH: path.join(tempDir, 'test.db'), CF_ACCESS_TEAM_DOMAIN: teamDomain, CF_ACCESS_AUD: audience };
   delete env.NODE_TEST_CONTEXT;
   server = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'] });
   server.stdout.on('data', (chunk) => { serverLogs += chunk; });
   server.stderr.on('data', (chunk) => { serverLogs += chunk; });
   await waitForServer();
+});
+
+test('protege el panel y separa la API pública de la administrativa', async () => {
+  assert.equal((await fetch(`${base}/admin/`)).status, 403);
+  assert.equal((await fetch(`${base}/admin/`, { headers: { 'cf-access-jwt-assertion': accessToken } })).status, 200);
+  assert.equal((await fetch(`${base}/api/admin/teams`)).status, 403);
+  for (const token of [expiredToken, wrongAudienceToken, wrongIssuerToken]) {
+    assert.equal((await fetch(`${base}/api/admin/teams`, { headers: { 'cf-access-jwt-assertion': token } })).status, 403);
+  }
+  assert.equal((await publicJson('/api/teams')).response.status, 404);
+  assert.equal((await publicJson('/api/matches', { method: 'POST' })).response.status, 404);
+  assert.equal((await publicJson('/api/matches')).response.status, 200);
+  assert.equal((await fetch(`${base}/api/events`, { method: 'HEAD' })).status, 200);
+  assert.equal((await json('/api/teams')).response.status, 200);
+  const hidden = await json('/api/tournaments', { method: 'POST', body: JSON.stringify({ name: 'Oculto', active: false }) });
+  assert.equal((await publicJson('/api/tournaments')).body.some(({ id }) => id === hidden.body.id), false);
+  assert.equal((await json('/api/tournaments')).body.some(({ id }) => id === hidden.body.id), true);
+  await json(`/api/tournaments/${hidden.body.id}`, { method: 'DELETE' });
 });
 
 test('migra horas existentes a jornadas sin perder el partido', async () => {
@@ -60,7 +104,8 @@ test('migra horas existentes a jornadas sin perder el partido', async () => {
 });
 
 test('sirve las tres páginas administrativas y la pantalla pública', async () => {
-  const [tournamentsAdmin, teamsAdmin, calendarAdmin, display, css] = await Promise.all([fetch(`${base}/admin/`), fetch(`${base}/admin/teams.html`), fetch(`${base}/admin/calendar.html`), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);
+  const auth = { headers: { 'cf-access-jwt-assertion': accessToken } };
+  const [tournamentsAdmin, teamsAdmin, calendarAdmin, display, css] = await Promise.all([fetch(`${base}/admin/`, auth), fetch(`${base}/admin/teams.html`, auth), fetch(`${base}/admin/calendar.html`, auth), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);
   assert.match(await tournamentsAdmin.text(), /id="rule-form"/);
   assert.match(await teamsAdmin.text(), /id="membership-form"/);
   assert.match(await calendarAdmin.text(), /id="match-form"/);
@@ -88,8 +133,9 @@ test('guarda equipos separados por torneo', async () => {
   assert.equal(result.response.status, 404);
 });
 
-test.after(() => {
+test.after(async () => {
   server.kill('SIGTERM');
+  await new Promise((resolve) => jwksServer.close(resolve));
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 

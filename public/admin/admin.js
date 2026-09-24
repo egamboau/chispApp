@@ -6,7 +6,7 @@ const options = (items, label = 'name') => items.map((item) => `<option value="$
 let tournaments = [], phases = [], groups = [], teams = [], memberships = [], rules = [], sanctions = [], matches = [];
 
 async function request(url, init = {}) {
-  const response = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...init });
+  const response = await fetch(url.replace(/^\/api(?=\/|$)/, '/api/admin'), { headers: { 'Content-Type': 'application/json' }, ...init });
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'No se pudo completar la operación.');
   return response.status === 204 ? null : response.json();
 }

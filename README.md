@@ -53,7 +53,7 @@ Configura un job **Pipeline from SCM** apuntando a `main` y usando `Jenkinsfile`
 
 Configura en Jenkins:
 
-- Variables `NFS_SERVER` y `NFS_EXPORT`.
+- Variables `NFS_SERVER`, `NFS_EXPORT`, `CF_ACCESS_TEAM_DOMAIN` y `CF_ACCESS_AUD`.
 
 El registry debe ser accesible como `nas-server.local:5000` desde Jenkins y todos los nodos. Usa TLS; si requiere autenticación, ejecuta `docker login nas-server.local:5000` con el usuario de Jenkins. Verifica resolución con `getent hosts nas-server.local` en cada nodo.
 
@@ -66,6 +66,8 @@ TOURNAMENT_IMAGE=nas-server.local:5000/jupas-app:sha-COMMIT \
 
 El servicio usa una sola réplica porque SQLite no admite escritores simultáneos desde varios nodos. El volumen `tournament-data` monta el mismo export NFSv4 desde cualquier nodo. Sin `TOURNAMENT_IMAGE`, `stack.yml` y `docker-compose.yml` conservan `tournament-display:latest` para builds locales.
 
+En producción no se publica el puerto 3000. El servicio `cloudflared` debe pertenecer a la red overlay `public-ingress` y dirigir el hostname público a `http://tournament:3000`.
+
 ## Variables de entorno
 
 | Variable | Predeterminado | Uso |
@@ -73,8 +75,16 @@ El servicio usa una sola réplica porque SQLite no admite escritores simultáneo
 | `PORT` | `3000` | Puerto HTTP. |
 | `DATABASE_PATH` | `./data/tournament.db` local, `/data/tournament.db` en Docker | Archivo SQLite persistente. |
 | `NODE_ENV` | — | Usa `development` con `npm run dev`. |
+| `CF_ACCESS_TEAM_DOMAIN` | — | Dominio completo del equipo, por ejemplo `https://equipo.cloudflareaccess.com`. Obligatorio en producción. |
+| `CF_ACCESS_AUD` | — | Application Audience Tag de Cloudflare Access. Obligatorio en producción. |
 
 Las tablas se crean automáticamente al arrancar. No se cargan datos ficticios en producción.
+
+## Cloudflare Access
+
+Crea una aplicación Access para el mismo hostname con los paths `/admin`, `/admin/*`, `/api/admin` y `/api/admin/*`, y habilita **Protect with Access** en el Tunnel. El panel transforma sus llamadas a `/api/admin/*`; la aplicación valida `Cf-Access-Jwt-Assertion` contra el [JWKS de Cloudflare](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/). La API pública solo conserva las lecturas usadas por `/display`.
+
+El despliegue falla si faltan las variables de Access. `docker compose` usa `NODE_ENV=development` y mantiene el puerto 3000 únicamente para desarrollo local.
 
 ## Backup de SQLite
 

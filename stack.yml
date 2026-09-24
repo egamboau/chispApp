@@ -1,14 +1,11 @@
 services:
   tournament:
     image: ${TOURNAMENT_IMAGE:-tournament-display:latest}
-    ports:
-      - target: 3000
-        published: 3000
-        protocol: tcp
-        mode: ingress
     environment:
       PORT: 3000
       DATABASE_PATH: /data/tournament.db
+      CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN}
+      CF_ACCESS_AUD: ${CF_ACCESS_AUD}
     volumes:
       - tournament-data:/data
     networks:
