@@ -54,21 +54,6 @@ function addColumn(table, definition) {
 addColumn('teams', 'tournamentId INTEGER REFERENCES tournaments(id)');
 for (const definition of ['phaseId INTEGER REFERENCES phases(id)', 'groupId INTEGER REFERENCES groups_table(id)', 'teamAId INTEGER REFERENCES teams(id)', 'teamBId INTEGER REFERENCES teams(id)', 'lineTeamId INTEGER REFERENCES teams(id)', 'yellowCardsA INTEGER NOT NULL DEFAULT 0 CHECK(yellowCardsA>=0)', 'redCardsA INTEGER NOT NULL DEFAULT 0 CHECK(redCardsA>=0)', 'yellowCardsB INTEGER NOT NULL DEFAULT 0 CHECK(yellowCardsB>=0)', 'redCardsB INTEGER NOT NULL DEFAULT 0 CHECK(redCardsB>=0)']) addColumn('matches', definition);
 
-db.transaction(() => {
-  for (const [legacyType, name] of [['MALE', 'Masculino'], ['FEMALE', 'Femenino']]) {
-    db.prepare('INSERT OR IGNORE INTO tournaments(name,legacyType) VALUES(?,?)').run(name, legacyType);
-    const tournament = db.prepare('SELECT * FROM tournaments WHERE legacyType=?').get(legacyType);
-    db.prepare("INSERT OR IGNORE INTO phases(tournamentId,name,type,sortOrder) VALUES(?,'Fase 1','TABLE',1)").run(tournament.id);
-    const phase = db.prepare("SELECT * FROM phases WHERE tournamentId=? AND name='Fase 1'").get(tournament.id);
-    db.prepare("INSERT OR IGNORE INTO groups_table(phaseId,name) VALUES(?,'General')").run(phase.id);
-    const group = db.prepare("SELECT * FROM groups_table WHERE phaseId=? AND name='General'").get(phase.id);
-    db.prepare('UPDATE tournaments SET currentPhaseId=COALESCE(currentPhaseId,?) WHERE id=?').run(phase.id, tournament.id);
-    db.prepare('UPDATE teams SET tournamentId=? WHERE tournamentType=? AND tournamentId IS NULL').run(tournament.id, legacyType);
-    db.prepare('INSERT OR IGNORE INTO phase_memberships SELECT ?,?,id FROM teams WHERE tournamentId=?').run(phase.id, group.id, tournament.id);
-    db.prepare(`UPDATE matches SET phaseId=?,groupId=?,teamAId=(SELECT id FROM teams WHERE tournamentType=? AND name=matches.teamA COLLATE NOCASE),teamBId=(SELECT id FROM teams WHERE tournamentType=? AND name=matches.teamB COLLATE NOCASE),lineTeamId=(SELECT id FROM teams WHERE tournamentType=? AND name=matches.lineTeam COLLATE NOCASE) WHERE tournamentType=? AND phaseId IS NULL`).run(phase.id, group.id, legacyType, legacyType, legacyType, legacyType);
-  }
-})();
-
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api')) return next();
   const startedAt = Date.now(); req.requestId = randomUUID(); res.set('X-Request-Id', req.requestId);
@@ -100,7 +85,7 @@ app.use(async (req, res, next) => {
   if (req.path.startsWith('/api/') && (!['GET', 'HEAD'].includes(req.method) || !publicApiPaths.some((pattern) => pattern.test(req.path)))) return res.status(404).json({ error: 'Ruta no encontrada.' });
   next();
 });
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { setHeaders: (res) => res.set('Cache-Control', 'no-store') }));
 
 const clients = new Set();
 const clean = (value) => typeof value === 'string' ? value.trim() : '';

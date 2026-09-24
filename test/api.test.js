@@ -66,7 +66,13 @@ test.before(async () => {
     scoreA INTEGER NOT NULL DEFAULT 0, scoreB INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'SCHEDULED',
     createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   ); INSERT INTO matches (tournamentType, date, time, teamA, teamB, lineTeam, court)
-    VALUES ('MALE', '2026-09-19', '07:00', 'Legado A', 'Legado B', 'Legado Línea', 3)`);
+    VALUES ('MALE', '2026-09-19', '07:00', 'Legado A', 'Legado B', 'Legado Línea', 3);
+  CREATE TABLE tournaments (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL COLLATE NOCASE UNIQUE,active INTEGER NOT NULL DEFAULT 1,currentPhaseId INTEGER,legacyType TEXT UNIQUE);
+  CREATE TABLE phases (id INTEGER PRIMARY KEY AUTOINCREMENT,tournamentId INTEGER NOT NULL,name TEXT NOT NULL,type TEXT NOT NULL DEFAULT 'TABLE',sortOrder INTEGER NOT NULL DEFAULT 1,UNIQUE(tournamentId,name));
+  CREATE TABLE groups_table (id INTEGER PRIMARY KEY AUTOINCREMENT,phaseId INTEGER NOT NULL,name TEXT NOT NULL,UNIQUE(phaseId,name));
+  INSERT INTO tournaments(id,name,currentPhaseId,legacyType) VALUES(1,'Masculino',1,'MALE'),(2,'Femenino',2,'FEMALE');
+  INSERT INTO phases(id,tournamentId,name) VALUES(1,1,'Fase 1'),(2,2,'Fase 1');
+  INSERT INTO groups_table(id,phaseId,name) VALUES(1,1,'General'),(2,2,'General')`);
   legacyDb.close();
   const env = { ...process.env, NODE_ENV: 'production', PORT: String(port), DATABASE_PATH: path.join(tempDir, 'test.db'), CF_ACCESS_TEAM_DOMAIN: teamDomain, CF_ACCESS_AUD: audience };
   delete env.NODE_TEST_CONTEXT;
@@ -106,6 +112,7 @@ test('migra horas existentes a jornadas sin perder el partido', async () => {
 test('sirve las tres páginas administrativas y la pantalla pública', async () => {
   const auth = { headers: { 'cf-access-jwt-assertion': accessToken } };
   const [tournamentsAdmin, teamsAdmin, calendarAdmin, display, css] = await Promise.all([fetch(`${base}/admin/`, auth), fetch(`${base}/admin/teams.html`, auth), fetch(`${base}/admin/calendar.html`, auth), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);
+  assert.equal(display.headers.get('cache-control'), 'no-store');
   assert.match(await tournamentsAdmin.text(), /id="rule-form"/);
   assert.match(await teamsAdmin.text(), /id="membership-form"/);
   assert.match(await calendarAdmin.text(), /id="match-form"/);
