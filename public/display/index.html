@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Torneo</title>
+  <title>ChispApp</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/display/display.css">
 </head>
 <body>
   <header>
-    <h1>TORNEO</h1>
+    <div class="brand"><h1>ChispApp</h1><p>Datos proporcionados por Chisperos</p></div>
     <div class="selectors">
       <label>Torneo<select id="tournament-select" aria-label="Torneo activo"></select></label>
       <label>Fase<select id="phase-select" aria-label="Fase"></select></label>
@@ -35,6 +36,10 @@
     <section id="results" class="view" aria-live="polite"></section>
     <section id="standings" class="view" aria-live="polite"></section>
   </main>
+  <footer>
+    <p>La información mostrada es de carácter informativo. Los datos oficiales son los publicados por la Asociación Deportiva de Jupas.</p>
+    <p>© 2026 Eduardo Gamboa.</p>
+  </footer>
   <div id="connection" role="status"></div>
   <script src="/display/display.js"></script>
 </body>

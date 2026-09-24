@@ -1,6 +1,6 @@
 const labels = { MALE: 'Masculino', FEMALE: 'Femenino' };
 const statusLabels = { SCHEDULED: 'PROGRAMADO', LIVE: 'EN JUEGO', FINISHED: 'FINAL' };
-const jornadaLabels = { MORNING: 'MAÑANA', AFTERNOON: 'TARDE' };
+const jornadaLabels = { MORNING: '<span role="img" aria-label="Mañana" title="Mañana">☀️</span>', AFTERNOON: '<span role="img" aria-label="Tarde" title="Tarde">🌇</span>' };
 let matches = [];
 let filter = 'ALL';
 let tournaments = [];

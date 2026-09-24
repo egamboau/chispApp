@@ -1,6 +1,6 @@
-# Pantalla de torneo
+# ChispApp
 
-Aplicación sencilla con Node.js, Express, SQLite, HTML/CSS/JavaScript y actualizaciones en vivo mediante Server-Sent Events.
+Aplicación para administrar y mostrar los torneos de la Asociación Deportiva de Jupas, con datos proporcionados por Chisperos.
 
 Permite administrar varios torneos activos, fases, grupos, membresías, sanciones y rangos de clasificación. La vista pública calcula las tablas por grupo con partidos finalizados y aplica los desempates del Artículo 19; los destinos mostrados son informativos y no inscriben equipos automáticamente.
 
