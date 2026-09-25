@@ -115,7 +115,7 @@ test('sirve las tres páginas administrativas y la pantalla pública', async () 
   assert.equal(display.headers.get('cache-control'), 'no-store');
   assert.match(await tournamentsAdmin.text(), /id="rule-form"/);
   assert.match(await teamsAdmin.text(), /id="membership-form"/);
-  assert.match(await calendarAdmin.text(), /id="match-form"/);
+  assert.match(await calendarAdmin.text(), /id="match-form"[\s\S]*id="line-visibility"/);
   assert.match(await display.text(), /data-view="standings"/);
   assert.match(await css.text(), /@media \(max-width: 900px\)/);
 });
@@ -176,6 +176,26 @@ test('flujo completo de partidos y validaciones', async () => {
   assert.equal(result.response.status, 404);
 });
 
+test('oculta las líneas hasta que un administrador publique la fecha', async () => {
+  const date = '2026-09-23';
+  let result = await json('/api/matches', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', date, jornada: 'MORNING', teamA: 'A', teamB: 'B', lineTeam: 'Secreto', court: 1 }) });
+  const matchId = result.body.id;
+  result = await publicJson(`/api/matches?date=${date}`);
+  assert.equal(result.body[0].lineVisible, 0);
+  assert.equal(result.body[0].lineTeam, null);
+  assert.equal(result.body[0].lineTeamId, null);
+
+  result = await json(`/api/line-visibility/${date}`, { method: 'PUT', body: JSON.stringify({ visible: true }) });
+  assert.equal(result.response.status, 200);
+  result = await publicJson(`/api/matches?date=${date}`);
+  assert.equal(result.body[0].lineTeam, 'Secreto');
+
+  await json(`/api/line-visibility/${date}`, { method: 'PUT', body: JSON.stringify({ visible: false }) });
+  result = await publicJson(`/api/matches?date=${date}`);
+  assert.equal(result.body[0].lineTeam, null);
+  await json(`/api/matches/${matchId}`, { method: 'DELETE' });
+});
+
 test('rechaza equipos repetidos', async () => {
   const result = await json('/api/matches', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', date: '2026-09-20', jornada: 'MORNING', teamA: 'Tigres', teamB: 'tigres', lineTeam: 'Halcones', court: 1 }) });
   assert.equal(result.response.status, 400);
@@ -221,11 +241,12 @@ test('administra fases, rangos, grupos y sanciones con destinos compartidos', as
     result = await json(`/api/phases/${phaseId}/memberships`, { method: 'POST', body: JSON.stringify({ teamId: teamIds[index], groupId: groupIds[Math.floor(index / 2)] }) });
     assert.equal(result.response.status, 201);
   }
-  result = await json(`/api/phases/${phaseId}/classification-rules`, { method: 'POST', body: JSON.stringify({ startPosition: 1, endPosition: 1, label: 'Segunda fase' }) });
+  result = await json(`/api/phases/${phaseId}/classification-rules`, { method: 'POST', body: JSON.stringify({ positions: [1, 3, 5, 7, 9], label: 'Segunda fase' }) });
   assert.equal(result.response.status, 201);
-  result = await json(`/api/phases/${phaseId}/classification-rules`, { method: 'POST', body: JSON.stringify({ startPosition: 1, endPosition: 2, label: 'Copa' }) });
+  assert.deepEqual(result.body.positions, [1, 3, 5, 7, 9]);
+  result = await json(`/api/phases/${phaseId}/classification-rules`, { method: 'POST', body: JSON.stringify({ positions: [3, 4], label: 'Copa' }) });
   assert.equal(result.response.status, 409);
-  result = await json(`/api/phases/${phaseId}/classification-rules`, { method: 'POST', body: JSON.stringify({ startPosition: 2, endPosition: 2, label: 'Copa' }) });
+  result = await json(`/api/phases/${phaseId}/classification-rules`, { method: 'POST', body: JSON.stringify({ positions: [2, 4, 6, 8, 10], label: 'Copa' }) });
   assert.equal(result.response.status, 201);
 
   result = await json(`/api/phases/${phaseId}/standings`);

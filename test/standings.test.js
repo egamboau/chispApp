@@ -71,3 +71,9 @@ test('deja destinos pendientes al cruzar rangos y aplica sanción solo en esa fr
   assert.equal(result[0].requiresTiebreaker, true);
   assert.equal(result[0].destination, 'Copa');
 });
+
+test('asigna destinos a listas de posiciones no consecutivas', () => {
+  const rules = [{ positions: [1, 3, 5, 7, 9], label: 'Grupo A' }, { positions: [2, 4, 6, 8, 10], label: 'Grupo B' }];
+  const result = order([1, 2, 3, 4], [game(1, 2, 4, 0), game(2, 3, 3, 0), game(3, 4, 2, 0)], rules);
+  assert.deepEqual(result.map((row) => row.destination), ['Grupo A', 'Grupo B', 'Grupo A', 'Grupo B']);
+});

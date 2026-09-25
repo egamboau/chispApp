@@ -43,7 +43,7 @@ function renderTournamentPage() {
   document.querySelector('#tournament-detail').innerHTML = tournament ? `<div class="config-row"><strong>${escapeHtml(tournament.name)}</strong><span>${tournament.active ? 'Activo' : 'Inactivo'}</span><button data-action="edit-tournament">EDITAR</button><button data-action="toggle-tournament">${tournament.active ? 'DESACTIVAR' : 'ACTIVAR'}</button><button class="danger" data-action="delete-tournament">ELIMINAR</button></div>` : '<p class="empty">Crea un torneo para comenzar.</p>';
   document.querySelector('#phase-detail').innerHTML = phase ? `<div class="config-row"><strong>${escapeHtml(phase.name)}</strong><span>${phase.type === 'TABLE' ? 'Tabla' : 'Eliminatoria'}</span>${tournament.currentPhaseId === phase.id ? '<span>Fase actual</span>' : '<button data-action="current-phase">HACER ACTUAL</button>'}<button data-action="edit-phase">EDITAR</button><button class="danger" data-action="delete-phase">ELIMINAR</button></div>` : '<p class="empty">Este torneo no tiene fases.</p>';
   document.querySelector('#groups').innerHTML = groups.map((group) => `<div class="config-row"><span>${escapeHtml(group.name)}</span><button data-action="edit-group" data-id="${group.id}">EDITAR</button><button class="danger" data-action="delete-group" data-id="${group.id}">ELIMINAR</button></div>`).join('') || '<p class="empty">Esta fase no tiene grupos.</p>';
-  document.querySelector('#rules').innerHTML = rules.map((rule) => `<div class="config-row"><span>${rule.startPosition}–${rule.endPosition}: <strong>${escapeHtml(rule.label)}</strong></span><button data-action="edit-rule" data-id="${rule.id}">EDITAR</button><button class="danger" data-action="delete-rule" data-id="${rule.id}">ELIMINAR</button></div>`).join('') || '<p class="empty">Sin rangos configurados.</p>';
+  document.querySelector('#rules').innerHTML = rules.map((rule) => `<div class="config-row"><span>${rule.positions.join(', ')}: <strong>${escapeHtml(rule.label)}</strong></span><button data-action="edit-rule" data-id="${rule.id}">EDITAR</button><button class="danger" data-action="delete-rule" data-id="${rule.id}">ELIMINAR</button></div>`).join('') || '<p class="empty">Sin reglas configuradas.</p>';
   disable(document.querySelector('#phase-form'), !tournament);
   disable(document.querySelector('#group-form'), !phase);
   disable(document.querySelector('#rule-form'), !phase || phase.type !== 'TABLE');
@@ -71,8 +71,8 @@ function initTournamentPage() {
   document.querySelector('#rule-form').addEventListener('submit', async (event) => {
     event.preventDefault(); const phase = selectedPhase();
     try {
-      const body = { startPosition: Number(document.querySelector('#rule-start').value), endPosition: Number(document.querySelector('#rule-end').value), label: document.querySelector('#rule-label').value };
-      await request(`/api/phases/${phase.id}/classification-rules`, { method: 'POST', body: JSON.stringify(body) }); event.target.reset(); await loadTournamentPage(selectedTournament().id, phase.id); message('Rango creado.');
+      const body = { positions: document.querySelector('#rule-positions').value.split(',').map(Number), label: document.querySelector('#rule-label').value };
+      await request(`/api/phases/${phase.id}/classification-rules`, { method: 'POST', body: JSON.stringify(body) }); event.target.reset(); await loadTournamentPage(selectedTournament().id, phase.id); message('Regla creada.');
     } catch (error) { message(error.message, true); }
   });
   document.querySelector('#admin-tournament').addEventListener('change', () => loadTournamentPage(selectedTournament()?.id).catch((error) => message(error.message, true)));
@@ -89,7 +89,7 @@ function initTournamentPage() {
       if (action === 'delete-phase') { if (!confirm('¿Eliminar esta fase?')) return; await request(`/api/phases/${phase.id}`, { method: 'DELETE' }); }
       if (action === 'edit-group') { const group = groups.find(({ id }) => id === Number(button.dataset.id)), name = prompt('Nombre del grupo', group.name); if (!name) return; await request(`/api/groups/${group.id}`, { method: 'PUT', body: JSON.stringify({ name }) }); }
       if (action === 'delete-group') { if (!confirm('¿Eliminar este grupo?')) return; await request(`/api/groups/${button.dataset.id}`, { method: 'DELETE' }); }
-      if (action === 'edit-rule') { const rule = rules.find(({ id }) => id === Number(button.dataset.id)), startPosition = Number(prompt('Posición inicial', rule.startPosition)), endPosition = Number(prompt('Posición final', rule.endPosition)), label = prompt('Destino', rule.label); if (!label) return; await request(`/api/phases/${phase.id}/classification-rules/${rule.id}`, { method: 'PUT', body: JSON.stringify({ startPosition, endPosition, label }) }); }
+      if (action === 'edit-rule') { const rule = rules.find(({ id }) => id === Number(button.dataset.id)), positions = prompt('Posiciones separadas por coma', rule.positions.join(', ')), label = prompt('Destino', rule.label); if (!positions || !label) return; await request(`/api/phases/${phase.id}/classification-rules/${rule.id}`, { method: 'PUT', body: JSON.stringify({ positions: positions.split(',').map(Number), label }) }); }
       if (action === 'delete-rule') await request(`/api/phases/${phase.id}/classification-rules/${button.dataset.id}`, { method: 'DELETE' });
       await loadTournamentPage(action === 'delete-tournament' ? undefined : tournament?.id, action === 'delete-phase' ? undefined : phase?.id); message('Cambio guardado.');
     } catch (error) { message(error.message, true); }
@@ -191,12 +191,15 @@ function renderMatches() {
   const date = document.querySelector('#filter-date').value, court = Number(document.querySelector('#filter-court').value);
   const filtered = matches.filter((match) => (!date || match.date === date) && (!court || match.court === court));
   document.querySelector('#matches').innerHTML = filtered.map(matchCard).join('') || '<p class="empty">No hay partidos en la fase actual.</p>';
+  const dateMatches = matches.filter((match) => match.date === date), visibility = document.querySelector('#line-visibility'), visible = dateMatches.some((match) => match.lineVisible);
+  visibility.disabled = !date || !dateMatches.length; visibility.textContent = !date ? 'SELECCIONA FECHA' : visible ? 'OCULTAR LÍNEAS' : 'PUBLICAR LÍNEAS'; visibility.className = visible ? 'danger' : 'primary';
 }
 function initCalendarPage() {
   document.querySelector('#admin-tournament').addEventListener('change', () => loadCalendarPage(selectedTournament()?.id).catch((error) => message(error.message, true)));
   document.querySelector('#groupId').addEventListener('change', () => renderMatchTeams());
   document.querySelectorAll('.filters input').forEach((input) => input.addEventListener('input', renderMatches));
   document.querySelector('#cancel-edit').addEventListener('click', resetMatchForm);
+  document.querySelector('#line-visibility').addEventListener('click', async () => { const date = document.querySelector('#filter-date').value, visible = matches.some((match) => match.date === date && match.lineVisible); try { await request(`/api/line-visibility/${date}`, { method: 'PUT', body: JSON.stringify({ visible: !visible }) }); await loadCalendarPage(selectedTournament().id); document.querySelector('#filter-date').value = date; renderMatches(); message(`Líneas ${visible ? 'ocultadas' : 'publicadas'}.`); } catch (error) { message(error.message, true); } });
   document.querySelector('#match-form').addEventListener('submit', async (event) => {
     event.preventDefault(); const matchId = document.querySelector('#match-id').value;
     const body = Object.fromEntries(['groupId', 'date', 'jornada', 'court', 'teamAId', 'teamBId', 'lineTeamId'].map((key) => [key, document.querySelector(`#${key}`).value])); body.phaseId = currentPhase.id;

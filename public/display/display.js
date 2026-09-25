@@ -13,7 +13,7 @@ function liveCard(match) {
   return `<article class="live-card ${match.tournamentType.toLowerCase()}">
     <div class="card-top">${badge(match)}<strong>CANCHA ${match.court}</strong></div>
     <div class="score"><span>${escapeHtml(match.teamA)}</span><b>${match.scoreA}</b><i>–</i><b>${match.scoreB}</b><span>${escapeHtml(match.teamB)}</span></div>
-    <p>Línea: <strong>${escapeHtml(match.lineTeam)}</strong></p>
+    <p>Línea: <strong>${match.lineVisible ? escapeHtml(match.lineTeam) : 'Por publicar'}</strong></p>
   </article>`;
 }
 
@@ -22,7 +22,7 @@ function upcomingCard(match) {
     <div class="jornada">${jornadaLabels[match.jornada]}</div>
     <div>${badge(match)} <strong>CANCHA ${match.court}</strong></div>
     <h3>${escapeHtml(match.teamA)} <small>vs</small> ${escapeHtml(match.teamB)}</h3>
-    <p>Línea: <strong>${escapeHtml(match.lineTeam)}</strong></p>
+    <p>Línea: <strong>${match.lineVisible ? escapeHtml(match.lineTeam) : 'Por publicar'}</strong></p>
   </article>`;
 }
 
@@ -46,7 +46,7 @@ function renderResults() {
   }, {});
   document.querySelector('#results').innerHTML = Object.entries(days).reverse().map(([date, dayMatches]) => `
     <section class="day"><h2>${shortDate(date)}</h2>${dayMatches.map((match) => `<article class="calendar-match ${match.tournamentType.toLowerCase()}">
-      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${escapeHtml(match.teamA)} <b>${match.scoreA} – ${match.scoreB}</b> ${escapeHtml(match.teamB)}</h3><p>Línea: ${escapeHtml(match.lineTeam)}</p></div><span class="status finished">FINAL</span>
+      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${escapeHtml(match.teamA)} <b>${match.scoreA} – ${match.scoreB}</b> ${escapeHtml(match.teamB)}</h3><p>Línea: ${match.lineVisible ? escapeHtml(match.lineTeam) : 'Por publicar'}</p></div><span class="status finished">FINAL</span>
     </article>`).join('')}</section>`).join('') || '<div class="empty"><h2>No hay resultados anteriores</h2></div>';
 }
 
@@ -58,14 +58,14 @@ function renderCalendar() {
   }, {});
   document.querySelector('#calendar-list').innerHTML = Object.entries(days).map(([date, dayMatches]) => `
     <section class="day"><h2>${shortDate(date)}</h2>${dayMatches.map((match) => `<article class="calendar-match ${match.tournamentType.toLowerCase()}">
-      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${escapeHtml(match.teamA)} ${match.status === 'SCHEDULED' ? '<small>vs</small>' : `<b>${match.scoreA} – ${match.scoreB}</b>`} ${escapeHtml(match.teamB)}</h3><p>Línea: ${escapeHtml(match.lineTeam)}</p></div><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span>
+      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${escapeHtml(match.teamA)} ${match.status === 'SCHEDULED' ? '<small>vs</small>' : `<b>${match.scoreA} – ${match.scoreB}</b>`} ${escapeHtml(match.teamB)}</h3><p>Línea: ${match.lineVisible ? escapeHtml(match.lineTeam) : 'Por publicar'}</p></div><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span>
     </article>`).join('')}</section>`).join('') || '<div class="empty"><h2>No hay partidos</h2></div>';
 }
 
 function renderStandings(data) {
   const target = document.querySelector('#standings');
   if (!data.hasStandings) { target.innerHTML = `<div class="empty"><h2>${escapeHtml(data.message)}</h2></div>`; return; }
-  const legend = data.rules.map((rule) => `<span>${rule.startPosition === rule.endPosition ? `${rule.startPosition}.º` : `${rule.startPosition}.º–${rule.endPosition}.º`}: ${escapeHtml(rule.label)}</span>`).join('');
+  const legend = data.rules.map((rule) => `<span>${rule.positions.map((position) => `${position}.º`).join(', ')}: ${escapeHtml(rule.label)}</span>`).join('');
   target.innerHTML = `<div class="standings-legend">${legend || 'Sin destinos configurados'}</div>${data.groups.map((group) => `<section class="standings-group"><h2>${escapeHtml(group.name)}</h2><div class="table-scroll"><table><thead><tr><th>Pos.</th><th>Equipo</th><th>PJ</th><th>G</th><th>E</th><th>P</th><th>GF</th><th>GC</th><th>DG</th><th>Pts.</th><th>🟥</th><th>🟨</th><th>Destino</th></tr></thead><tbody>${group.standings.map((row, index) => {
     const boundary = index && row.destination !== group.standings[index - 1].destination ? ' class="range-start"' : '';
     const destination = row.destination || (row.possibleDestinations.length ? `Pendiente: ${row.possibleDestinations.map(escapeHtml).join(' / ')}` : '—');

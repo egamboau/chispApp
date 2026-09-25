@@ -76,7 +76,7 @@ footer { padding: 1rem; color: var(--muted); text-align: center; font-size: .8re
   header { align-items: flex-start; flex-direction: column; }
   .list-heading { display: block; }
   .filters { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 1rem; }
-  .filters label:last-child { grid-column: 1 / -1; }
+  .filters button { grid-column: 1 / -1; }
 }
 @media (max-width: 520px) {
   header { align-items: stretch; flex-direction: column; }
