@@ -2,7 +2,7 @@ pipeline {
   agent none
 
   environment {
-    GITHUB_REPO = 'egamboau/jpuas-app'
+    GITHUB_REPO = 'egamboau/chispApp'
   }
 
   options {
