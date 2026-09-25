@@ -17,24 +17,11 @@ function liveCard(match) {
   </article>`;
 }
 
-function upcomingCard(match) {
-  return `<article class="upcoming-card ${match.tournamentType.toLowerCase()}">
-    <div class="jornada">${jornadaLabels[match.jornada]}</div>
-    <div>${badge(match)} <strong>CANCHA ${match.court}</strong></div>
-    <h3>${escapeHtml(match.teamA)} <small>vs</small> ${escapeHtml(match.teamB)}</h3>
-    <p>Línea: <strong>${match.lineVisible ? escapeHtml(match.lineTeam) : 'Por publicar'}</strong></p>
-  </article>`;
-}
-
 function render() {
   const live = matches.filter((match) => match.status === 'LIVE');
-  const upcoming = matches.filter((match) => match.status === 'SCHEDULED').slice(0, 6);
   document.querySelector('#live').innerHTML = live.length
     ? `<div class="live-grid">${live.map(liveCard).join('')}</div>`
-    : `<div class="empty"><h2>No hay partidos en juego</h2><p>Próximos partidos</p></div><div class="upcoming-grid compact">${upcoming.slice(0, 3).map(upcomingCard).join('')}</div>`;
-  document.querySelector('#upcoming').innerHTML = upcoming.length
-    ? `<div class="upcoming-grid">${upcoming.map(upcomingCard).join('')}</div>`
-    : '<div class="empty"><h2>No hay próximos partidos</h2></div>';
+    : '<div class="empty"><h2>No hay partidos en juego</h2></div>';
   renderCalendar();
   renderResults();
 }

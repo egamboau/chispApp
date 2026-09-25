@@ -13,8 +13,8 @@ button.active { background: var(--accent); border-color: var(--accent); color: #
 main { min-height: 0; padding: 2.5vh 3vw; }
 .view { display: none; height: 100%; }
 .view.active { display: block; }
-.live-grid, .upcoming-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr)); gap: 2vw; height: 100%; align-content: center; }
-.live-card, .upcoming-card, .calendar-match { background: linear-gradient(145deg, #172c45, #0d1c30); border: 3px solid transparent; border-radius: 20px; box-shadow: 0 16px 45px #0005; }
+.live-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr)); gap: 2vw; height: 100%; align-content: center; }
+.live-card, .calendar-match { background: linear-gradient(145deg, #172c45, #0d1c30); border: 3px solid transparent; border-radius: 20px; box-shadow: 0 16px 45px #0005; }
 .male { border-left-color: var(--male); }
 .female { border-left-color: var(--female); }
 .live-card { padding: 3vh 2.5vw; max-height: 66vh; }
@@ -25,12 +25,7 @@ main { min-height: 0; padding: 2.5vh 3vw; }
 .score { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); gap: 1.5vw; align-items: center; margin: 4vh 0; text-align: center; font-size: clamp(1.8rem, 3vw, 3.8rem); font-weight: 800; }
 .score b { font-size: clamp(4rem, 8vw, 9rem); color: var(--accent); line-height: .8; }
 .score i { font-style: normal; font-size: 4vw; }
-.live-card p, .upcoming-card p { margin: 0; color: var(--muted); text-align: center; font-size: clamp(1.15rem, 1.6vw, 1.8rem); }
-.upcoming-grid { align-content: start; overflow-y: auto; grid-template-columns: repeat(3, 1fr); }
-.upcoming-grid.compact { height: auto; margin-top: 2vh; }
-.upcoming-card { min-height: 28vh; padding: 2vh 1.8vw; border-left-width: 8px; }
-.upcoming-card .jornada { color: var(--accent); font-size: clamp(2.5rem, 4vw, 4.5rem); font-weight: 900; }
-.upcoming-card h3 { margin: 2.5vh 0; text-align: center; font-size: clamp(1.5rem, 2.3vw, 2.6rem); }
+.live-card p { margin: 0; color: var(--muted); text-align: center; font-size: clamp(1.15rem, 1.6vw, 1.8rem); }
 small { color: var(--muted); font-size: .65em; font-weight: 600; }
 .empty { padding: 4vh; text-align: center; color: var(--muted); }
 .empty h2 { font-size: clamp(2rem, 4vw, 4rem); }
@@ -74,7 +69,6 @@ footer p { margin: 0; }
   nav button { flex: 1; padding: .5rem .2rem; min-width: 18%; min-height: 50px; font-size: clamp(.6rem, 2.2vw, .95rem); }
   main { height: auto; min-height: calc(100dvh - 180px); padding: 1rem; }
   footer { flex-direction: column; gap: .35rem; }
-  .upcoming-grid { grid-template-columns: 1fr; }
   .score { grid-template-columns: 1fr auto auto auto 1fr; }
   .calendar-match { grid-template-columns: 80px 1fr; }
   .calendar-match .status { grid-column: 1 / -1; justify-self: start; }
