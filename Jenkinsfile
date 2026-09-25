@@ -1,5 +1,5 @@
 pipeline {
-  agent { label 'swarm-manager' }
+  agent none
 
   environment {
     GITHUB_REPO = 'egamboau/jpuas-app'
@@ -14,41 +14,47 @@ pipeline {
   }
 
   stages {
-    stage('Build') {
-      steps {
-        script {
-          env.COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
-          env.IMAGE = "nas-server.local:5000/jupas-app:sha-${env.COMMIT_SHA.take(12)}"
-          sendGitHubStatus('pending', 'Building Docker image...', 'Jenkins / Build')
+    stage('Build and Push') {
+      agent { label 'node-24' }
+      stages {
+        stage('Build') {
+          steps {
+            script {
+              env.COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+              env.IMAGE = "nas-server.local:5000/jupas-app:sha-${env.COMMIT_SHA.take(12)}"
+              sendGitHubStatus('pending', 'Building Docker image...', 'Jenkins / Build')
+            }
+            sh 'docker build --pull -t "$IMAGE" .'
+          }
+          post {
+            success {
+              script { sendGitHubStatus('success', 'Docker image built', 'Jenkins / Build') }
+            }
+            failure {
+              script { sendGitHubStatus('failure', 'Docker build failed', 'Jenkins / Build') }
+            }
+          }
         }
-        sh 'docker build --pull -t "$IMAGE" .'
-      }
-      post {
-        success {
-          script { sendGitHubStatus('success', 'Docker image built', 'Jenkins / Build') }
-        }
-        failure {
-          script { sendGitHubStatus('failure', 'Docker build failed', 'Jenkins / Build') }
-        }
-      }
-    }
 
-    stage('Push') {
-      steps {
-        script { sendGitHubStatus('pending', 'Pushing Docker image...', 'Jenkins / Push') }
-        sh 'docker push "$IMAGE"'
-      }
-      post {
-        success {
-          script { sendGitHubStatus('success', 'Docker image pushed', 'Jenkins / Push') }
-        }
-        failure {
-          script { sendGitHubStatus('failure', 'Docker push failed', 'Jenkins / Push') }
+        stage('Push') {
+          steps {
+            script { sendGitHubStatus('pending', 'Pushing Docker image...', 'Jenkins / Push') }
+            sh 'docker push "$IMAGE"'
+          }
+          post {
+            success {
+              script { sendGitHubStatus('success', 'Docker image pushed', 'Jenkins / Push') }
+            }
+            failure {
+              script { sendGitHubStatus('failure', 'Docker push failed', 'Jenkins / Push') }
+            }
+          }
         }
       }
     }
 
     stage('Deploy') {
+      agent { label 'swarm-manager' }
       steps {
         script { sendGitHubStatus('pending', 'Deploying stack...', 'Jenkins / Deploy') }
         sh '''
