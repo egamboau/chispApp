@@ -13,7 +13,7 @@
     <section class="panel form-panel">
       <h2>Agregar partido</h2>
       <label>Torneo<select id="admin-tournament"></select></label>
-      <p>Fase actual: <strong id="current-phase">Sin fase actual</strong></p>
+      <label>Fase<select id="admin-phase"></select></label>
       <form id="match-form">
         <input type="hidden" id="match-id">
         <label>Grupo del equipo A<select id="groupId" required></select></label>
@@ -30,7 +30,7 @@
 
     <section class="matches-section">
       <div class="list-heading">
-        <h2>Partidos de la fase actual</h2>
+        <h2>Partidos de la fase seleccionada</h2>
         <div class="filters">
           <label>Fecha<input id="filter-date" type="date"></label>
           <label>Cancha<input id="filter-court" type="number" min="1" inputmode="numeric" placeholder="Todas"></label>

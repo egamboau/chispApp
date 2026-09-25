@@ -107,15 +107,17 @@ test('migra horas existentes a jornadas sin perder el partido', async () => {
   assert.equal('time' in result.body[0], false);
   const teams = await json('/api/teams?tournamentType=MALE');
   assert.deepEqual(teams.body.map(({ name }) => name), ['Legado A', 'Legado B', 'Legado Línea']);
+  const phases = await json('/api/tournaments/1/phases');
+  assert.equal(phases.body[0].tournamentType, 'MALE');
 });
 
 test('sirve las tres páginas administrativas y la pantalla pública', async () => {
   const auth = { headers: { 'cf-access-jwt-assertion': accessToken } };
   const [tournamentsAdmin, teamsAdmin, calendarAdmin, display, css] = await Promise.all([fetch(`${base}/admin/`, auth), fetch(`${base}/admin/teams.html`, auth), fetch(`${base}/admin/calendar.html`, auth), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);
   assert.equal(display.headers.get('cache-control'), 'no-store');
-  assert.match(await tournamentsAdmin.text(), /id="rule-form"/);
+  assert.match(await tournamentsAdmin.text(), /id="phase-tournament-type"[\s\S]*id="rule-form"/);
   assert.match(await teamsAdmin.text(), /id="membership-form"/);
-  assert.match(await calendarAdmin.text(), /id="match-form"[\s\S]*id="line-visibility"/);
+  assert.match(await calendarAdmin.text(), /id="admin-phase"[\s\S]*id="match-form"[\s\S]*id="line-visibility"/);
   assert.match(await display.text(), /data-view="standings"/);
   assert.match(await css.text(), /@media \(max-width: 900px\)/);
 });
@@ -225,8 +227,9 @@ test('notifica cambios por SSE', async () => {
 test('administra fases, rangos, grupos y sanciones con destinos compartidos', async () => {
   let result = await json('/api/tournaments', { method: 'POST', body: JSON.stringify({ name: 'Mixto' }) });
   const tournamentId = result.body.id;
-  result = await json(`/api/tournaments/${tournamentId}/phases`, { method: 'POST', body: JSON.stringify({ name: 'Liga', type: 'TABLE', sortOrder: 1 }) });
+  result = await json(`/api/tournaments/${tournamentId}/phases`, { method: 'POST', body: JSON.stringify({ name: 'Liga', type: 'TABLE', tournamentType: 'FEMALE', sortOrder: 1 }) });
   const phaseId = result.body.id;
+  assert.equal(result.body.tournamentType, 'FEMALE');
   const groupIds = [];
   for (const name of ['A', 'B']) {
     result = await json(`/api/phases/${phaseId}/groups`, { method: 'POST', body: JSON.stringify({ name }) });
@@ -264,7 +267,12 @@ test('administra fases, rangos, grupos y sanciones con destinos compartidos', as
 
   result = await json('/api/matches', { method: 'POST', body: JSON.stringify({ phaseId, groupId: groupIds[0], date: '2026-09-22', jornada: 'MORNING', court: 1, teamAId: teamIds[0], teamBId: teamIds[2], lineTeamId: teamIds[1] }) });
   assert.equal(result.response.status, 201);
+  assert.equal(result.body.tournamentType, 'FEMALE');
   const crossGroupMatchId = result.body.id;
+  result = await json(`/api/phases/${phaseId}`, { method: 'PUT', body: JSON.stringify({ name: 'Liga', type: 'TABLE', tournamentType: 'MALE', sortOrder: 1 }) });
+  assert.equal(result.body.tournamentType, 'MALE');
+  result = await json(`/api/matches/${crossGroupMatchId}`);
+  assert.equal(result.body.tournamentType, 'MALE');
   await json(`/api/matches/${crossGroupMatchId}/start`, { method: 'POST' });
   await json(`/api/matches/${crossGroupMatchId}/finish`, { method: 'POST' });
   result = await json(`/api/phases/${phaseId}/standings`);
@@ -272,7 +280,7 @@ test('administra fases, rangos, grupos y sanciones con destinos compartidos', as
   assert.equal(result.body.groups.find((group) => group.id === groupIds[1]).standings.find((row) => row.teamId === teamIds[2]).played, 1);
   await json(`/api/matches/${crossGroupMatchId}`, { method: 'DELETE' });
 
-  result = await json(`/api/tournaments/${tournamentId}/phases`, { method: 'POST', body: JSON.stringify({ name: 'Final', type: 'ELIMINATION', sortOrder: 2 }) });
+  result = await json(`/api/tournaments/${tournamentId}/phases`, { method: 'POST', body: JSON.stringify({ name: 'Final', type: 'ELIMINATION', tournamentType: 'MALE', sortOrder: 2 }) });
   result = await json(`/api/phases/${result.body.id}/standings`);
   assert.equal(result.body.hasStandings, false);
 

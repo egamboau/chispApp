@@ -42,7 +42,7 @@ db.exec(`
 CREATE TABLE IF NOT EXISTS teams (id INTEGER PRIMARY KEY AUTOINCREMENT,tournamentType TEXT NOT NULL CHECK(tournamentType IN ('MALE','FEMALE')),name TEXT NOT NULL COLLATE NOCASE CHECK(length(name) BETWEEN 1 AND 100),UNIQUE(tournamentType,name));
 INSERT OR IGNORE INTO teams(tournamentType,name) SELECT tournamentType,teamA FROM matches UNION SELECT tournamentType,teamB FROM matches UNION SELECT tournamentType,lineTeam FROM matches;
 CREATE TABLE IF NOT EXISTS tournaments (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL COLLATE NOCASE UNIQUE CHECK(length(name) BETWEEN 1 AND 100),active INTEGER NOT NULL DEFAULT 1 CHECK(active IN(0,1)),currentPhaseId INTEGER,legacyType TEXT UNIQUE CHECK(legacyType IN('MALE','FEMALE')));
-CREATE TABLE IF NOT EXISTS phases (id INTEGER PRIMARY KEY AUTOINCREMENT,tournamentId INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE RESTRICT,name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),type TEXT NOT NULL DEFAULT 'TABLE' CHECK(type IN('TABLE','ELIMINATION')),sortOrder INTEGER NOT NULL DEFAULT 1 CHECK(sortOrder>0),UNIQUE(tournamentId,name));
+CREATE TABLE IF NOT EXISTS phases (id INTEGER PRIMARY KEY AUTOINCREMENT,tournamentId INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE RESTRICT,name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),type TEXT NOT NULL DEFAULT 'TABLE' CHECK(type IN('TABLE','ELIMINATION')),tournamentType TEXT CHECK(tournamentType IN('MALE','FEMALE')),sortOrder INTEGER NOT NULL DEFAULT 1 CHECK(sortOrder>0),UNIQUE(tournamentId,name));
 CREATE TABLE IF NOT EXISTS groups_table (id INTEGER PRIMARY KEY AUTOINCREMENT,phaseId INTEGER NOT NULL REFERENCES phases(id) ON DELETE RESTRICT,name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),UNIQUE(phaseId,name));
 CREATE TABLE IF NOT EXISTS phase_memberships (phaseId INTEGER NOT NULL REFERENCES phases(id) ON DELETE RESTRICT,groupId INTEGER NOT NULL REFERENCES groups_table(id) ON DELETE RESTRICT,teamId INTEGER NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,PRIMARY KEY(phaseId,teamId));
 CREATE TABLE IF NOT EXISTS sanctions (phaseId INTEGER NOT NULL REFERENCES phases(id) ON DELETE RESTRICT,teamId INTEGER NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,reason TEXT NOT NULL CHECK(length(trim(reason))>0),PRIMARY KEY(phaseId,teamId));
@@ -54,7 +54,17 @@ function addColumn(table, definition) {
 }
 addColumn('teams', 'tournamentId INTEGER REFERENCES tournaments(id)');
 addColumn('classification_rules', 'positions TEXT');
+addColumn('phases', "tournamentType TEXT CHECK(tournamentType IN('MALE','FEMALE'))");
 for (const definition of ['phaseId INTEGER REFERENCES phases(id)', 'groupId INTEGER REFERENCES groups_table(id)', 'teamAId INTEGER REFERENCES teams(id)', 'teamBId INTEGER REFERENCES teams(id)', 'lineTeamId INTEGER REFERENCES teams(id)', 'yellowCardsA INTEGER NOT NULL DEFAULT 0 CHECK(yellowCardsA>=0)', 'redCardsA INTEGER NOT NULL DEFAULT 0 CHECK(redCardsA>=0)', 'yellowCardsB INTEGER NOT NULL DEFAULT 0 CHECK(yellowCardsB>=0)', 'redCardsB INTEGER NOT NULL DEFAULT 0 CHECK(redCardsB>=0)']) addColumn('matches', definition);
+const legacyType = (tournament) => tournament.legacyType || (tournament.id % 2 ? 'MALE' : 'FEMALE');
+db.transaction(() => {
+  for (const phase of db.prepare('SELECT * FROM phases WHERE tournamentType IS NULL').all()) {
+    const match = db.prepare('SELECT tournamentType FROM matches WHERE phaseId=? GROUP BY tournamentType ORDER BY COUNT(*) DESC LIMIT 1').get(phase.id);
+    const tournament = db.prepare('SELECT * FROM tournaments WHERE id=?').get(phase.tournamentId);
+    db.prepare('UPDATE phases SET tournamentType=? WHERE id=?').run(match?.tournamentType || legacyType(tournament), phase.id);
+  }
+  db.exec('UPDATE matches SET tournamentType=(SELECT tournamentType FROM phases WHERE phases.id=matches.phaseId) WHERE phaseId IS NOT NULL AND tournamentType<>(SELECT tournamentType FROM phases WHERE phases.id=matches.phaseId)');
+})();
 
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api')) return next();
@@ -98,7 +108,6 @@ const one = (table, value) => db.prepare(`SELECT * FROM ${table} WHERE id=?`).ge
 function notify(type, value) { const data = `event: matches\ndata: ${JSON.stringify({ type, id: value })}\n\n`; for (const client of clients) client.write(data); }
 const matchSelect = `SELECT m.*,t.name tournamentName,p.name phaseName,g.name groupName,EXISTS(SELECT 1 FROM published_line_dates d WHERE d.date=m.date) lineVisible FROM matches m LEFT JOIN phases p ON p.id=m.phaseId LEFT JOIN tournaments t ON t.id=p.tournamentId LEFT JOIN groups_table g ON g.id=m.groupId`;
 const getMatch = db.prepare(`${matchSelect} WHERE m.id=?`);
-const legacyType = (tournament) => tournament.legacyType || (tournament.id % 2 ? 'MALE' : 'FEMALE');
 app.get('/', (_req, res) => res.redirect('/display'));
 
 app.get('/api/tournaments', (req, res) => res.json(db.prepare(`SELECT * FROM tournaments ${!req.isAdmin || req.query.active === 'true' ? 'WHERE active=1' : ''} ORDER BY name`).all()));
@@ -119,16 +128,16 @@ app.delete('/api/tournaments/:id', guardedDelete('tournaments', 'Torneo'));
 
 app.get('/api/tournaments/:id/phases', (req, res) => res.json(db.prepare('SELECT * FROM phases WHERE tournamentId=? ORDER BY sortOrder,id').all(req.params.id)));
 app.post('/api/tournaments/:id/phases', (req, res) => {
-  const phase = { tournamentId: Number(req.params.id), name: clean(req.body.name), type: req.body.type || 'TABLE', sortOrder: Number(req.body.sortOrder || 1) };
-  if (!one('tournaments', phase.tournamentId)) return fail(res, 404, 'Torneo no encontrado.');
-  if (!phase.name || !['TABLE', 'ELIMINATION'].includes(phase.type) || !Number.isInteger(phase.sortOrder) || phase.sortOrder < 1) return fail(res, 400, 'Datos de fase inválidos.');
-  const result = db.prepare('INSERT INTO phases(tournamentId,name,type,sortOrder) VALUES(@tournamentId,@name,@type,@sortOrder)').run(phase); res.status(201).json(one('phases', result.lastInsertRowid));
+  const tournament = one('tournaments', req.params.id), phase = { tournamentId: Number(req.params.id), name: clean(req.body.name), type: req.body.type || 'TABLE', tournamentType: req.body.tournamentType || (tournament && legacyType(tournament)), sortOrder: Number(req.body.sortOrder || 1) };
+  if (!tournament) return fail(res, 404, 'Torneo no encontrado.');
+  if (!phase.name || !['TABLE', 'ELIMINATION'].includes(phase.type) || !['MALE', 'FEMALE'].includes(phase.tournamentType) || !Number.isInteger(phase.sortOrder) || phase.sortOrder < 1) return fail(res, 400, 'Datos de fase inválidos.');
+  const result = db.prepare('INSERT INTO phases(tournamentId,name,type,tournamentType,sortOrder) VALUES(@tournamentId,@name,@type,@tournamentType,@sortOrder)').run(phase); res.status(201).json(one('phases', result.lastInsertRowid));
 });
 app.put('/api/phases/:id', (req, res) => {
-  const phase = one('phases', req.params.id), name = clean(req.body.name), sortOrder = Number(req.body.sortOrder);
+  const phase = one('phases', req.params.id), name = clean(req.body.name), tournamentType = req.body.tournamentType || phase?.tournamentType, sortOrder = Number(req.body.sortOrder);
   if (!phase) return fail(res, 404, 'Fase no encontrada.');
-  if (!name || !['TABLE', 'ELIMINATION'].includes(req.body.type) || !Number.isInteger(sortOrder) || sortOrder < 1) return fail(res, 400, 'Datos de fase inválidos.');
-  db.prepare('UPDATE phases SET name=?,type=?,sortOrder=? WHERE id=?').run(name, req.body.type, sortOrder, phase.id); notify('phase', phase.id); res.json(one('phases', phase.id));
+  if (!name || !['TABLE', 'ELIMINATION'].includes(req.body.type) || !['MALE', 'FEMALE'].includes(tournamentType) || !Number.isInteger(sortOrder) || sortOrder < 1) return fail(res, 400, 'Datos de fase inválidos.');
+  db.transaction(() => { db.prepare('UPDATE phases SET name=?,type=?,tournamentType=?,sortOrder=? WHERE id=?').run(name, req.body.type, tournamentType, sortOrder, phase.id); db.prepare('UPDATE matches SET tournamentType=? WHERE phaseId=?').run(tournamentType, phase.id); })(); notify('phase', phase.id); res.json(one('phases', phase.id));
 });
 app.delete('/api/phases/:id', (req, res) => {
   const phase = one('phases', req.params.id);
@@ -222,7 +231,7 @@ function matchInput(body) {
     return team;
   };
   const a = findTeam(body.teamAId, body.teamA), b = findTeam(body.teamBId, body.teamB), line = findTeam(body.lineTeamId, body.lineTeam);
-  const match = { phaseId: phase?.id, groupId: group?.id, teamAId: a?.id, teamBId: b?.id, lineTeamId: line?.id, tournamentType: tournament && legacyType(tournament), teamA: a?.name, teamB: b?.name, lineTeam: line?.name, date: clean(body.date), jornada: body.jornada, court: Number(body.court) }, errors = [];
+  const match = { phaseId: phase?.id, groupId: group?.id, teamAId: a?.id, teamBId: b?.id, lineTeamId: line?.id, tournamentType: phase?.tournamentType, teamA: a?.name, teamB: b?.name, lineTeam: line?.name, date: clean(body.date), jornada: body.jornada, court: Number(body.court) }, errors = [];
   if (!phase || !group || group.phaseId !== phase.id) errors.push('Fase o grupo inválido.'); if (!validDate(match.date)) errors.push('Fecha inválida.'); if (!['MORNING', 'AFTERNOON'].includes(match.jornada)) errors.push('Jornada inválida.'); if (!Number.isInteger(match.court) || match.court < 1) errors.push('Cancha inválida.');
   if (!a || !b || !line || new Set([a?.id, b?.id, line?.id]).size !== 3) errors.push('Los tres equipos deben existir y ser diferentes.');
   if (phase && group && a && !db.prepare('SELECT 1 FROM phase_memberships WHERE phaseId=? AND groupId=? AND teamId=?').get(phase.id, group.id, a.id)) errors.push('El equipo A debe pertenecer al grupo seleccionado.');
