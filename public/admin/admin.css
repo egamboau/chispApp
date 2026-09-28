@@ -62,6 +62,8 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .score-controls span { display: grid; grid-template-columns: 58px 1fr 58px; align-items: center; gap: .5rem; }
 .score-controls button { min-height: 58px; background: #e5edf5; font-size: 2rem; }
 .score-controls b { font-size: 2.5rem; }
+.final-score label { display: grid; gap: .6rem; text-align: center; }
+.final-score input { text-align: center; font-size: 2rem; }
 .actions { display: flex; flex-wrap: wrap; gap: .7rem; }
 .cards { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; margin: .8rem 0; padding: .7rem; border-radius: 8px; background: #eef3f8; }
 .cards label { display: flex; align-items: center; gap: .35rem; font-size: .8rem; }
