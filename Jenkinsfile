@@ -7,6 +7,7 @@ pipeline {
 
   options {
     disableConcurrentBuilds()
+    withFolderProperties()
   }
 
   triggers {
