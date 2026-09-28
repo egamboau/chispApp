@@ -57,7 +57,11 @@ pipeline {
 
     stage('Deploy') {
       when { branch 'main' }
+<<<<<<< HEAD
+      agent { label 'base' }
+=======
       agent { label 'swarm-manager' }
+>>>>>>> main
       steps {
         script { sendGitHubStatus('pending', 'Deploying stack...', 'Jenkins / Deploy') }
         sh '''
