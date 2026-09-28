@@ -37,6 +37,7 @@ pipeline {
         }
 
         stage('Push') {
+          when { branch 'main' }
           steps {
             script { sendGitHubStatus('pending', 'Pushing Docker image...', 'Jenkins / Push') }
             sh 'docker push "$IMAGE"'
@@ -54,6 +55,7 @@ pipeline {
     }
 
     stage('Deploy') {
+      when { branch 'main' }
       agent { label 'swarm-manager' }
       steps {
         script { sendGitHubStatus('pending', 'Deploying stack...', 'Jenkins / Deploy') }
