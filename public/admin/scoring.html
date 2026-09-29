@@ -14,6 +14,12 @@
       <h2>Informe de goleo</h2>
       <label>Torneo<select id="admin-tournament"></select></label>
       <label>Fase<select id="admin-phase"></select></label>
+      <h3>Tablas de goleo</h3>
+      <form id="scoring-table-form" class="compact-form">
+        <label>Tabla<select id="scoring-table-manage"></select></label>
+        <label>Nombre<input id="scoring-table-name" maxlength="100" required></label>
+        <div class="form-actions"><button type="submit">RENOMBRAR</button><button id="create-scoring-table" type="button">CREAR NUEVA</button></div>
+      </form>
       <label>Partido finalizado<select id="scoring-match"></select></label>
       <div id="scoring-match-detail" aria-live="polite"></div>
       <p id="message" role="alert"></p>
@@ -25,7 +31,9 @@
         <input type="hidden" id="scoring-player-id">
         <label>Equipo<select id="scoring-team" required></select></label>
         <label>Jugador<select id="scoring-player" required></select></label>
-        <label>Goles normales<input id="directGoals" type="number" min="0" step="1" value="0" required></label>
+        <label>Tabla de goleo<input id="scoringTable" list="scoring-table-options" maxlength="100" value="Torneo Regular" required></label>
+        <datalist id="scoring-table-options"></datalist>
+        <label>Goles directos<input id="directGoals" type="number" min="0" step="1" value="0" required></label>
         <label>Pepitas<input id="pepitas" type="number" min="0" step="1" value="0" required></label>
         <label>Horquetas<input id="horquetas" type="number" min="0" step="1" value="0" required></label>
         <p class="scoring-total">Total: <strong id="scoring-total">0</strong></p>

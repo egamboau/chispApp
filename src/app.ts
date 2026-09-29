@@ -137,7 +137,7 @@ class App {
             next();
         });
         this.app.use(express.json({ limit: '20kb' }));
-        const publicApiPaths = [/^\/api\/tournaments$/, /^\/api\/tournaments\/\d+\/phases$/, /^\/api\/matches$/, /^\/api\/phases\/\d+\/standings$/, /^\/api\/events$/]
+        const publicApiPaths = [/^\/api\/tournaments$/, /^\/api\/tournaments\/\d+\/phases$/, /^\/api\/matches$/, /^\/api\/phases\/\d+\/(standings|scoring)$/, /^\/api\/events$/]
         this.app.use(async (req, res, next) => {
             const adminPage = req.path === '/admin' || req.path.startsWith('/admin/')
             const adminApi = req.path === '/api/admin' || req.path.startsWith('/api/admin/')

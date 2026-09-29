@@ -17,9 +17,10 @@ const scoringFields = {
     horquetas: z.coerce.number().int().nonnegative(),
     pepitas: z.coerce.number().int().nonnegative(),
 };
+const scoringTableSchema = z.string().trim().min(1).max(100);
 const hasScoring = (value: { directGoals: number; horquetas: number; pepitas: number }) => value.directGoals + value.horquetas + value.pepitas > 0;
-const scoringSchema = z.object(scoringFields).refine(hasScoring);
-const newScoringSchema = z.object({ playerId: idSchema, ...scoringFields }).refine(hasScoring);
+const scoringSchema = z.object({ ...scoringFields, scoringTable: scoringTableSchema.optional() }).refine(hasScoring);
+const newScoringSchema = z.object({ playerId: idSchema, ...scoringFields, scoringTable: scoringTableSchema.default('Torneo Regular') }).refine(hasScoring);
 
 type AdminRequest = Request & { isAdmin?: boolean };
 

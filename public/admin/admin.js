@@ -4,7 +4,7 @@ const statusLabels = { SCHEDULED: 'Programado', LIVE: 'En juego', FINISHED: 'Fin
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
 const options = (items, label = 'name') => items.map((item) => `<option value="${item.id}">${escapeHtml(typeof label === 'function' ? label(item) : item[label])}</option>`).join('');
 const phaseLabel = (phase) => `${phase.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'} · ${phase.name}`;
-let tournaments = [], phases = [], groups = [], teams = [], players = [], memberships = [], rules = [], sanctions = [], matches = [], scoring = [];
+let tournaments = [], phases = [], groups = [], teams = [], players = [], memberships = [], rules = [], sanctions = [], matches = [], scoring = [], scoringTables = [];
 
 async function request(url, init = {}) {
   const response = await fetch(url.replace(/^\/api(?=\/|$)/, '/api/admin'), { headers: { 'Content-Type': 'application/json' }, ...init });
@@ -264,7 +264,10 @@ async function loadScoringPage(tournamentId, phaseId, matchId) {
   const tournament = await loadTournaments(tournamentId);
   phases = tournament ? await request(`/api/tournaments/${tournament.id}/phases`) : [];
   const phase = choose(document.querySelector('#admin-phase'), phases, phaseId ?? tournament?.currentPhaseId, phaseLabel);
-  matches = phase ? await request(`/api/matches?phaseId=${phase.id}&status=FINISHED`) : [];
+  if (phase) {
+    const [phaseMatches, phaseScoring] = await Promise.all([request(`/api/matches?phaseId=${phase.id}&status=FINISHED`), request(`/api/phases/${phase.id}/scoring`)]);
+    matches = phaseMatches; scoringTables = phaseScoring.tables;
+  } else { matches = []; scoringTables = []; }
   const match = choose(document.querySelector('#scoring-match'), matches, matchId, scoringMatchLabel);
   await loadScoringDetails(match?.id);
 }
@@ -294,6 +297,7 @@ function renderScoringPlayerOptions(preferred) {
 function populateScoringForm() {
   const item = scoring.find(({ playerId }) => playerId === Number(document.querySelector('#scoring-player').value));
   document.querySelector('#scoring-player-id').value = item?.playerId || '';
+  document.querySelector('#scoringTable').value = item?.scoringTable || 'Torneo Regular';
   for (const key of ['directGoals', 'pepitas', 'horquetas']) document.querySelector(`#${key}`).value = item?.[key] || 0;
   document.querySelector('#scoring-form button[type="submit"]').textContent = item ? 'GUARDAR CAMBIOS' : 'GUARDAR GOLEO';
   document.querySelector('#cancel-scoring-edit').hidden = !item; updateScoringTotal();
@@ -316,6 +320,11 @@ function resetScoringForm(preferred = scoring[0]) {
 function renderScoringPage() {
   const match = selectedScoringMatch(), detail = document.querySelector('#scoring-match-detail'), list = document.querySelector('#scoring-list'), teamSelect = document.querySelector('#scoring-team');
   detail.innerHTML = match ? `<article class="match-summary"><p>${escapeHtml(match.date)} · ${jornadaLabels[match.jornada]} · Cancha ${match.court}</p><h3>${escapeHtml(match.teamA)} <strong>${match.scoreA}–${match.scoreB}</strong> ${escapeHtml(match.teamB)}</h3></article>` : '<p class="empty">No hay partidos finalizados en esta fase.</p>';
+  document.querySelector('#scoring-table-options').innerHTML = scoringTables.map(({ name }) => `<option value="${escapeHtml(name)}"></option>`).join('');
+  const managed = document.querySelector('#scoring-table-manage');
+  const previousTable = Number(managed.value); managed.innerHTML = options(scoringTables);
+  managed.value = scoringTables.some(({ id }) => id === previousTable) ? previousTable : scoringTables[0]?.id || '';
+  document.querySelector('#scoring-table-name').value = scoringTables.find(({ id }) => id === Number(managed.value))?.name || '';
   teamSelect.innerHTML = match ? options([{ id: match.teamAId, name: match.teamA }, { id: match.teamBId, name: match.teamB }]) : '';
   disable(document.querySelector('#scoring-form'), !match);
   resetScoringForm();
@@ -323,7 +332,7 @@ function renderScoringPage() {
   list.innerHTML = match ? [[match.teamAId, match.teamA], [match.teamBId, match.teamB]].map(([teamId, teamName]) => {
     const rows = scoring.filter((item) => item.teamId === teamId).map((item) => {
       const player = players.find(({ id }) => id === item.playerId), combo = item.pepitas > 0 && item.horquetas > 0 ? '<em class="combo">Pepita + horqueta</em>' : '';
-      return `<div class="scoring-row${player?.status === 'UNREGISTERED' ? ' unregistered' : ''}"><span><strong>#${escapeHtml(item.playerNumber)}</strong> ${escapeHtml(player?.name || 'Sin nombre')}<small>Normales: ${item.directGoals} · Pepitas: ${item.pepitas} · Horquetas: ${item.horquetas} ${combo}</small></span><b>${item.total}</b><button data-action="edit-scoring" data-player-id="${item.playerId}">EDITAR</button><button class="danger" data-action="delete-scoring" data-player-id="${item.playerId}">ELIMINAR</button></div>`;
+      return `<div class="scoring-row${player?.status === 'UNREGISTERED' ? ' unregistered' : ''}"><span><strong>#${escapeHtml(item.playerNumber)}</strong> ${escapeHtml(player?.name || 'Sin nombre')}<small>Tabla: ${escapeHtml(item.scoringTable)} · Directos: ${item.directGoals} · Pepitas: ${item.pepitas} · Horquetas: ${item.horquetas} ${combo}</small></span><b>${item.total}</b><button data-action="edit-scoring" data-player-id="${item.playerId}">EDITAR</button><button class="danger" data-action="delete-scoring" data-player-id="${item.playerId}">ELIMINAR</button></div>`;
     }).join('');
     return `<section class="scoring-team"><h3>${escapeHtml(teamName)}</h3>${rows || '<p class="empty">Sin goleo registrado.</p>'}</section>`;
   }).join('') : '';
@@ -349,15 +358,27 @@ function initScoringPage() {
   document.querySelector('#scoring-match').addEventListener('change', () => loadScoringDetails(selectedScoringMatch()?.id).catch((error) => message(error.message, true)));
   document.querySelector('#scoring-team').addEventListener('change', () => { renderScoringPlayerOptions(); populateScoringForm(); });
   document.querySelector('#scoring-player').addEventListener('change', populateScoringForm);
+  document.querySelector('#scoring-table-manage').addEventListener('change', (event) => { document.querySelector('#scoring-table-name').value = scoringTables.find(({ id }) => id === Number(event.target.value))?.name || ''; });
+  document.querySelector('#scoring-table-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const phase = selectedPhase(), tableId = Number(document.querySelector('#scoring-table-manage').value), name = document.querySelector('#scoring-table-name').value.trim();
+    try { await request(`/api/phases/${phase.id}/scoring-tables/${tableId}`, { method: 'PUT', body: JSON.stringify({ name }) }); await loadScoringPage(selectedTournament().id, phase.id, selectedScoringMatch()?.id); message('Tabla renombrada.'); }
+    catch (error) { message(error.message, true); }
+  });
+  document.querySelector('#create-scoring-table').addEventListener('click', async () => {
+    const phase = selectedPhase(), name = document.querySelector('#scoring-table-name').value.trim();
+    try { await request(`/api/phases/${phase.id}/scoring-tables`, { method: 'POST', body: JSON.stringify({ name }) }); await loadScoringPage(selectedTournament().id, phase.id, selectedScoringMatch()?.id); message('Tabla creada.'); }
+    catch (error) { message(error.message, true); }
+  });
   document.querySelectorAll('#directGoals,#pepitas,#horquetas').forEach((input) => input.addEventListener('input', updateScoringTotal));
   document.querySelector('#cancel-scoring-edit').addEventListener('click', populateScoringForm);
   document.querySelector('#scoring-form').addEventListener('submit', async (event) => {
     event.preventDefault(); const match = selectedScoringMatch(), editing = document.querySelector('#scoring-player-id').value, playerId = Number(editing || document.querySelector('#scoring-player').value);
-    const body = Object.fromEntries(['directGoals', 'pepitas', 'horquetas'].map((key) => [key, Number(document.querySelector(`#${key}`).value)]));
+    const body = { ...Object.fromEntries(['directGoals', 'pepitas', 'horquetas'].map((key) => [key, Number(document.querySelector(`#${key}`).value)])), scoringTable: document.querySelector('#scoringTable').value.trim() };
     if (body.directGoals + body.pepitas + body.horquetas === 0) return message('Registra al menos una anotación.', true);
     try {
       await request(`/api/matches/${match.id}/scoring${editing ? `/${playerId}` : ''}`, { method: editing ? 'PUT' : 'POST', body: JSON.stringify(editing ? body : { playerId, ...body }) });
-      scoring = await request(`/api/matches/${match.id}/scoring`); renderScoringPage(); message('Goleo guardado.');
+      await loadScoringPage(selectedTournament().id, selectedPhase().id, match.id); message('Goleo guardado.');
     } catch (error) { message(error.message, true); }
   });
   document.querySelector('#scoring-list').addEventListener('click', async (event) => {

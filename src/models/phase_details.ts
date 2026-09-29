@@ -60,3 +60,36 @@ export interface PhaseStandings {
     rules: ClassificationRule[];
     groups: Array<{ id: number; phaseId: number; name: string; standings: Standing[] }>;
 }
+
+export interface ScoringRow {
+    scoringTable: string;
+    playerId: number;
+    teamId: number;
+    teamName: string;
+    playerNumber: string;
+    playerName: string | null;
+    directGoals: number;
+    pepitas: number;
+    horquetas: number;
+    total: number;
+}
+
+export interface ScoringRankingRow extends ScoringRow {
+    position: number;
+}
+
+export interface ScoringTable {
+    id: number;
+    tournamentId: number;
+    tournamentType: string;
+    name: string;
+}
+
+export interface PhaseScoring {
+    phase: Phase;
+    tables: Array<{ id: number; name: string; rankings: {
+        total: ScoringRankingRow[];
+        pepitas: ScoringRankingRow[];
+        horquetas: ScoringRankingRow[];
+    } }>;
+}

@@ -75,11 +75,21 @@ class DBConnection {
             })();
         }
 
+        const oldScoringTables = this.database.prepare<[], { name: string }>('PRAGMA table_info(scoring_tables)').all()
+        if (oldScoringTables.length && !oldScoringTables.some(({ name }) => name === 'tournamentId')) {
+            this.database.transaction(() => {
+                this.database.exec('DROP TRIGGER IF EXISTS scoring_table_insert; DROP TRIGGER IF EXISTS scoring_table_update; DROP TRIGGER IF EXISTS match_scoring_table_type_update;')
+                this.database.exec('ALTER TABLE scoring_tables RENAME TO scoring_tables_by_type')
+                this.database.exec("CREATE TABLE scoring_tables (id INTEGER PRIMARY KEY AUTOINCREMENT,tournamentId INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE RESTRICT,tournamentType TEXT NOT NULL CHECK(tournamentType IN('MALE','FEMALE')),name TEXT NOT NULL COLLATE NOCASE CHECK(length(trim(name)) BETWEEN 1 AND 100),UNIQUE(tournamentId,tournamentType,name))")
+            })()
+        }
+
         this.database.exec(`
         CREATE TABLE IF NOT EXISTS teams (id INTEGER PRIMARY KEY AUTOINCREMENT,tournamentType TEXT NOT NULL CHECK(tournamentType IN ('MALE','FEMALE')),name TEXT NOT NULL COLLATE NOCASE CHECK(length(name) BETWEEN 1 AND 100),UNIQUE(tournamentType,name));
         INSERT OR IGNORE INTO teams(tournamentType,name) SELECT tournamentType,teamA FROM matches UNION SELECT tournamentType,teamB FROM matches UNION SELECT tournamentType,lineTeam FROM matches;
         CREATE TABLE IF NOT EXISTS players (id INTEGER PRIMARY KEY AUTOINCREMENT,teamId INTEGER NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,number TEXT NOT NULL CHECK(length(number)>0 AND number NOT GLOB '*[^0-9]*'),name TEXT CHECK(name IS NULL OR length(name) BETWEEN 1 AND 100),status TEXT NOT NULL DEFAULT 'REGISTERED' CHECK(status IN('REGISTERED','UNREGISTERED')),UNIQUE(teamId,number));
-        CREATE TABLE IF NOT EXISTS match_player_scoring (matchId INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,playerId INTEGER NOT NULL REFERENCES players(id) ON DELETE RESTRICT,directGoals INTEGER NOT NULL DEFAULT 0 CHECK(directGoals>=0),horquetas INTEGER NOT NULL DEFAULT 0 CHECK(horquetas>=0),pepitas INTEGER NOT NULL DEFAULT 0 CHECK(pepitas>=0),total INTEGER GENERATED ALWAYS AS(directGoals+pepitas*2+horquetas*3) VIRTUAL,CHECK(directGoals+horquetas+pepitas>0),PRIMARY KEY(matchId,playerId));
+        CREATE TABLE IF NOT EXISTS match_player_scoring (matchId INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,playerId INTEGER NOT NULL REFERENCES players(id) ON DELETE RESTRICT,directGoals INTEGER NOT NULL DEFAULT 0 CHECK(directGoals>=0),horquetas INTEGER NOT NULL DEFAULT 0 CHECK(horquetas>=0),pepitas INTEGER NOT NULL DEFAULT 0 CHECK(pepitas>=0),scoringTable TEXT NOT NULL DEFAULT 'Torneo Regular' CHECK(length(trim(scoringTable)) BETWEEN 1 AND 100),total INTEGER GENERATED ALWAYS AS(directGoals+pepitas*2+horquetas*3) VIRTUAL,CHECK(directGoals+horquetas+pepitas>0),PRIMARY KEY(matchId,playerId));
+        CREATE TABLE IF NOT EXISTS scoring_tables (id INTEGER PRIMARY KEY AUTOINCREMENT,tournamentId INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE RESTRICT,tournamentType TEXT NOT NULL CHECK(tournamentType IN('MALE','FEMALE')),name TEXT NOT NULL COLLATE NOCASE CHECK(length(trim(name)) BETWEEN 1 AND 100),UNIQUE(tournamentId,tournamentType,name));
         CREATE TABLE IF NOT EXISTS tournaments (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL COLLATE NOCASE UNIQUE CHECK(length(name) BETWEEN 1 AND 100),active INTEGER NOT NULL DEFAULT 1 CHECK(active IN(0,1)),currentPhaseId INTEGER,legacyType TEXT UNIQUE CHECK(legacyType IN('MALE','FEMALE')));
         CREATE TABLE IF NOT EXISTS phases (id INTEGER PRIMARY KEY AUTOINCREMENT,tournamentId INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE RESTRICT,name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),type TEXT NOT NULL DEFAULT 'TABLE' CHECK(type IN('TABLE','ELIMINATION')),tournamentType TEXT CHECK(tournamentType IN('MALE','FEMALE')),sortOrder INTEGER NOT NULL DEFAULT 1 CHECK(sortOrder>0),UNIQUE(tournamentId,name));
         CREATE TABLE IF NOT EXISTS groups_table (id INTEGER PRIMARY KEY AUTOINCREMENT,phaseId INTEGER NOT NULL REFERENCES phases(id) ON DELETE RESTRICT,name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),UNIQUE(phaseId,name));
@@ -92,6 +102,7 @@ class DBConnection {
         this.addColumn('teams', 'tournamentId INTEGER REFERENCES tournaments(id)');
         this.addColumn('classification_rules', 'positions TEXT');
         this.addColumn('phases', "tournamentType TEXT CHECK(tournamentType IN('MALE','FEMALE'))");
+        this.addColumn('match_player_scoring', "scoringTable TEXT NOT NULL DEFAULT 'Torneo Regular' CHECK(length(trim(scoringTable)) BETWEEN 1 AND 100)");
         for (const definition of [
             'phaseId INTEGER REFERENCES phases(id)',
             'groupId INTEGER REFERENCES groups_table(id)',
@@ -120,6 +131,25 @@ class DBConnection {
           }
           this.database.exec('UPDATE matches SET tournamentType=(SELECT tournamentType FROM phases WHERE phases.id=matches.phaseId) WHERE phaseId IS NOT NULL AND tournamentType<>(SELECT tournamentType FROM phases WHERE phases.id=matches.phaseId)');
         })();
+        const legacyScoringTables = Boolean(this.database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='scoring_tables_by_type'").get())
+        const needsScoringTableMigration = !this.database.prepare('SELECT 1 FROM scoring_tables LIMIT 1').get()
+            && !(legacyScoringTables && this.database.prepare('SELECT 1 FROM scoring_tables_by_type LIMIT 1').get())
+        this.database.transaction(() => {
+            if (needsScoringTableMigration) this.database.exec("UPDATE match_player_scoring SET scoringTable='Torneo Regular' WHERE scoringTable='General';")
+            if (legacyScoringTables) this.database.exec(`INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name)
+                SELECT DISTINCT p.tournamentId,l.tournamentType,l.name FROM scoring_tables_by_type l JOIN phases p ON p.tournamentType=l.tournamentType`)
+            this.database.exec(`INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name)
+                SELECT DISTINCT tournamentId,tournamentType,'Torneo Regular' FROM phases WHERE tournamentType IS NOT NULL`)
+            this.database.exec(`INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name)
+                SELECT DISTINCT p.tournamentId,m.tournamentType,s.scoringTable FROM match_player_scoring s JOIN matches m ON m.id=s.matchId JOIN phases p ON p.id=m.phaseId`)
+            if (legacyScoringTables) this.database.exec('DROP TABLE scoring_tables_by_type')
+        })()
+        this.database.exec(`
+        CREATE TRIGGER IF NOT EXISTS scoring_table_insert AFTER INSERT ON match_player_scoring BEGIN INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name) SELECT p.tournamentId,m.tournamentType,NEW.scoringTable FROM matches m JOIN phases p ON p.id=m.phaseId WHERE m.id=NEW.matchId; END;
+        CREATE TRIGGER IF NOT EXISTS scoring_table_update AFTER UPDATE OF scoringTable ON match_player_scoring BEGIN INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name) SELECT p.tournamentId,m.tournamentType,NEW.scoringTable FROM matches m JOIN phases p ON p.id=m.phaseId WHERE m.id=NEW.matchId; END;
+        CREATE TRIGGER IF NOT EXISTS match_scoring_table_type_update AFTER UPDATE OF tournamentType,phaseId ON matches BEGIN INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name) SELECT p.tournamentId,NEW.tournamentType,scoringTable FROM match_player_scoring JOIN phases p ON p.id=NEW.phaseId WHERE matchId=NEW.id; END;
+        CREATE TRIGGER IF NOT EXISTS phase_scoring_table_insert AFTER INSERT ON phases WHEN NEW.tournamentType IS NOT NULL BEGIN INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name) VALUES(NEW.tournamentId,NEW.tournamentType,'Torneo Regular'); END;
+        CREATE TRIGGER IF NOT EXISTS phase_scoring_table_update AFTER UPDATE OF tournamentId,tournamentType ON phases WHEN NEW.tournamentType IS NOT NULL BEGIN INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name) VALUES(NEW.tournamentId,NEW.tournamentType,'Torneo Regular'); END;`)
     }
 
     private addColumn(table:string, definition:string) {
@@ -159,6 +189,10 @@ class DBConnection {
 
     executeNamedQuery(query: string, params: object): Database.RunResult {
         return this.database.prepare<object>(query).run(params)
+    }
+
+    transaction<T>(action: () => T): T {
+        return this.database.transaction(action)()
     }
 
     private throwDatabaseError(error: unknown): never {
