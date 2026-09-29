@@ -1,7 +1,9 @@
 node_modules/
+dist/
 data/
 *.db
 *.db-shm
 *.db-wal
 npm-debug.log*
-.vscode/**/*
+.vscode/*
+!.vscode/launch.json

@@ -1,22 +1,19 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { calculateGroupStandings } from '../src/service/phase_detail_service';
 
-const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'standings-test-'));
-process.env.DATABASE_PATH = path.join(tempDir, 'test.db');
-process.env.PORT = '3281';
-const { calculateGroupStandings, server, db } = require('../server');
+type Game = {
+  teamAId: number; teamBId: number; scoreA: number; scoreB: number;
+  yellowCardsA: number; redCardsA: number; yellowCardsB: number; redCardsB: number;
+};
+type Rule = { label: string; startPosition?: number; endPosition?: number; positions?: number[] };
 
-const team = (id) => ({ id, name: `Equipo ${id}` });
-const game = (teamAId, teamBId, scoreA, scoreB, cards = {}) => ({
+const team = (id: number) => ({ id, name: `Equipo ${id}` });
+const game = (teamAId: number, teamBId: number, scoreA: number, scoreB: number, cards: Partial<Game> = {}): Game => ({
   teamAId, teamBId, scoreA, scoreB,
   yellowCardsA: 0, redCardsA: 0, yellowCardsB: 0, redCardsB: 0, ...cards
 });
-const order = (members, matches, rules = [], sanctions = new Map()) => calculateGroupStandings(members.map(team), matches, rules, sanctions);
-
-test.after(() => server.close(() => { db.close(); fs.rmSync(tempDir, { recursive: true, force: true }); }));
+const order = (members: number[], matches: Game[], rules: Rule[] = [], sanctions = new Map<number, string>()) => calculateGroupStandings(members.map(team), matches, rules, sanctions);
 
 test('aplica diferencia y goles generales antes del enfrentamiento directo', () => {
   let result = order([1, 2, 3, 4], [game(1, 3, 2, 0), game(2, 4, 1, 0)]);
@@ -27,7 +24,7 @@ test('aplica diferencia y goles generales antes del enfrentamiento directo', () 
 
 test('contabiliza un partido contra un equipo de otro grupo', () => {
   const [row] = order([1], [game(1, 2, 2, 1)]);
-  assert.deepEqual({ played: row.played, wins: row.wins, goalsFor: row.goalsFor, goalsAgainst: row.goalsAgainst, points: row.points }, { played: 1, wins: 1, goalsFor: 2, goalsAgainst: 1, points: 3 });
+  assert.deepEqual({ played: row!.played, wins: row!.wins, goalsFor: row!.goalsFor, goalsAgainst: row!.goalsAgainst, points: row!.points }, { played: 1, wins: 1, goalsFor: 2, goalsAgainst: 1, points: 3 });
 });
 
 test('aplica puntos directos tras igualar puntos, diferencia y goles generales', () => {
@@ -55,21 +52,21 @@ test('usa rojas, luego amarillas, y conserva posición compartida si persiste', 
   result = order([1, 2], [game(1, 2, 0, 0, { yellowCardsA: 1, yellowCardsB: 2 })]);
   assert.deepEqual(result.map((row) => row.teamId), [1, 2]);
   result = order([1, 2], [game(1, 2, 0, 0)]);
-  assert.equal(result[0].position, result[1].position);
-  assert.equal(result[0].requiresTiebreaker, true);
+  assert.equal(result[0]!.position, result[1]!.position);
+  assert.equal(result[0]!.requiresTiebreaker, true);
 });
 
 test('deja destinos pendientes al cruzar rangos y aplica sanción solo en esa frontera', () => {
   const rules = [{ startPosition: 1, endPosition: 1, label: 'Segunda fase' }, { startPosition: 2, endPosition: 2, label: 'Copa' }];
   let result = order([1, 2], [], rules);
-  assert.deepEqual(result[0].possibleDestinations, ['Segunda fase', 'Copa']);
-  assert.equal(result[0].destination, null);
+  assert.deepEqual(result[0]!.possibleDestinations, ['Segunda fase', 'Copa']);
+  assert.equal(result[0]!.destination, null);
   result = order([1, 2], [], rules, new Map([[1, 'Artículo 19']]));
   assert.deepEqual(result.map((row) => row.teamId), [2, 1]);
   assert.deepEqual(result.map((row) => row.destination), ['Segunda fase', 'Copa']);
   result = order([1, 2], [], [{ startPosition: 1, endPosition: 2, label: 'Copa' }], new Map([[1, 'Artículo 19']]));
-  assert.equal(result[0].requiresTiebreaker, true);
-  assert.equal(result[0].destination, 'Copa');
+  assert.equal(result[0]!.requiresTiebreaker, true);
+  assert.equal(result[0]!.destination, 'Copa');
 });
 
 test('asigna destinos a listas de posiciones no consecutivas', () => {
