@@ -18,5 +18,9 @@ export class MatchRoute {
         this.router.patch('/api/matches/:id/result', controller.setResult)
         this.router.post('/api/matches/:id/reset', controller.resetScore)
         this.router.patch('/api/matches/:id/cards', controller.setCards)
+        this.router.get('/api/matches/:matchId/scoring', controller.getScoring)
+        this.router.post('/api/matches/:matchId/scoring', controller.insertScoring)
+        this.router.put('/api/matches/:matchId/scoring/:playerId', controller.updateScoring)
+        this.router.delete('/api/matches/:matchId/scoring/:playerId', controller.deleteScoring)
     }
 }

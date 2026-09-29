@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import DBConnection, { DatabaseConnectionError } from "../db/db_connection";
 import { Group } from "../models/group";
 import { Match } from "../models/match";
-import { ClassificationRule, Membership, RuleInput, Sanction } from "../models/phase_details";
+import { ClassificationRule, Membership, RuleInput, Sanction, ScoringRow, ScoringTable } from "../models/phase_details";
 import { Team } from "../models/team";
 
 export class PhaseDetailRepository {
@@ -78,6 +78,38 @@ export class PhaseDetailRepository {
 
     getFinishedMatches(phaseId: number): Match[] {
         return this.dbConnection.fetchAllFromParameterizedQuery<Match>("SELECT * FROM matches WHERE phaseId=? AND status='FINISHED'", phaseId)
+    }
+
+    getScoring(tournamentId: number, tournamentType: string): ScoringRow[] {
+        return this.dbConnection.fetchAllFromParameterizedQuery<ScoringRow>(`SELECT s.scoringTable,p.id playerId,p.teamId,t.name teamName,p.number playerNumber,p.name playerName,
+            SUM(s.directGoals) directGoals,SUM(s.pepitas) pepitas,SUM(s.horquetas) horquetas,SUM(s.total) total
+            FROM match_player_scoring s
+            JOIN matches m ON m.id=s.matchId
+            JOIN phases ph ON ph.id=m.phaseId
+            JOIN players p ON p.id=s.playerId
+            JOIN teams t ON t.id=p.teamId
+            WHERE ph.tournamentId=? AND m.tournamentType=? AND m.status='FINISHED'
+            GROUP BY s.scoringTable,p.id,p.teamId,t.name,p.number,p.name`, tournamentId, tournamentType)
+    }
+
+    getScoringTables(tournamentId: number, tournamentType: string): ScoringTable[] {
+        return this.dbConnection.fetchAllFromParameterizedQuery<ScoringTable>('SELECT * FROM scoring_tables WHERE tournamentId=? AND tournamentType=? ORDER BY name COLLATE NOCASE', tournamentId, tournamentType)
+    }
+
+    insertScoringTable(tournamentId: number, tournamentType: string, name: string): ScoringTable {
+        const result = this.dbConnection.executeQuery('INSERT INTO scoring_tables(tournamentId,tournamentType,name) VALUES(?,?,?)', tournamentId, tournamentType, name)
+        return this.dbConnection.fetchOneElementFromTable<ScoringTable>('scoring_tables', result.lastInsertRowid)!
+    }
+
+    updateScoringTable(id: number, tournamentId: number, tournamentType: string, name: string): ScoringTable | undefined {
+        const current = this.dbConnection.fetchOneFromQuery<ScoringTable>('SELECT * FROM scoring_tables WHERE id=? AND tournamentId=? AND tournamentType=?', id, tournamentId, tournamentType)
+        if (!current) return undefined
+        return this.dbConnection.transaction(() => {
+            this.dbConnection.executeQuery('UPDATE scoring_tables SET name=? WHERE id=?', name, current.id)
+            this.dbConnection.executeQuery(`UPDATE match_player_scoring SET scoringTable=? WHERE scoringTable=? COLLATE NOCASE AND matchId IN
+                (SELECT m.id FROM matches m JOIN phases p ON p.id=m.phaseId WHERE p.tournamentId=? AND m.tournamentType=?)`, name, current.name, tournamentId, tournamentType)
+            return this.dbConnection.fetchOneElementFromTable<ScoringTable>('scoring_tables', current.id)!
+        })
     }
 
     getGroups(phaseId: number): Group[] {

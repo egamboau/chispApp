@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Goleo | ChispApp</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body data-page="scoring">
+  <header><div class="brand"><h1>ChispApp</h1><p>Administración · Datos proporcionados por Chisperos</p></div><nav aria-label="Administración"><a href="/admin/">Torneos</a><a href="/admin/teams.html">Equipos</a><a href="/admin/calendar.html">Calendario</a><a class="active" href="/admin/scoring.html">Goleo</a><a href="/display" target="_blank">Pantalla pública</a></nav></header>
+  <main class="management-layout">
+    <section class="panel">
+      <h2>Informe de goleo</h2>
+      <label>Torneo<select id="admin-tournament"></select></label>
+      <label>Fase<select id="admin-phase"></select></label>
+      <h3>Tablas de goleo</h3>
+      <form id="scoring-table-form" class="compact-form">
+        <label>Tabla<select id="scoring-table-manage"></select></label>
+        <label>Nombre<input id="scoring-table-name" maxlength="100" required></label>
+        <div class="form-actions"><button type="submit">RENOMBRAR</button><button id="create-scoring-table" type="button">CREAR NUEVA</button></div>
+      </form>
+      <label>Partido finalizado<select id="scoring-match"></select></label>
+      <div id="scoring-match-detail" aria-live="polite"></div>
+      <p id="message" role="alert"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Goleadores</h2>
+      <form id="scoring-form" class="compact-form">
+        <input type="hidden" id="scoring-player-id">
+        <label>Equipo<select id="scoring-team" required></select></label>
+        <label>Jugador<select id="scoring-player" required></select></label>
+        <label>Tabla de goleo<input id="scoringTable" list="scoring-table-options" maxlength="100" value="Torneo Regular" required></label>
+        <datalist id="scoring-table-options"></datalist>
+        <label>Goles directos<input id="directGoals" type="number" min="0" step="1" value="0" required></label>
+        <label>Pepitas<input id="pepitas" type="number" min="0" step="1" value="0" required></label>
+        <label>Horquetas<input id="horquetas" type="number" min="0" step="1" value="0" required></label>
+        <p class="scoring-total">Total: <strong id="scoring-total">0</strong></p>
+        <div class="form-actions"><button class="primary" type="submit">GUARDAR GOLEO</button><button id="cancel-scoring-edit" type="button" hidden>RESTABLECER</button></div>
+      </form>
+      <div id="scoring-list" aria-live="polite"></div>
+    </section>
+  </main>
+  <footer>© 2026 Eduardo Gamboa.</footer>
+  <script src="/admin/admin.js"></script>
+</body>
+</html>

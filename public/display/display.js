@@ -4,6 +4,7 @@ const jornadaLabels = { MORNING: '<span role="img" aria-label="Mañana" title="M
 let matches = [];
 let filter = 'ALL';
 let tournaments = [];
+let selectedScoringTable = 'Torneo Regular';
 
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
 const badge = (match) => `<span class="badge ${match.tournamentType.toLowerCase()}">${labels[match.tournamentType]}</span>`;
@@ -60,11 +61,36 @@ function renderStandings(data) {
   }).join('')}</tbody></table></div>${group.standings.some((row) => row.requiresTiebreaker) ? '<p class="tiebreaker">* Partido extra: dos tiempos de 5 minutos y penales si persiste el empate.</p>' : ''}</section>`).join('')}`;
 }
 
+function scoringTable(title, rows, metric, metricLabel) {
+  return `<section class="scoring-table"><h2>${title}</h2>${rows.length ? `<div class="table-scroll"><table><thead><tr><th>Pos.</th><th>Jugador</th><th>Equipo</th><th>${metricLabel}</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${row.position}.º</td><td><strong>#${escapeHtml(row.playerNumber)}</strong> ${escapeHtml(row.playerName || 'Sin nombre')}</td><td>${escapeHtml(row.teamName)}</td><td><strong>${row[metric]}</strong></td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-ranking">Sin anotaciones</p>'}</section>`;
+}
+
+function renderScoring(data) {
+  const selected = data.tables.find(({ name }) => name === selectedScoringTable) || data.tables.find(({ name }) => name === 'Torneo Regular') || data.tables[0];
+  selectedScoringTable = selected.name;
+  const target = document.querySelector('#scoring');
+  target.innerHTML = `<div class="scoring-controls"><label>Tabla de goleo<select>${data.tables.map(({ name }) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('')}</select></label><p class="scoring-weights">Directo = 1 · Pepita = 2 · Horqueta = 3</p></div><div class="scoring-tables"></div>`;
+  const select = target.querySelector('select'), tables = target.querySelector('.scoring-tables');
+  const show = () => {
+    selectedScoringTable = select.value;
+    const table = data.tables.find(({ name }) => name === selectedScoringTable);
+    tables.innerHTML = `${scoringTable('Goleadores', table.rankings.total, 'total', 'Total')}${scoringTable('Pepitas', table.rankings.pepitas, 'pepitas', 'Pepitas')}${scoringTable('Horquetas', table.rankings.horquetas, 'horquetas', 'Horquetas')}`;
+  };
+  select.value = selectedScoringTable; select.addEventListener('change', show); show();
+}
+
 async function loadStandings() {
   const phaseId = document.querySelector('#phase-select').value;
   if (!phaseId) return;
   const response = await fetch(`/api/phases/${phaseId}/standings`);
   if (response.ok) renderStandings(await response.json());
+}
+
+async function loadScoring() {
+  const phaseId = document.querySelector('#phase-select').value;
+  if (!phaseId) return;
+  const response = await fetch(`/api/phases/${phaseId}/scoring`);
+  if (response.ok) renderScoring(await response.json());
 }
 
 async function loadSelectors() {
@@ -85,7 +111,7 @@ async function loadPhases() {
   select.innerHTML = phases.map((phase) => `<option value="${phase.id}">${escapeHtml(phase.name)}</option>`).join('');
   if (phases.some((phase) => phase.id === previous)) select.value = previous;
   else if (phases.some((phase) => phase.id === tournament.currentPhaseId)) select.value = tournament.currentPhaseId;
-  await Promise.all([loadStandings(), loadMatches()]);
+  await Promise.all([loadStandings(), loadScoring(), loadMatches()]);
 }
 
 async function loadMatches() {
@@ -117,7 +143,7 @@ document.querySelector('.filters').addEventListener('click', (event) => {
   renderCalendar();
 });
 document.querySelector('#tournament-select').addEventListener('change', loadPhases);
-document.querySelector('#phase-select').addEventListener('change', () => { loadStandings(); loadMatches(); });
+document.querySelector('#phase-select').addEventListener('change', () => { loadStandings(); loadScoring(); loadMatches(); });
 
 let reconnectTimer, heartbeatTimer;
 function connectEvents() {

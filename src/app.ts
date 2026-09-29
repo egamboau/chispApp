@@ -19,6 +19,10 @@ import { TeamRepository } from "./repository/team_repository";
 import { TeamService } from "./service/team_service";
 import { TeamController } from "./controller/team_controller";
 import { TeamRoute } from "./routes/teams";
+import { PlayerRepository } from "./repository/player_repository";
+import { PlayerService } from "./service/player_service";
+import { PlayerController } from "./controller/player_controller";
+import { PlayerRoute } from "./routes/players";
 import { PhaseDetailRepository } from "./repository/phase_detail_repository";
 import { PhaseDetailService } from "./service/phase_detail_service";
 import { PhaseDetailController } from "./controller/phase_detail_controller";
@@ -27,6 +31,7 @@ import { MatchRepository } from "./repository/match_repository";
 import { MatchService } from "./service/match_service";
 import { MatchController } from "./controller/match_controller";
 import { MatchRoute } from "./routes/matches";
+import { MatchPlayerScoringRepository } from "./repository/match_player_scoring_repository";
 import { AuthorizationServices } from "./utils/security";
 
 class App {
@@ -80,12 +85,15 @@ class App {
         const teamController = new TeamController(teamService, tournamentService)
         this.app.use(new TeamRoute(teamController).router)
 
+        const playerService = new PlayerService(new PlayerRepository(this.dbConnection))
+        this.app.use(new PlayerRoute(new PlayerController(playerService, teamService)).router)
+
         const phaseDetailService = new PhaseDetailService(new PhaseDetailRepository(this.dbConnection), phaseService)
         const phaseDetailController = new PhaseDetailController(phaseDetailService, phaseService, groupService, teamService)
         this.app.use(new PhaseDetailRoute(phaseDetailController).router)
 
-        const matchService = new MatchService(new MatchRepository(this.dbConnection), phaseService, groupService, teamService, tournamentService)
-        this.app.use(new MatchRoute(new MatchController(matchService)).router)
+        const matchService = new MatchService(new MatchRepository(this.dbConnection), phaseService, groupService, teamService, tournamentService, new MatchPlayerScoringRepository(this.dbConnection))
+        this.app.use(new MatchRoute(new MatchController(matchService, playerService)).router)
 
         this.app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }))
         const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
@@ -129,7 +137,7 @@ class App {
             next();
         });
         this.app.use(express.json({ limit: '20kb' }));
-        const publicApiPaths = [/^\/api\/tournaments$/, /^\/api\/tournaments\/\d+\/phases$/, /^\/api\/matches$/, /^\/api\/phases\/\d+\/standings$/, /^\/api\/events$/]
+        const publicApiPaths = [/^\/api\/tournaments$/, /^\/api\/tournaments\/\d+\/phases$/, /^\/api\/matches$/, /^\/api\/phases\/\d+\/(standings|scoring)$/, /^\/api\/events$/]
         this.app.use(async (req, res, next) => {
             const adminPage = req.path === '/admin' || req.path.startsWith('/admin/')
             const adminApi = req.path === '/api/admin' || req.path.startsWith('/api/admin/')

@@ -11,6 +11,7 @@ const idSchema = z.coerce.number().int().positive();
 const membershipSchema = z.object({ groupId: idSchema, teamId: idSchema });
 const groupSchema = z.object({ groupId: idSchema });
 const sanctionSchema = z.object({ reason: z.string().trim().min(1) });
+const scoringTableSchema = z.object({ name: z.string().trim().min(1).max(100) });
 const ruleSchema = z.object({
     positions: z.array(z.coerce.number().int().positive()).min(1).optional(),
     startPosition: z.coerce.number().int().positive().optional(),
@@ -144,5 +145,41 @@ export class PhaseDetailController {
         const standings = this.service.getStandings(phaseId.data)
         if (!standings) return res.status(404).json({ error: 'Fase no encontrada.' })
         res.json(standings)
+    }
+
+    getScoring: RequestHandler = (req, res) => {
+        const phaseId = idSchema.safeParse(req.params.id)
+        if (!phaseId.success) return res.status(400).json({ error: 'Id de fase inválido.' })
+        const scoring = this.service.getScoring(phaseId.data)
+        if (!scoring) return res.status(404).json({ error: 'Fase no encontrada.' })
+        res.json(scoring)
+    }
+
+    insertScoringTable: RequestHandler = (req, res) => {
+        const phaseId = idSchema.safeParse(req.params.id), input = scoringTableSchema.safeParse(req.body)
+        if (!phaseId.success || !input.success) return res.status(400).json({ error: 'Tabla de goleo inválida.' })
+        try {
+            const created = this.service.insertScoringTable(phaseId.data, input.data.name)
+            if (!created) return res.status(404).json({ error: 'Fase no encontrada.' })
+            notify('scoring-table', phaseId.data)
+            res.status(201).json(created)
+        } catch (error) {
+            if (error instanceof DatabaseConnectionError && error.name === 'UniqueConstraintError') return res.status(409).json({ error: 'Esa tabla de goleo ya existe.' })
+            throw error
+        }
+    }
+
+    updateScoringTable: RequestHandler = (req, res) => {
+        const phaseId = idSchema.safeParse(req.params.id), tableId = idSchema.safeParse(req.params.tableId), input = scoringTableSchema.safeParse(req.body)
+        if (!phaseId.success || !tableId.success || !input.success) return res.status(400).json({ error: 'Tabla de goleo inválida.' })
+        try {
+            const updated = this.service.updateScoringTable(phaseId.data, tableId.data, input.data.name)
+            if (!updated) return res.status(404).json({ error: 'Tabla de goleo no encontrada.' })
+            notify('scoring-table', phaseId.data)
+            res.json(updated)
+        } catch (error) {
+            if (error instanceof DatabaseConnectionError && error.name === 'UniqueConstraintError') return res.status(409).json({ error: 'Esa tabla de goleo ya existe.' })
+            throw error
+        }
     }
 }

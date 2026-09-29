@@ -17,5 +17,8 @@ export class PhaseDetailRoute {
         this.router.put('/api/phases/:id/teams/:teamId/sanction', controller.upsertSanction)
         this.router.delete('/api/phases/:id/teams/:teamId/sanction', controller.deleteSanction)
         this.router.get('/api/phases/:id/standings', controller.getStandings)
+        this.router.get('/api/phases/:id/scoring', controller.getScoring)
+        this.router.post('/api/phases/:id/scoring-tables', controller.insertScoringTable)
+        this.router.put('/api/phases/:id/scoring-tables/:tableId', controller.updateScoringTable)
     }
 }

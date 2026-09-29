@@ -1,5 +1,5 @@
 import { Match } from "../models/match";
-import { ClassificationRule, Membership, PhaseStandings, RuleInput, Sanction, Standing } from "../models/phase_details";
+import { ClassificationRule, Membership, PhaseScoring, PhaseStandings, RuleInput, Sanction, ScoringRankingRow, ScoringRow, ScoringTable, Standing } from "../models/phase_details";
 import { Team } from "../models/team";
 import { PhaseDetailRepository } from "../repository/phase_detail_repository";
 import { PhaseService } from "./phase_service";
@@ -87,6 +87,48 @@ export class PhaseDetailService {
             standings: PhaseDetailService.calculateGroupStandings(this.repository.getGroupMembers(phase.id, group.id), matches, rules, sanctions),
         }))
         return { phase, hasStandings: true, rules, groups }
+    }
+
+    getScoring(phaseId: number): PhaseScoring | undefined {
+        const phase = this.phaseService.getPhaseById(phaseId)
+        if (!phase) return undefined
+        const rows = this.repository.getScoring(phase.tournamentId, phase.tournamentType)
+        const tables = this.repository.getScoringTables(phase.tournamentId, phase.tournamentType)
+        return {
+            phase,
+            tables: tables.map(table => {
+                const tableRows = rows.filter(row => row.scoringTable.toLocaleLowerCase('es') === table.name.toLocaleLowerCase('es'))
+                return { id: table.id, name: table.name, rankings: {
+                    total: PhaseDetailService.rankScoring(tableRows, 'total'),
+                    pepitas: PhaseDetailService.rankScoring(tableRows, 'pepitas'),
+                    horquetas: PhaseDetailService.rankScoring(tableRows, 'horquetas'),
+                } }
+            }),
+        }
+    }
+
+    insertScoringTable(phaseId: number, name: string): ScoringTable | undefined {
+        const phase = this.phaseService.getPhaseById(phaseId)
+        return phase && this.repository.insertScoringTable(phase.tournamentId, phase.tournamentType, name)
+    }
+
+    updateScoringTable(phaseId: number, id: number, name: string): ScoringTable | undefined {
+        const phase = this.phaseService.getPhaseById(phaseId)
+        return phase && this.repository.updateScoringTable(id, phase.tournamentId, phase.tournamentType, name)
+    }
+
+    private static rankScoring(rows: ScoringRow[], metric: 'total' | 'pepitas' | 'horquetas'): ScoringRankingRow[] {
+        let previous: number | undefined, position = 0
+        return rows.filter(row => row[metric] > 0).sort((a, b) =>
+            b[metric] - a[metric]
+            || a.teamName.localeCompare(b.teamName, 'es', { sensitivity: 'base' })
+            || a.playerNumber.localeCompare(b.playerNumber, 'es', { numeric: true })
+            || a.playerId - b.playerId
+        ).map((row, index) => {
+            if (row[metric] !== previous) position = index + 1
+            previous = row[metric]
+            return { ...row, position }
+        })
     }
 
     private publicRule(rule: ClassificationRule | undefined): ClassificationRule | undefined {

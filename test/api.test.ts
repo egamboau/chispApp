@@ -113,18 +113,22 @@ test('migra horas existentes a jornadas sin perder el partido', async () => {
   assert.equal('time' in result.body[0], false);
   const teams = await json('/api/teams?tournamentType=MALE');
   assert.deepEqual(teams.body.map(({ name }: { name: string }) => name), ['Legado A', 'Legado B', 'Legado Línea']);
+  assert.deepEqual((await json(`/api/teams/${teams.body[0].id}/players`)).body, []);
   const phases = await json('/api/tournaments/1/phases');
   assert.equal(phases.body[0].tournamentType, 'MALE');
 });
 
-test('sirve las tres páginas administrativas y la pantalla pública', async () => {
+test('sirve las páginas administrativas y la pantalla pública', async () => {
   const auth = { headers: { 'cf-access-jwt-assertion': accessToken } };
-  const [tournamentsAdmin, teamsAdmin, calendarAdmin, display, css] = await Promise.all([fetch(`${base}/admin/`, auth), fetch(`${base}/admin/teams.html`, auth), fetch(`${base}/admin/calendar.html`, auth), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);
+  const [tournamentsAdmin, teamsAdmin, calendarAdmin, scoringAdmin, adminJs, display, css] = await Promise.all([fetch(`${base}/admin/`, auth), fetch(`${base}/admin/teams.html`, auth), fetch(`${base}/admin/calendar.html`, auth), fetch(`${base}/admin/scoring.html`, auth), fetch(`${base}/admin/admin.js`, auth), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);
   assert.equal(display.headers.get('cache-control'), 'no-store');
-  assert.match(await tournamentsAdmin.text(), /id="phase-tournament-type"[\s\S]*id="rule-form"/);
-  assert.match(await teamsAdmin.text(), /id="membership-form"/);
+  assert.match(await tournamentsAdmin.text(), /href="\/admin\/scoring.html"[\s\S]*id="phase-tournament-type"[\s\S]*id="rule-form"/);
+  assert.match(await teamsAdmin.text(), /id="membership-form"[\s\S]*id="player-form"/);
   assert.match(await calendarAdmin.text(), /id="admin-phase"[\s\S]*id="match-form"[\s\S]*id="line-visibility"/);
-  assert.match(await display.text(), /data-view="standings"/);
+  assert.match(await scoringAdmin.text(), /id="scoring-match"[\s\S]*id="scoring-form"[\s\S]*id="scoring-list"/);
+  assert.match(await (await fetch(`${base}/admin/scoring.html`, auth)).text(), /id="scoring-table-form"[\s\S]*id="create-scoring-table"[\s\S]*id="scoringTable"/);
+  assert.match(await adminJs.text(), /ADMINISTRAR GOLEO/);
+  assert.match(await display.text(), /data-view="standings"[\s\S]*data-view="scoring"/);
   assert.match(await css.text(), /@media \(max-width: 900px\)/);
 });
 
@@ -146,6 +150,31 @@ test('guarda equipos separados por torneo', async () => {
   assert.deepEqual(result.body, []);
   result = await json(`/api/teams/${id}`, { method: 'DELETE' });
   assert.equal(result.response.status, 404);
+});
+
+test('administra la nómina sin perder ceros iniciales', async () => {
+  let result = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', name: 'Nómina A' }) });
+  const teamA = result.body.id;
+  result = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', name: 'Nómina B' }) });
+  const teamB = result.body.id;
+
+  assert.equal((await publicJson(`/api/teams/${teamA}/players`)).response.status, 404);
+  result = await json(`/api/teams/${teamA}/players`, { method: 'POST', body: JSON.stringify({ number: '00', name: '' }) });
+  assert.equal(result.response.status, 201);
+  assert.deepEqual({ number: result.body.number, name: result.body.name, status: result.body.status, displayName: result.body.displayName }, { number: '00', name: null, status: 'REGISTERED', displayName: 'Equipo Nómina A - Número 00' });
+  const playerId = result.body.id;
+
+  assert.equal((await json(`/api/teams/${teamA}/players`, { method: 'POST', body: JSON.stringify({ number: '00' }) })).response.status, 409);
+  assert.equal((await json(`/api/teams/${teamB}/players`, { method: 'POST', body: JSON.stringify({ number: '00' }) })).response.status, 201);
+  assert.equal((await json(`/api/teams/${teamA}/players`, { method: 'POST', body: JSON.stringify({ number: 'A1' }) })).response.status, 400);
+
+  result = await json(`/api/players/${playerId}`, { method: 'PUT', body: JSON.stringify({ number: '07', name: ' Ana ' }) });
+  assert.deepEqual({ id: result.body.id, number: result.body.number, name: result.body.name, displayName: result.body.displayName }, { id: playerId, number: '07', name: 'Ana', displayName: 'Ana' });
+  result = await json(`/api/players/${playerId}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'UNREGISTERED' }) });
+  assert.equal(result.body.status, 'UNREGISTERED');
+  result = await json(`/api/players/${playerId}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'REGISTERED' }) });
+  assert.equal(result.body.status, 'REGISTERED');
+  assert.equal((await json(`/api/teams/${teamA}`, { method: 'DELETE' })).response.status, 409);
 });
 
 test.after(async () => {
@@ -188,6 +217,137 @@ test('flujo completo de partidos y validaciones', async () => {
   assert.equal(result.response.status, 204);
   result = await json(`/api/matches/${id}`);
   assert.equal(result.response.status, 404);
+});
+
+test('administra el goleo de un partido finalizado', async () => {
+  let result = await json('/api/matches', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', date: '2026-09-22', jornada: 'AFTERNOON', teamA: 'Goleo A', teamB: 'Goleo B', lineTeam: 'Goleo Línea', court: 4 }) });
+  const match = result.body;
+  const playerA = (await json(`/api/teams/${match.teamAId}/players`, { method: 'POST', body: JSON.stringify({ number: '01' }) })).body;
+  const outsider = (await json(`/api/teams/${match.lineTeamId}/players`, { method: 'POST', body: JSON.stringify({ number: '99' }) })).body;
+
+  await json(`/api/matches/${match.id}/start`, { method: 'POST' });
+  result = await json(`/api/matches/${match.id}/finish`, { method: 'POST' });
+  assert.equal(result.body.status, 'FINISHED');
+  result = await json(`/api/matches/${match.id}/scoring`);
+  assert.equal(result.response.status, 200);
+  assert.deepEqual(result.body, []);
+  assert.equal((await publicJson(`/api/matches/${match.id}/scoring`)).response.status, 404);
+  assert.equal((await publicJson(`/api/matches/${match.id}/scoring`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ playerId: playerA.id, directGoals: 1, horquetas: 0, pepitas: 0 }) })).response.status, 404);
+
+  const controller = new AbortController();
+  const stream = await fetch(`${base}/api/events`, { signal: controller.signal });
+  const reader = stream.body!.getReader();
+  await reader.read();
+
+  result = await json(`/api/matches/${match.id}/scoring`, { method: 'POST', body: JSON.stringify({ playerId: playerA.id, directGoals: 0, horquetas: 1, pepitas: 1 }) });
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.total, 5);
+  assert.equal(result.body.scoringTable, 'Torneo Regular');
+  const event = new TextDecoder().decode((await reader.read()).value);
+  assert.match(event, new RegExp(`"type":"scoring","id":${match.id}`));
+  controller.abort();
+
+  assert.equal((await json(`/api/matches/${match.id}/scoring`, { method: 'POST', body: JSON.stringify({ playerId: playerA.id, directGoals: 1, horquetas: 0, pepitas: 0 }) })).response.status, 409);
+  result = await json(`/api/matches/${match.id}/scoring`);
+  assert.deepEqual(result.body.map(({ playerId, total }: { playerId: number; total: number }) => ({ playerId, total })), [{ playerId: playerA.id, total: 5 }]);
+
+  result = await json(`/api/matches/${match.id}/scoring/${playerA.id}`, { method: 'PUT', body: JSON.stringify({ directGoals: 2, horquetas: 1, pepitas: 0, scoringTable: 'Torneo Regular' }) });
+  assert.equal(result.body.total, 5);
+  assert.equal(result.body.scoringTable, 'Torneo Regular');
+  assert.equal((await json(`/api/matches/${match.id}/scoring/${playerA.id}`, { method: 'PUT', body: JSON.stringify({ directGoals: 0, horquetas: 0, pepitas: 0 }) })).response.status, 400);
+  assert.equal((await json(`/api/matches/${match.id}/scoring/${playerA.id}`, { method: 'PUT', body: JSON.stringify({ directGoals: -1, horquetas: 0, pepitas: 0 }) })).response.status, 400);
+  assert.equal((await json(`/api/matches/${match.id}/scoring`, { method: 'POST', body: JSON.stringify({ playerId: outsider.id, directGoals: 1, horquetas: 0, pepitas: 0 }) })).response.status, 400);
+  assert.equal((await json(`/api/matches/${match.id}/scoring`, { method: 'POST', body: JSON.stringify({ playerId: 999999, directGoals: 1, horquetas: 0, pepitas: 0 }) })).response.status, 404);
+  assert.equal((await json('/api/matches/999999/scoring')).response.status, 404);
+  assert.equal((await json(`/api/matches/${match.id}/scoring/${outsider.id}`, { method: 'DELETE' })).response.status, 400);
+
+  assert.equal((await json(`/api/matches/${match.id}/scoring/${playerA.id}`, { method: 'DELETE' })).response.status, 204);
+  assert.equal((await json(`/api/matches/${match.id}/scoring/${playerA.id}`, { method: 'DELETE' })).response.status, 404);
+});
+
+test('publica rankings independientes de fase por tabla y sexo', async () => {
+  const createMatch = async (date: string, tournamentType: 'MALE' | 'FEMALE', names: string[]) => (await json('/api/matches', {
+    method: 'POST',
+    body: JSON.stringify({ tournamentType, date, jornada: 'MORNING', teamA: names[0], teamB: names[1], lineTeam: names[2], court: 1 }),
+  })).body;
+  const finish = async (id: number) => {
+    await json(`/api/matches/${id}/start`, { method: 'POST' });
+    await json(`/api/matches/${id}/finish`, { method: 'POST' });
+  };
+  const score = (matchId: number, playerId: number, directGoals: number, pepitas: number, horquetas: number, scoringTable = 'Torneo Regular') => json(`/api/matches/${matchId}/scoring`, {
+    method: 'POST', body: JSON.stringify({ playerId, directGoals, pepitas, horquetas, scoringTable }),
+  });
+
+  const first = await createMatch('2026-10-01', 'MALE', ['Ranking A', 'Ranking B', 'Ranking Línea']);
+  const playerA = (await json(`/api/teams/${first.teamAId}/players`, { method: 'POST', body: JSON.stringify({ number: '07', name: 'Alfa' }) })).body;
+  const playerA2 = (await json(`/api/teams/${first.teamAId}/players`, { method: 'POST', body: JSON.stringify({ number: '08', name: 'Beta' }) })).body;
+  const playerB = (await json(`/api/teams/${first.teamBId}/players`, { method: 'POST', body: JSON.stringify({ number: '07', name: 'Gamma' }) })).body;
+  await finish(first.id);
+  await score(first.id, playerA.id, 0, 1, 1);
+  await score(first.id, playerA2.id, 0, 1, 1);
+  await score(first.id, playerB.id, 1, 0, 0);
+
+  let result = await publicJson(`/api/phases/${first.phaseId}/scoring`);
+  assert.equal(result.response.status, 200);
+  let regular = result.body.tables.find(({ name }: any) => name === 'Torneo Regular').rankings;
+  assert.deepEqual(regular.total.map(({ playerId, position, total }: any) => ({ playerId, position, total })), [
+    { playerId: playerA.id, position: 1, total: 5 },
+    { playerId: playerA2.id, position: 1, total: 5 },
+    { playerId: playerB.id, position: 3, total: 1 },
+  ]);
+  assert.deepEqual(regular.pepitas.map(({ playerId, position }: any) => ({ playerId, position })), [{ playerId: playerA.id, position: 1 }, { playerId: playerA2.id, position: 1 }]);
+  assert.deepEqual(regular.horquetas.map(({ playerId, position }: any) => ({ playerId, position })), [{ playerId: playerA.id, position: 1 }, { playerId: playerA2.id, position: 1 }]);
+
+  const copaTable = await json(`/api/phases/${first.phaseId}/scoring-tables`, { method: 'POST', body: JSON.stringify({ name: 'Copa' }) });
+  assert.equal(copaTable.response.status, 201);
+  assert.equal((await json(`/api/phases/${first.phaseId}/scoring-tables`, { method: 'POST', body: JSON.stringify({ name: 'Torneo Regular' }) })).response.status, 409);
+
+  const maleTournament = (await json('/api/tournaments')).body.find(({ legacyType }: any) => legacyType === 'MALE');
+  const secondPhase = (await json(`/api/tournaments/${maleTournament.id}/phases`, { method: 'POST', body: JSON.stringify({ name: 'Segunda Ranking', type: 'TABLE', tournamentType: 'MALE', sortOrder: 2 }) })).body;
+  const secondGroup = (await json(`/api/phases/${secondPhase.id}/groups`, { method: 'POST', body: JSON.stringify({ name: 'General' }) })).body;
+  for (const teamId of [first.teamAId, first.teamBId]) await json(`/api/phases/${secondPhase.id}/memberships`, { method: 'POST', body: JSON.stringify({ teamId, groupId: secondGroup.id }) });
+  const second = (await json('/api/matches', { method: 'POST', body: JSON.stringify({ phaseId: secondPhase.id, groupId: secondGroup.id, date: '2026-10-02', jornada: 'MORNING', court: 1, teamAId: first.teamAId, teamBId: first.teamBId, lineTeamId: first.lineTeamId }) })).body;
+  await finish(second.id);
+  await score(second.id, playerA.id, 1, 0, 0);
+  await score(second.id, playerA2.id, 0, 1, 0, 'Copa');
+  const live = await createMatch('2026-10-03', 'MALE', ['Ranking A', 'Ranking B', 'Ranking Línea']);
+  await json(`/api/matches/${live.id}/start`, { method: 'POST' });
+  await score(live.id, playerB.id, 0, 5, 0);
+
+  const otherPhase = await createMatch('2026-10-01', 'FEMALE', ['Ranking FA', 'Ranking FB', 'Ranking FL']);
+  const otherPlayer = (await json(`/api/teams/${otherPhase.teamAId}/players`, { method: 'POST', body: JSON.stringify({ number: '07' }) })).body;
+  await finish(otherPhase.id);
+  await score(otherPhase.id, otherPlayer.id, 0, 10, 10);
+
+  const otherTournament = (await json('/api/tournaments', { method: 'POST', body: JSON.stringify({ name: 'Otro Ranking' }) })).body;
+  const isolatedPhase = (await json(`/api/tournaments/${otherTournament.id}/phases`, { method: 'POST', body: JSON.stringify({ name: 'Liga', type: 'TABLE', tournamentType: 'MALE', sortOrder: 1 }) })).body;
+  const isolatedGroup = (await json(`/api/phases/${isolatedPhase.id}/groups`, { method: 'POST', body: JSON.stringify({ name: 'General' }) })).body;
+  const isolatedMatch = (await json('/api/matches', { method: 'POST', body: JSON.stringify({ phaseId: isolatedPhase.id, groupId: isolatedGroup.id, date: '2026-10-04', jornada: 'MORNING', court: 1, teamA: 'Aislado A', teamB: 'Aislado B', lineTeam: 'Aislado Línea' }) })).body;
+  const isolatedPlayer = (await json(`/api/teams/${isolatedMatch.teamAId}/players`, { method: 'POST', body: JSON.stringify({ number: '07' }) })).body;
+  await finish(isolatedMatch.id);
+  await score(isolatedMatch.id, isolatedPlayer.id, 20, 0, 0);
+
+  result = await publicJson(`/api/phases/${first.phaseId}/scoring`);
+  regular = result.body.tables.find(({ name }: any) => name === 'Torneo Regular').rankings;
+  assert.deepEqual(regular.total.map(({ playerId, total }: any) => ({ playerId, total })), [
+    { playerId: playerA.id, total: 6 },
+    { playerId: playerA2.id, total: 5 },
+    { playerId: playerB.id, total: 1 },
+  ]);
+  const renamed = await json(`/api/phases/${first.phaseId}/scoring-tables/${copaTable.body.id}`, { method: 'PUT', body: JSON.stringify({ name: 'Copa Mayor' }) });
+  assert.equal(renamed.body.name, 'Copa Mayor');
+  result = await publicJson(`/api/phases/${first.phaseId}/scoring`);
+  const copa = result.body.tables.find(({ name }: any) => name === 'Copa Mayor').rankings;
+  assert.deepEqual(copa.total.map(({ playerId, total }: any) => ({ playerId, total })), [{ playerId: playerA2.id, total: 2 }]);
+  assert.equal(regular.total.some(({ playerId }: any) => playerId === otherPlayer.id), false);
+  assert.equal(regular.total.some(({ playerId }: any) => playerId === isolatedPlayer.id), false);
+  const sameSexOtherPhase = await publicJson(`/api/phases/${secondPhase.id}/scoring`);
+  assert.deepEqual(sameSexOtherPhase.body.tables, result.body.tables);
+  const female = await publicJson(`/api/phases/${otherPhase.phaseId}/scoring`);
+  assert.deepEqual(female.body.tables.find(({ name }: any) => name === 'Torneo Regular').rankings.total.map(({ playerId }: any) => playerId), [otherPlayer.id]);
+  const isolated = await publicJson(`/api/phases/${isolatedPhase.id}/scoring`);
+  assert.deepEqual(isolated.body.tables.find(({ name }: any) => name === 'Torneo Regular').rankings.total.map(({ playerId }: any) => playerId), [isolatedPlayer.id]);
+  assert.equal((await publicJson('/api/phases/999999/scoring')).response.status, 404);
 });
 
 test('oculta las líneas hasta que un administrador publique la fecha', async () => {
