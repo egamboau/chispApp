@@ -119,8 +119,42 @@ document.querySelector('.filters').addEventListener('click', (event) => {
 document.querySelector('#tournament-select').addEventListener('change', loadPhases);
 document.querySelector('#phase-select').addEventListener('change', () => { loadStandings(); loadMatches(); });
 
-const events = new EventSource('/api/events');
-events.addEventListener('matches', () => { loadMatches(); loadSelectors(); });
-events.onerror = () => { document.querySelector('#connection').textContent = 'Reconectando…'; };
+let reconnectTimer, heartbeatTimer;
+function connectEvents() {
+  console.info('[display] SSE conectando');
+  const events = new EventSource('/api/events');
+  events.onopen = () => {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+    clearTimeout(heartbeatTimer);
+    heartbeatTimer = setTimeout(() => reconnectEvents(events, 'sin latidos durante 45 s'), 45_000);
+    console.info('[display] SSE conectado; sincronizando datos');
+    document.querySelector('#connection').textContent = '';
+    loadMatches();
+    loadSelectors();
+  };
+  events.addEventListener('matches', () => {
+    console.info('[display] Actualización SSE recibida; sincronizando marcador');
+    loadMatches();
+    loadSelectors();
+  });
+  events.addEventListener('heartbeat', () => {
+    console.info('[display] SSE latido recibido');
+    clearTimeout(heartbeatTimer);
+    heartbeatTimer = setTimeout(() => reconnectEvents(events, 'sin latidos durante 45 s'), 45_000);
+  });
+  events.onerror = () => {
+    reconnectEvents(events, `error de conexión (readyState ${events.readyState})`);
+  };
+}
+function reconnectEvents(events, reason) {
+  console.warn(`[display] SSE desconectado: ${reason}; nuevo intento en 3 s`);
+  events.close();
+  clearTimeout(heartbeatTimer);
+  document.querySelector('#connection').textContent = 'Reconectando…';
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(connectEvents, 3000);
+}
+connectEvents();
 loadMatches();
 loadSelectors();
