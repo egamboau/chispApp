@@ -4,7 +4,7 @@ const statusLabels = { SCHEDULED: 'Programado', LIVE: 'En juego', FINISHED: 'Fin
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
 const options = (items, label = 'name') => items.map((item) => `<option value="${item.id}">${escapeHtml(typeof label === 'function' ? label(item) : item[label])}</option>`).join('');
 const phaseLabel = (phase) => `${phase.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'} · ${phase.name}`;
-let tournaments = [], phases = [], groups = [], teams = [], players = [], memberships = [], rules = [], sanctions = [], matches = [];
+let tournaments = [], phases = [], groups = [], teams = [], players = [], memberships = [], rules = [], sanctions = [], matches = [], scoring = [];
 
 async function request(url, init = {}) {
   const response = await fetch(url.replace(/^\/api(?=\/|$)/, '/api/admin'), { headers: { 'Content-Type': 'application/json' }, ...init });
@@ -216,7 +216,7 @@ function resetMatchForm() {
 }
 function matchCard(match) {
   const score = match.status === 'LIVE' ? `<div class="score-controls">${['A', 'B'].map((side) => `<div><strong>${escapeHtml(match[`team${side}`])}</strong><span><button data-action="score" data-team="${side}" data-delta="-1" ${match[`score${side}`] === 0 ? 'disabled' : ''}>−</button><b>${match[`score${side}`]}</b><button data-action="score" data-team="${side}" data-delta="1">+</button></span></div>`).join('')}</div>` : match.status === 'FINISHED' ? `<div class="score-controls final-score">${['A', 'B'].map((side) => `<label><strong>${escapeHtml(match[`team${side}`])}</strong><input data-result="score${side}" type="number" min="0" step="1" value="${match[`score${side}`]}"></label>`).join('')}</div>` : `<h3>${escapeHtml(match.teamA)} <small>vs</small> ${escapeHtml(match.teamB)}</h3>`;
-  return `<article class="match-card ${match.tournamentType.toLowerCase()}" data-id="${match.id}"><div class="meta"><span class="badge">${match.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'}</span><strong>${escapeHtml(match.phaseName)} · ${escapeHtml(match.groupName)} · Cancha ${match.court}</strong><span>${match.date} · ${jornadaLabels[match.jornada]}</span><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span></div>${score}<p>Línea: <strong>${escapeHtml(match.lineTeam)}</strong></p><div class="cards"><label>${escapeHtml(match.teamA)} 🟨<input data-card="yellowCardsA" type="number" min="0" value="${match.yellowCardsA}"></label><label>🟥<input data-card="redCardsA" type="number" min="0" value="${match.redCardsA}"></label><label>${escapeHtml(match.teamB)} 🟨<input data-card="yellowCardsB" type="number" min="0" value="${match.yellowCardsB}"></label><label>🟥<input data-card="redCardsB" type="number" min="0" value="${match.redCardsB}"></label><button data-action="cards">GUARDAR TARJETAS</button></div><div class="actions">${match.status === 'SCHEDULED' ? '<button data-action="edit">EDITAR</button><button class="danger" data-action="delete">ELIMINAR</button><button class="primary" data-action="start">INICIAR</button>' : ''}${match.status === 'LIVE' ? '<button class="danger" data-action="reset">REINICIAR MARCADOR</button><button class="finish" data-action="finish">FINALIZAR PARTIDO</button>' : ''}${match.status === 'FINISHED' ? '<button data-action="result">GUARDAR RESULTADO</button><button class="primary" data-action="reopen">REABRIR PARTIDO</button>' : ''}</div></article>`;
+  return `<article class="match-card ${match.tournamentType.toLowerCase()}" data-id="${match.id}"><div class="meta"><span class="badge">${match.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'}</span><strong>${escapeHtml(match.phaseName)} · ${escapeHtml(match.groupName)} · Cancha ${match.court}</strong><span>${match.date} · ${jornadaLabels[match.jornada]}</span><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span></div>${score}<p>Línea: <strong>${escapeHtml(match.lineTeam)}</strong></p><div class="cards"><label>${escapeHtml(match.teamA)} 🟨<input data-card="yellowCardsA" type="number" min="0" value="${match.yellowCardsA}"></label><label>🟥<input data-card="redCardsA" type="number" min="0" value="${match.redCardsA}"></label><label>${escapeHtml(match.teamB)} 🟨<input data-card="yellowCardsB" type="number" min="0" value="${match.yellowCardsB}"></label><label>🟥<input data-card="redCardsB" type="number" min="0" value="${match.redCardsB}"></label><button data-action="cards">GUARDAR TARJETAS</button></div><div class="actions">${match.status === 'SCHEDULED' ? '<button data-action="edit">EDITAR</button><button class="danger" data-action="delete">ELIMINAR</button><button class="primary" data-action="start">INICIAR</button>' : ''}${match.status === 'LIVE' ? '<button class="danger" data-action="reset">REINICIAR MARCADOR</button><button class="finish" data-action="finish">FINALIZAR PARTIDO</button>' : ''}${match.status === 'FINISHED' ? `<button data-action="result">GUARDAR RESULTADO</button><button class="primary" data-action="reopen">REABRIR PARTIDO</button><a class="primary" href="/admin/scoring.html?matchId=${match.id}">ADMINISTRAR GOLEO</a>` : ''}</div></article>`;
 }
 function renderMatches() {
   const date = document.querySelector('#filter-date').value, court = Number(document.querySelector('#filter-court').value);
@@ -257,6 +257,123 @@ function initCalendarPage() {
   loadCalendarPage().catch((error) => message(error.message, true));
 }
 
+const selectedScoringMatch = () => matches.find(({ id }) => id === Number(document.querySelector('#scoring-match').value));
+const scoringMatchLabel = (match) => `${match.date} · ${jornadaLabels[match.jornada]} · Cancha ${match.court} · ${match.teamA} ${match.scoreA}–${match.scoreB} ${match.teamB}`;
+
+async function loadScoringPage(tournamentId, phaseId, matchId) {
+  const tournament = await loadTournaments(tournamentId);
+  phases = tournament ? await request(`/api/tournaments/${tournament.id}/phases`) : [];
+  const phase = choose(document.querySelector('#admin-phase'), phases, phaseId ?? tournament?.currentPhaseId, phaseLabel);
+  matches = phase ? await request(`/api/matches?phaseId=${phase.id}&status=FINISHED`) : [];
+  const match = choose(document.querySelector('#scoring-match'), matches, matchId, scoringMatchLabel);
+  await loadScoringDetails(match?.id);
+}
+
+async function loadScoringDetails(matchId) {
+  const match = matches.find(({ id }) => id === Number(matchId));
+  if (match) {
+    const [teamAPlayers, teamBPlayers, matchScoring] = await Promise.all([
+      request(`/api/teams/${match.teamAId}/players`), request(`/api/teams/${match.teamBId}/players`), request(`/api/matches/${match.id}/scoring`),
+    ]);
+    players = [...teamAPlayers, ...teamBPlayers]; scoring = matchScoring;
+    history.replaceState(null, '', `/admin/scoring.html?matchId=${match.id}`);
+  } else {
+    players = []; scoring = [];
+    history.replaceState(null, '', '/admin/scoring.html');
+  }
+  renderScoringPage();
+}
+
+function renderScoringPlayerOptions(preferred) {
+  const teamId = Number(document.querySelector('#scoring-team').value);
+  const available = players.filter((player) => player.teamId === teamId && (player.status === 'REGISTERED' || scoring.some((item) => item.playerId === player.id)));
+  choose(document.querySelector('#scoring-player'), available, preferred, (player) => `#${player.number} · ${player.name || 'Sin nombre'}`);
+  document.querySelector('#scoring-form button[type="submit"]').disabled = !available.length;
+}
+
+function populateScoringForm() {
+  const item = scoring.find(({ playerId }) => playerId === Number(document.querySelector('#scoring-player').value));
+  document.querySelector('#scoring-player-id').value = item?.playerId || '';
+  for (const key of ['directGoals', 'pepitas', 'horquetas']) document.querySelector(`#${key}`).value = item?.[key] || 0;
+  document.querySelector('#scoring-form button[type="submit"]').textContent = item ? 'GUARDAR CAMBIOS' : 'GUARDAR GOLEO';
+  document.querySelector('#cancel-scoring-edit').hidden = !item; updateScoringTotal();
+}
+
+function updateScoringTotal() {
+  const value = Number(document.querySelector('#directGoals').value) + Number(document.querySelector('#pepitas').value) * 2 + Number(document.querySelector('#horquetas').value) * 3;
+  document.querySelector('#scoring-total').textContent = value;
+}
+
+function resetScoringForm(preferred = scoring[0]) {
+  const form = document.querySelector('#scoring-form');
+  form.reset(); document.querySelector('#scoring-player-id').value = '';
+  document.querySelector('#scoring-team').disabled = false; document.querySelector('#scoring-player').disabled = false;
+  form.querySelector('button[type="submit"]').textContent = 'GUARDAR GOLEO'; document.querySelector('#cancel-scoring-edit').hidden = true;
+  if (preferred) document.querySelector('#scoring-team').value = preferred.teamId;
+  renderScoringPlayerOptions(preferred?.playerId); populateScoringForm();
+}
+
+function renderScoringPage() {
+  const match = selectedScoringMatch(), detail = document.querySelector('#scoring-match-detail'), list = document.querySelector('#scoring-list'), teamSelect = document.querySelector('#scoring-team');
+  detail.innerHTML = match ? `<article class="match-summary"><p>${escapeHtml(match.date)} · ${jornadaLabels[match.jornada]} · Cancha ${match.court}</p><h3>${escapeHtml(match.teamA)} <strong>${match.scoreA}–${match.scoreB}</strong> ${escapeHtml(match.teamB)}</h3></article>` : '<p class="empty">No hay partidos finalizados en esta fase.</p>';
+  teamSelect.innerHTML = match ? options([{ id: match.teamAId, name: match.teamA }, { id: match.teamBId, name: match.teamB }]) : '';
+  disable(document.querySelector('#scoring-form'), !match);
+  resetScoringForm();
+  if (!match) disable(document.querySelector('#scoring-form'), true);
+  list.innerHTML = match ? [[match.teamAId, match.teamA], [match.teamBId, match.teamB]].map(([teamId, teamName]) => {
+    const rows = scoring.filter((item) => item.teamId === teamId).map((item) => {
+      const player = players.find(({ id }) => id === item.playerId), combo = item.pepitas > 0 && item.horquetas > 0 ? '<em class="combo">Pepita + horqueta</em>' : '';
+      return `<div class="scoring-row${player?.status === 'UNREGISTERED' ? ' unregistered' : ''}"><span><strong>#${escapeHtml(item.playerNumber)}</strong> ${escapeHtml(player?.name || 'Sin nombre')}<small>Normales: ${item.directGoals} · Pepitas: ${item.pepitas} · Horquetas: ${item.horquetas} ${combo}</small></span><b>${item.total}</b><button data-action="edit-scoring" data-player-id="${item.playerId}">EDITAR</button><button class="danger" data-action="delete-scoring" data-player-id="${item.playerId}">ELIMINAR</button></div>`;
+    }).join('');
+    return `<section class="scoring-team"><h3>${escapeHtml(teamName)}</h3>${rows || '<p class="empty">Sin goleo registrado.</p>'}</section>`;
+  }).join('') : '';
+}
+
+async function loadInitialScoringPage() {
+  const matchId = Number(new URLSearchParams(location.search).get('matchId'));
+  if (!matchId) return loadScoringPage();
+  try {
+    const target = await request(`/api/matches/${matchId}`), availableTournaments = await request('/api/tournaments');
+    const phaseLists = await Promise.all(availableTournaments.map((tournament) => request(`/api/tournaments/${tournament.id}/phases`)));
+    const tournamentIndex = phaseLists.findIndex((items) => items.some(({ id }) => id === target.phaseId));
+    if (tournamentIndex < 0 || target.status !== 'FINISHED') throw new Error('El partido no está disponible para cargar goleo.');
+    await loadScoringPage(availableTournaments[tournamentIndex].id, target.phaseId, target.id);
+  } catch (error) {
+    await loadScoringPage(); message(error.message, true);
+  }
+}
+
+function initScoringPage() {
+  document.querySelector('#admin-tournament').addEventListener('change', () => loadScoringPage(selectedTournament()?.id).catch((error) => message(error.message, true)));
+  document.querySelector('#admin-phase').addEventListener('change', () => loadScoringPage(selectedTournament()?.id, selectedPhase()?.id).catch((error) => message(error.message, true)));
+  document.querySelector('#scoring-match').addEventListener('change', () => loadScoringDetails(selectedScoringMatch()?.id).catch((error) => message(error.message, true)));
+  document.querySelector('#scoring-team').addEventListener('change', () => { renderScoringPlayerOptions(); populateScoringForm(); });
+  document.querySelector('#scoring-player').addEventListener('change', populateScoringForm);
+  document.querySelectorAll('#directGoals,#pepitas,#horquetas').forEach((input) => input.addEventListener('input', updateScoringTotal));
+  document.querySelector('#cancel-scoring-edit').addEventListener('click', populateScoringForm);
+  document.querySelector('#scoring-form').addEventListener('submit', async (event) => {
+    event.preventDefault(); const match = selectedScoringMatch(), editing = document.querySelector('#scoring-player-id').value, playerId = Number(editing || document.querySelector('#scoring-player').value);
+    const body = Object.fromEntries(['directGoals', 'pepitas', 'horquetas'].map((key) => [key, Number(document.querySelector(`#${key}`).value)]));
+    if (body.directGoals + body.pepitas + body.horquetas === 0) return message('Registra al menos una anotación.', true);
+    try {
+      await request(`/api/matches/${match.id}/scoring${editing ? `/${playerId}` : ''}`, { method: editing ? 'PUT' : 'POST', body: JSON.stringify(editing ? body : { playerId, ...body }) });
+      scoring = await request(`/api/matches/${match.id}/scoring`); renderScoringPage(); message('Goleo guardado.');
+    } catch (error) { message(error.message, true); }
+  });
+  document.querySelector('#scoring-list').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-action]'); if (!button) return;
+    const item = scoring.find(({ playerId }) => playerId === Number(button.dataset.playerId)), match = selectedScoringMatch();
+    if (button.dataset.action === 'edit-scoring') {
+      document.querySelector('#scoring-team').value = item.teamId; renderScoringPlayerOptions(item.playerId); populateScoringForm(); return;
+    }
+    if (!confirm(`¿Eliminar el goleo del jugador #${item.playerNumber}?`)) return;
+    try { await request(`/api/matches/${match.id}/scoring/${item.playerId}`, { method: 'DELETE' }); scoring = await request(`/api/matches/${match.id}/scoring`); renderScoringPage(); message('Goleo eliminado.'); }
+    catch (error) { message(error.message, true); }
+  });
+  loadInitialScoringPage().catch((error) => message(error.message, true));
+}
+
 if (page === 'tournaments') initTournamentPage();
 if (page === 'teams') initTeamPage();
 if (page === 'calendar') initCalendarPage();
+if (page === 'scoring') initScoringPage();

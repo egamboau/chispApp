@@ -118,13 +118,15 @@ test('migra horas existentes a jornadas sin perder el partido', async () => {
   assert.equal(phases.body[0].tournamentType, 'MALE');
 });
 
-test('sirve las tres páginas administrativas y la pantalla pública', async () => {
+test('sirve las páginas administrativas y la pantalla pública', async () => {
   const auth = { headers: { 'cf-access-jwt-assertion': accessToken } };
-  const [tournamentsAdmin, teamsAdmin, calendarAdmin, display, css] = await Promise.all([fetch(`${base}/admin/`, auth), fetch(`${base}/admin/teams.html`, auth), fetch(`${base}/admin/calendar.html`, auth), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);
+  const [tournamentsAdmin, teamsAdmin, calendarAdmin, scoringAdmin, adminJs, display, css] = await Promise.all([fetch(`${base}/admin/`, auth), fetch(`${base}/admin/teams.html`, auth), fetch(`${base}/admin/calendar.html`, auth), fetch(`${base}/admin/scoring.html`, auth), fetch(`${base}/admin/admin.js`, auth), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);
   assert.equal(display.headers.get('cache-control'), 'no-store');
-  assert.match(await tournamentsAdmin.text(), /id="phase-tournament-type"[\s\S]*id="rule-form"/);
+  assert.match(await tournamentsAdmin.text(), /href="\/admin\/scoring.html"[\s\S]*id="phase-tournament-type"[\s\S]*id="rule-form"/);
   assert.match(await teamsAdmin.text(), /id="membership-form"[\s\S]*id="player-form"/);
   assert.match(await calendarAdmin.text(), /id="admin-phase"[\s\S]*id="match-form"[\s\S]*id="line-visibility"/);
+  assert.match(await scoringAdmin.text(), /id="scoring-match"[\s\S]*id="scoring-form"[\s\S]*id="scoring-list"/);
+  assert.match(await adminJs.text(), /ADMINISTRAR GOLEO/);
   assert.match(await display.text(), /data-view="standings"/);
   assert.match(await css.text(), /@media \(max-width: 900px\)/);
 });
@@ -225,6 +227,9 @@ test('administra el goleo de un partido finalizado', async () => {
   await json(`/api/matches/${match.id}/start`, { method: 'POST' });
   result = await json(`/api/matches/${match.id}/finish`, { method: 'POST' });
   assert.equal(result.body.status, 'FINISHED');
+  result = await json(`/api/matches/${match.id}/scoring`);
+  assert.equal(result.response.status, 200);
+  assert.deepEqual(result.body, []);
   assert.equal((await publicJson(`/api/matches/${match.id}/scoring`)).response.status, 404);
   assert.equal((await publicJson(`/api/matches/${match.id}/scoring`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ playerId: playerA.id, directGoals: 1, horquetas: 0, pepitas: 0 }) })).response.status, 404);
 
