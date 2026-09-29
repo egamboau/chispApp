@@ -2,19 +2,13 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug servidor TypeScript",
-      "type": "node",
+      "command": "npm run dev",
+      "name": "Run npm start",
       "request": "launch",
-      "runtimeArgs": ["--import", "tsx"],
-      "program": "${workspaceFolder}/src/index.ts",
-      "cwd": "${workspaceFolder}",
+      "type": "node-terminal",
       "env": {
-        "NODE_ENV": "development",
-        "PORT": "3000",
         "DATABASE_PATH": "${workspaceFolder}/data/tournament.db"
-      },
-      "sourceMaps": true,
-      "skipFiles": ["<node_internals>/**"]
+      }
     }
   ]
 }
