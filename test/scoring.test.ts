@@ -29,12 +29,12 @@ test('persiste y permite corregir el goleo agregado por jugador', () => {
     const matchId = Number(db.executeQuery("INSERT INTO matches(tournamentType,date,jornada,teamA,teamB,lineTeam,court,teamAId,teamBId) VALUES('MALE','2026-09-29','MORNING','A','B','C',1,?,?)", teamA, teamB).lastInsertRowid);
     const scoring = new MatchPlayerScoringRepository(db);
 
-    assert.equal(scoring.save({ matchId, playerId: playerA, directGoals: 3, horquetas: 2, pepitas: 1 }).total, 11);
-    assert.equal(scoring.save({ matchId, playerId: playerA, directGoals: 3, horquetas: 1, pepitas: 1 }).total, 8);
+    assert.equal(scoring.insert({ matchId, playerId: playerA, directGoals: 3, horquetas: 2, pepitas: 1 }).total, 11);
+    assert.equal(scoring.update({ matchId, playerId: playerA, directGoals: 3, horquetas: 1, pepitas: 1 }).total, 8);
     assert.equal(scoring.getForMatch(matchId).length, 1);
-    assert.throws(() => scoring.save({ matchId, playerId: playerC, directGoals: 1, horquetas: 0, pepitas: 0 }));
-    assert.throws(() => scoring.save({ matchId, playerId: playerA, directGoals: -1, horquetas: 0, pepitas: 0 }));
-    assert.throws(() => scoring.save({ matchId, playerId: playerA, directGoals: 0, horquetas: 0, pepitas: 0 }));
+    assert.throws(() => scoring.insert({ matchId, playerId: playerC, directGoals: 1, horquetas: 0, pepitas: 0 }));
+    assert.throws(() => scoring.update({ matchId, playerId: playerA, directGoals: -1, horquetas: 0, pepitas: 0 }));
+    assert.throws(() => scoring.update({ matchId, playerId: playerA, directGoals: 0, horquetas: 0, pepitas: 0 }));
     assert.throws(() => db.executeQuery('UPDATE matches SET teamAId=? WHERE id=?', teamC, matchId));
     assert.throws(() => db.executeQuery('UPDATE players SET teamId=? WHERE id=?', teamC, playerA));
 
@@ -43,7 +43,7 @@ test('persiste y permite corregir el goleo agregado por jugador', () => {
     assert.equal(reopened.delete(matchId, playerA), true);
     assert.deepEqual(reopened.getForMatch(matchId), []);
 
-    reopened.save({ matchId, playerId: playerA, directGoals: 1, horquetas: 0, pepitas: 0 });
+    reopened.insert({ matchId, playerId: playerA, directGoals: 1, horquetas: 0, pepitas: 0 });
     db.executeQuery('DELETE FROM matches WHERE id=?', matchId);
     assert.deepEqual(reopened.getForMatch(matchId), []);
   } finally {

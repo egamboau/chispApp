@@ -31,6 +31,7 @@ import { MatchRepository } from "./repository/match_repository";
 import { MatchService } from "./service/match_service";
 import { MatchController } from "./controller/match_controller";
 import { MatchRoute } from "./routes/matches";
+import { MatchPlayerScoringRepository } from "./repository/match_player_scoring_repository";
 import { AuthorizationServices } from "./utils/security";
 
 class App {
@@ -91,8 +92,8 @@ class App {
         const phaseDetailController = new PhaseDetailController(phaseDetailService, phaseService, groupService, teamService)
         this.app.use(new PhaseDetailRoute(phaseDetailController).router)
 
-        const matchService = new MatchService(new MatchRepository(this.dbConnection), phaseService, groupService, teamService, tournamentService)
-        this.app.use(new MatchRoute(new MatchController(matchService)).router)
+        const matchService = new MatchService(new MatchRepository(this.dbConnection), phaseService, groupService, teamService, tournamentService, new MatchPlayerScoringRepository(this.dbConnection))
+        this.app.use(new MatchRoute(new MatchController(matchService, playerService)).router)
 
         this.app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }))
         const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {

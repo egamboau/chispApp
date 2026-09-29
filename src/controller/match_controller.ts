@@ -2,6 +2,7 @@ import { Request, RequestHandler } from "express";
 import { z } from "zod";
 import { MatchFilters } from "../models/match";
 import { MatchService } from "../service/match_service";
+import { PlayerService } from "../service/player_service";
 import { notify } from "../utils/events";
 
 const idSchema = z.coerce.number().int().positive();
@@ -11,11 +12,22 @@ const cardsSchema = z.object({
     yellowCardsA: z.coerce.number().int().nonnegative(), redCardsA: z.coerce.number().int().nonnegative(),
     yellowCardsB: z.coerce.number().int().nonnegative(), redCardsB: z.coerce.number().int().nonnegative(),
 });
+const scoringFields = {
+    directGoals: z.coerce.number().int().nonnegative(),
+    horquetas: z.coerce.number().int().nonnegative(),
+    pepitas: z.coerce.number().int().nonnegative(),
+};
+const hasScoring = (value: { directGoals: number; horquetas: number; pepitas: number }) => value.directGoals + value.horquetas + value.pepitas > 0;
+const scoringSchema = z.object(scoringFields).refine(hasScoring);
+const newScoringSchema = z.object({ playerId: idSchema, ...scoringFields }).refine(hasScoring);
 
 type AdminRequest = Request & { isAdmin?: boolean };
 
 export class MatchController {
-    constructor(private readonly service: MatchService) {}
+    constructor(
+        private readonly service: MatchService,
+        private readonly playerService: PlayerService,
+    ) {}
 
     getMatches: RequestHandler = (req, res) => {
         const filters: MatchFilters = {}
@@ -133,6 +145,56 @@ export class MatchController {
         if (!updated) return res.status(404).json({ error: 'Partido no encontrado.' })
         notify('cards', updated.id)
         res.json(updated)
+    }
+
+    getScoring: RequestHandler = (req, res) => {
+        const matchId = idSchema.safeParse(req.params.matchId)
+        if (!matchId.success) return res.status(400).json({ error: 'Id de partido inválido.' })
+        if (!this.service.getMatch(matchId.data, true)) return res.status(404).json({ error: 'Partido no encontrado.' })
+        res.json(this.service.getScoring(matchId.data))
+    }
+
+    insertScoring: RequestHandler = (req, res) => {
+        const matchId = idSchema.safeParse(req.params.matchId), input = newScoringSchema.safeParse(req.body)
+        if (!matchId.success) return res.status(400).json({ error: 'Id de partido inválido.' })
+        if (!input.success) return res.status(400).json({ error: 'Anotación inválida.' })
+        const match = this.service.getMatch(matchId.data, true)
+        if (!match) return res.status(404).json({ error: 'Partido no encontrado.' })
+        const player = this.playerService.getPlayer(input.data.playerId)
+        if (!player) return res.status(404).json({ error: 'Jugador no encontrado.' })
+        if (![match.teamAId, match.teamBId].includes(player.teamId)) return res.status(400).json({ error: 'El jugador no pertenece al partido.' })
+        if (this.service.getPlayerScoring(match.id, player.id)) return res.status(409).json({ error: 'El jugador ya tiene goleo registrado.' })
+        const created = this.service.insertScoring({ matchId: match.id, ...input.data })
+        notify('scoring', match.id)
+        res.status(201).json(created)
+    }
+
+    updateScoring: RequestHandler = (req, res) => {
+        const matchId = idSchema.safeParse(req.params.matchId), playerId = idSchema.safeParse(req.params.playerId), input = scoringSchema.safeParse(req.body)
+        if (!matchId.success || !playerId.success) return res.status(400).json({ error: 'Id inválido.' })
+        if (!input.success) return res.status(400).json({ error: 'Anotación inválida.' })
+        const match = this.service.getMatch(matchId.data, true)
+        if (!match) return res.status(404).json({ error: 'Partido no encontrado.' })
+        const player = this.playerService.getPlayer(playerId.data)
+        if (!player) return res.status(404).json({ error: 'Jugador no encontrado.' })
+        if (![match.teamAId, match.teamBId].includes(player.teamId)) return res.status(400).json({ error: 'El jugador no pertenece al partido.' })
+        if (!this.service.getPlayerScoring(match.id, player.id)) return res.status(404).json({ error: 'Goleo no encontrado.' })
+        const updated = this.service.updateScoring({ matchId: match.id, playerId: player.id, ...input.data })
+        notify('scoring', match.id)
+        res.json(updated)
+    }
+
+    deleteScoring: RequestHandler = (req, res) => {
+        const matchId = idSchema.safeParse(req.params.matchId), playerId = idSchema.safeParse(req.params.playerId)
+        if (!matchId.success || !playerId.success) return res.status(400).json({ error: 'Id inválido.' })
+        const match = this.service.getMatch(matchId.data, true)
+        if (!match) return res.status(404).json({ error: 'Partido no encontrado.' })
+        const player = this.playerService.getPlayer(playerId.data)
+        if (!player) return res.status(404).json({ error: 'Jugador no encontrado.' })
+        if (![match.teamAId, match.teamBId].includes(player.teamId)) return res.status(400).json({ error: 'El jugador no pertenece al partido.' })
+        if (!this.service.deleteScoring(matchId.data, playerId.data)) return res.status(404).json({ error: 'Goleo no encontrado.' })
+        notify('scoring', matchId.data)
+        res.status(204).end()
     }
 
     private statusHandler(from: string, to: string): RequestHandler {

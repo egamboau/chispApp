@@ -11,11 +11,21 @@ export class MatchPlayerScoringRepository {
         return this.dbConnection.fetchAllFromParameterizedQuery<MatchPlayerScoring>(`${scoringSelect} WHERE s.matchId=? ORDER BY p.number`, matchId)
     }
 
-    save(scoring: MatchPlayerScoringInput): MatchPlayerScoring {
+    get(matchId: number, playerId: number): MatchPlayerScoring | undefined {
+        return this.dbConnection.fetchOneFromQuery<MatchPlayerScoring>(`${scoringSelect} WHERE s.matchId=? AND s.playerId=?`, matchId, playerId)
+    }
+
+    insert(scoring: MatchPlayerScoringInput): MatchPlayerScoring {
         this.dbConnection.executeNamedQuery(`INSERT INTO match_player_scoring(matchId,playerId,directGoals,horquetas,pepitas)
-            VALUES(@matchId,@playerId,@directGoals,@horquetas,@pepitas)
-            ON CONFLICT(matchId,playerId) DO UPDATE SET directGoals=excluded.directGoals,horquetas=excluded.horquetas,pepitas=excluded.pepitas`, scoring)
-        return this.dbConnection.fetchOneFromQuery<MatchPlayerScoring>(`${scoringSelect} WHERE s.matchId=? AND s.playerId=?`, scoring.matchId, scoring.playerId)!
+            VALUES(@matchId,@playerId,@directGoals,@horquetas,@pepitas)`, scoring)
+        return this.get(scoring.matchId, scoring.playerId)!
+    }
+
+    update(scoring: MatchPlayerScoringInput): MatchPlayerScoring {
+        this.dbConnection.executeNamedQuery(`UPDATE match_player_scoring
+            SET directGoals=@directGoals,horquetas=@horquetas,pepitas=@pepitas
+            WHERE matchId=@matchId AND playerId=@playerId`, scoring)
+        return this.get(scoring.matchId, scoring.playerId)!
     }
 
     delete(matchId: number, playerId: number): boolean {

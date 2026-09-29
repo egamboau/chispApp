@@ -1,4 +1,6 @@
 import { Match, MatchFilters, MatchInput } from "../models/match";
+import { MatchPlayerScoring, MatchPlayerScoringInput } from "../models/match_player_scoring";
+import { MatchPlayerScoringRepository } from "../repository/match_player_scoring_repository";
 import { Team } from "../models/team";
 import { MatchRepository } from "../repository/match_repository";
 import { GroupService } from "./group_service";
@@ -13,6 +15,7 @@ export class MatchService {
         private readonly groupService: GroupService,
         private readonly teamService: TeamService,
         private readonly tournamentService: TournamentService,
+        private readonly scoringRepository: MatchPlayerScoringRepository,
     ) {}
 
     getMatches(filters: MatchFilters, isAdmin = false): Match[] {
@@ -108,6 +111,26 @@ export class MatchService {
 
     setCards(id: number, cards: Record<string, number>): Match | undefined {
         return this.repository.setCards(id, cards) ? this.repository.getMatch(id) : undefined
+    }
+
+    getScoring(matchId: number): MatchPlayerScoring[] {
+        return this.scoringRepository.getForMatch(matchId)
+    }
+
+    getPlayerScoring(matchId: number, playerId: number): MatchPlayerScoring | undefined {
+        return this.scoringRepository.get(matchId, playerId)
+    }
+
+    insertScoring(scoring: MatchPlayerScoringInput): MatchPlayerScoring {
+        return this.scoringRepository.insert(scoring)
+    }
+
+    updateScoring(scoring: MatchPlayerScoringInput): MatchPlayerScoring {
+        return this.scoringRepository.update(scoring)
+    }
+
+    deleteScoring(matchId: number, playerId: number): boolean {
+        return this.scoringRepository.delete(matchId, playerId)
     }
 
     validDate(value: string): boolean {

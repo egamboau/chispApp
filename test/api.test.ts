@@ -216,6 +216,47 @@ test('flujo completo de partidos y validaciones', async () => {
   assert.equal(result.response.status, 404);
 });
 
+test('administra el goleo de un partido finalizado', async () => {
+  let result = await json('/api/matches', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', date: '2026-09-22', jornada: 'AFTERNOON', teamA: 'Goleo A', teamB: 'Goleo B', lineTeam: 'Goleo Línea', court: 4 }) });
+  const match = result.body;
+  const playerA = (await json(`/api/teams/${match.teamAId}/players`, { method: 'POST', body: JSON.stringify({ number: '01' }) })).body;
+  const outsider = (await json(`/api/teams/${match.lineTeamId}/players`, { method: 'POST', body: JSON.stringify({ number: '99' }) })).body;
+
+  await json(`/api/matches/${match.id}/start`, { method: 'POST' });
+  result = await json(`/api/matches/${match.id}/finish`, { method: 'POST' });
+  assert.equal(result.body.status, 'FINISHED');
+  assert.equal((await publicJson(`/api/matches/${match.id}/scoring`)).response.status, 404);
+  assert.equal((await publicJson(`/api/matches/${match.id}/scoring`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ playerId: playerA.id, directGoals: 1, horquetas: 0, pepitas: 0 }) })).response.status, 404);
+
+  const controller = new AbortController();
+  const stream = await fetch(`${base}/api/events`, { signal: controller.signal });
+  const reader = stream.body!.getReader();
+  await reader.read();
+
+  result = await json(`/api/matches/${match.id}/scoring`, { method: 'POST', body: JSON.stringify({ playerId: playerA.id, directGoals: 0, horquetas: 1, pepitas: 1 }) });
+  assert.equal(result.response.status, 201);
+  assert.equal(result.body.total, 5);
+  const event = new TextDecoder().decode((await reader.read()).value);
+  assert.match(event, new RegExp(`"type":"scoring","id":${match.id}`));
+  controller.abort();
+
+  assert.equal((await json(`/api/matches/${match.id}/scoring`, { method: 'POST', body: JSON.stringify({ playerId: playerA.id, directGoals: 1, horquetas: 0, pepitas: 0 }) })).response.status, 409);
+  result = await json(`/api/matches/${match.id}/scoring`);
+  assert.deepEqual(result.body.map(({ playerId, total }: { playerId: number; total: number }) => ({ playerId, total })), [{ playerId: playerA.id, total: 5 }]);
+
+  result = await json(`/api/matches/${match.id}/scoring/${playerA.id}`, { method: 'PUT', body: JSON.stringify({ directGoals: 2, horquetas: 1, pepitas: 0 }) });
+  assert.equal(result.body.total, 5);
+  assert.equal((await json(`/api/matches/${match.id}/scoring/${playerA.id}`, { method: 'PUT', body: JSON.stringify({ directGoals: 0, horquetas: 0, pepitas: 0 }) })).response.status, 400);
+  assert.equal((await json(`/api/matches/${match.id}/scoring/${playerA.id}`, { method: 'PUT', body: JSON.stringify({ directGoals: -1, horquetas: 0, pepitas: 0 }) })).response.status, 400);
+  assert.equal((await json(`/api/matches/${match.id}/scoring`, { method: 'POST', body: JSON.stringify({ playerId: outsider.id, directGoals: 1, horquetas: 0, pepitas: 0 }) })).response.status, 400);
+  assert.equal((await json(`/api/matches/${match.id}/scoring`, { method: 'POST', body: JSON.stringify({ playerId: 999999, directGoals: 1, horquetas: 0, pepitas: 0 }) })).response.status, 404);
+  assert.equal((await json('/api/matches/999999/scoring')).response.status, 404);
+  assert.equal((await json(`/api/matches/${match.id}/scoring/${outsider.id}`, { method: 'DELETE' })).response.status, 400);
+
+  assert.equal((await json(`/api/matches/${match.id}/scoring/${playerA.id}`, { method: 'DELETE' })).response.status, 204);
+  assert.equal((await json(`/api/matches/${match.id}/scoring/${playerA.id}`, { method: 'DELETE' })).response.status, 404);
+});
+
 test('oculta las líneas hasta que un administrador publique la fecha', async () => {
   const date = '2026-09-23';
   let result = await json('/api/matches', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', date, jornada: 'MORNING', teamA: 'A', teamB: 'B', lineTeam: 'Secreto', court: 1 }) });
