@@ -78,6 +78,7 @@ class DBConnection {
         this.database.exec(`
         CREATE TABLE IF NOT EXISTS teams (id INTEGER PRIMARY KEY AUTOINCREMENT,tournamentType TEXT NOT NULL CHECK(tournamentType IN ('MALE','FEMALE')),name TEXT NOT NULL COLLATE NOCASE CHECK(length(name) BETWEEN 1 AND 100),UNIQUE(tournamentType,name));
         INSERT OR IGNORE INTO teams(tournamentType,name) SELECT tournamentType,teamA FROM matches UNION SELECT tournamentType,teamB FROM matches UNION SELECT tournamentType,lineTeam FROM matches;
+        CREATE TABLE IF NOT EXISTS players (id INTEGER PRIMARY KEY AUTOINCREMENT,teamId INTEGER NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,number TEXT NOT NULL CHECK(length(number)>0 AND number NOT GLOB '*[^0-9]*'),name TEXT CHECK(name IS NULL OR length(name) BETWEEN 1 AND 100),status TEXT NOT NULL DEFAULT 'REGISTERED' CHECK(status IN('REGISTERED','UNREGISTERED')),UNIQUE(teamId,number));
         CREATE TABLE IF NOT EXISTS tournaments (id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL COLLATE NOCASE UNIQUE CHECK(length(name) BETWEEN 1 AND 100),active INTEGER NOT NULL DEFAULT 1 CHECK(active IN(0,1)),currentPhaseId INTEGER,legacyType TEXT UNIQUE CHECK(legacyType IN('MALE','FEMALE')));
         CREATE TABLE IF NOT EXISTS phases (id INTEGER PRIMARY KEY AUTOINCREMENT,tournamentId INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE RESTRICT,name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),type TEXT NOT NULL DEFAULT 'TABLE' CHECK(type IN('TABLE','ELIMINATION')),tournamentType TEXT CHECK(tournamentType IN('MALE','FEMALE')),sortOrder INTEGER NOT NULL DEFAULT 1 CHECK(sortOrder>0),UNIQUE(tournamentId,name));
         CREATE TABLE IF NOT EXISTS groups_table (id INTEGER PRIMARY KEY AUTOINCREMENT,phaseId INTEGER NOT NULL REFERENCES phases(id) ON DELETE RESTRICT,name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),UNIQUE(phaseId,name));
@@ -143,11 +144,23 @@ class DBConnection {
     }
 
     executeQuery(query: string, ...params: unknown[]): Database.RunResult {
-        return this.database.prepare<unknown[]>(query).run(...params)
+        try {
+            return this.database.prepare<unknown[]>(query).run(...params)
+        } catch (error) {
+            this.throwDatabaseError(error)
+        }
     }
 
     executeNamedQuery(query: string, params: object): Database.RunResult {
         return this.database.prepare<object>(query).run(params)
+    }
+
+    private throwDatabaseError(error: unknown): never {
+        if (error instanceof Database.SqliteError) {
+            const name = error.code === 'SQLITE_CONSTRAINT_UNIQUE' ? 'UniqueConstraintError' : 'DatabaseError'
+            throw new DatabaseConnectionError(name, 'Error al ejecutar la operación en la base de datos.', error)
+        }
+        throw error
     }
 
     insertTournamentInDatabase(name: string, active: boolean): Tournament|undefined {

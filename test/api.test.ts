@@ -113,6 +113,7 @@ test('migra horas existentes a jornadas sin perder el partido', async () => {
   assert.equal('time' in result.body[0], false);
   const teams = await json('/api/teams?tournamentType=MALE');
   assert.deepEqual(teams.body.map(({ name }: { name: string }) => name), ['Legado A', 'Legado B', 'Legado Línea']);
+  assert.deepEqual((await json(`/api/teams/${teams.body[0].id}/players`)).body, []);
   const phases = await json('/api/tournaments/1/phases');
   assert.equal(phases.body[0].tournamentType, 'MALE');
 });
@@ -122,7 +123,7 @@ test('sirve las tres páginas administrativas y la pantalla pública', async () 
   const [tournamentsAdmin, teamsAdmin, calendarAdmin, display, css] = await Promise.all([fetch(`${base}/admin/`, auth), fetch(`${base}/admin/teams.html`, auth), fetch(`${base}/admin/calendar.html`, auth), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);
   assert.equal(display.headers.get('cache-control'), 'no-store');
   assert.match(await tournamentsAdmin.text(), /id="phase-tournament-type"[\s\S]*id="rule-form"/);
-  assert.match(await teamsAdmin.text(), /id="membership-form"/);
+  assert.match(await teamsAdmin.text(), /id="membership-form"[\s\S]*id="player-form"/);
   assert.match(await calendarAdmin.text(), /id="admin-phase"[\s\S]*id="match-form"[\s\S]*id="line-visibility"/);
   assert.match(await display.text(), /data-view="standings"/);
   assert.match(await css.text(), /@media \(max-width: 900px\)/);
@@ -146,6 +147,31 @@ test('guarda equipos separados por torneo', async () => {
   assert.deepEqual(result.body, []);
   result = await json(`/api/teams/${id}`, { method: 'DELETE' });
   assert.equal(result.response.status, 404);
+});
+
+test('administra la nómina sin perder ceros iniciales', async () => {
+  let result = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', name: 'Nómina A' }) });
+  const teamA = result.body.id;
+  result = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', name: 'Nómina B' }) });
+  const teamB = result.body.id;
+
+  assert.equal((await publicJson(`/api/teams/${teamA}/players`)).response.status, 404);
+  result = await json(`/api/teams/${teamA}/players`, { method: 'POST', body: JSON.stringify({ number: '00', name: '' }) });
+  assert.equal(result.response.status, 201);
+  assert.deepEqual({ number: result.body.number, name: result.body.name, status: result.body.status, displayName: result.body.displayName }, { number: '00', name: null, status: 'REGISTERED', displayName: 'Equipo Nómina A - Número 00' });
+  const playerId = result.body.id;
+
+  assert.equal((await json(`/api/teams/${teamA}/players`, { method: 'POST', body: JSON.stringify({ number: '00' }) })).response.status, 409);
+  assert.equal((await json(`/api/teams/${teamB}/players`, { method: 'POST', body: JSON.stringify({ number: '00' }) })).response.status, 201);
+  assert.equal((await json(`/api/teams/${teamA}/players`, { method: 'POST', body: JSON.stringify({ number: 'A1' }) })).response.status, 400);
+
+  result = await json(`/api/players/${playerId}`, { method: 'PUT', body: JSON.stringify({ number: '07', name: ' Ana ' }) });
+  assert.deepEqual({ id: result.body.id, number: result.body.number, name: result.body.name, displayName: result.body.displayName }, { id: playerId, number: '07', name: 'Ana', displayName: 'Ana' });
+  result = await json(`/api/players/${playerId}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'UNREGISTERED' }) });
+  assert.equal(result.body.status, 'UNREGISTERED');
+  result = await json(`/api/players/${playerId}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'REGISTERED' }) });
+  assert.equal(result.body.status, 'REGISTERED');
+  assert.equal((await json(`/api/teams/${teamA}`, { method: 'DELETE' })).response.status, 409);
 });
 
 test.after(async () => {

@@ -32,6 +32,8 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .team-group { border-top: 1px solid #dce3ea; padding: .6rem 0; }
 .team-group h3, .team-group p { margin: .35rem 0; }
 #teams { max-height: 280px; margin-bottom: 1.2rem; overflow-y: auto; }
+#players { max-height: 320px; margin-bottom: 1.2rem; overflow-y: auto; }
+.player-row.unregistered { opacity: .55; }
 .quick-forms { display: grid; gap: .65rem; margin: 1rem 0; }
 .quick-forms form { padding: .7rem; border: 1px solid #dce3ea; border-radius: 9px; }
 .quick-forms form label { grid-column: auto; }

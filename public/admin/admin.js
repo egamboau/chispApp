@@ -4,7 +4,7 @@ const statusLabels = { SCHEDULED: 'Programado', LIVE: 'En juego', FINISHED: 'Fin
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
 const options = (items, label = 'name') => items.map((item) => `<option value="${item.id}">${escapeHtml(typeof label === 'function' ? label(item) : item[label])}</option>`).join('');
 const phaseLabel = (phase) => `${phase.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'} · ${phase.name}`;
-let tournaments = [], phases = [], groups = [], teams = [], memberships = [], rules = [], sanctions = [], matches = [];
+let tournaments = [], phases = [], groups = [], teams = [], players = [], memberships = [], rules = [], sanctions = [], matches = [];
 
 async function request(url, init = {}) {
   const response = await fetch(url.replace(/^\/api(?=\/|$)/, '/api/admin'), { headers: { 'Content-Type': 'application/json' }, ...init });
@@ -98,13 +98,19 @@ function initTournamentPage() {
   loadTournamentPage().catch((error) => message(error.message, true));
 }
 
-async function loadTeamPage(tournamentId, phaseId) {
+async function loadTeamPage(tournamentId, phaseId, playerTeamId) {
   const tournament = await loadTournaments(tournamentId);
   phases = tournament ? await request(`/api/tournaments/${tournament.id}/phases`) : [];
   const phase = choose(document.querySelector('#admin-phase'), phases, phaseId ?? tournament?.currentPhaseId, phaseLabel);
   teams = tournament ? await request(`/api/teams?tournamentId=${tournament.id}`) : [];
   [groups, memberships, sanctions] = phase ? await Promise.all([request(`/api/phases/${phase.id}/groups`), request(`/api/phases/${phase.id}/memberships`), request(`/api/phases/${phase.id}/sanctions`)]) : [[], [], []];
+  const playerTeam = choose(document.querySelector('#player-team'), teams, playerTeamId);
+  players = playerTeam ? await request(`/api/teams/${playerTeam.id}/players`) : [];
   renderTeamPage();
+}
+function renderPlayers() {
+  document.querySelector('#players').innerHTML = players.map((player) => `<div class="config-row player-row ${player.status === 'UNREGISTERED' ? 'unregistered' : ''}"><span><strong>${escapeHtml(player.displayName)}</strong><small>Número ${escapeHtml(player.number)} · ${player.status === 'REGISTERED' ? 'Inscrito' : 'Desinscrito'}</small></span><button data-action="edit-player" data-id="${player.id}">EDITAR</button><button data-action="toggle-player" data-id="${player.id}">${player.status === 'REGISTERED' ? 'DESINSCRIBIR' : 'REINSCRIBIR'}</button></div>`).join('') || '<p class="empty">Este equipo no tiene jugadores.</p>';
+  disable(document.querySelector('#player-form'), !document.querySelector('#player-team').value);
 }
 function renderTeamPage() {
   const tournament = selectedTournament(), phase = selectedPhase(), memberIds = new Set(memberships.map(({ teamId }) => teamId));
@@ -119,6 +125,7 @@ function renderTeamPage() {
     return `<div class="config-row"><span><strong>${escapeHtml(team.name)}</strong><small>${membership ? `Grupo ${escapeHtml(membership.groupName)}` : phase ? 'Sin grupo en esta fase' : 'En el torneo'}</small></span><button data-action="edit-team" data-id="${team.id}">EDITAR</button>${membership ? `<button data-action="remove-membership" data-id="${team.id}">QUITAR DE FASE</button>` : ''}<button class="danger" data-action="delete-team" data-id="${team.id}">ELIMINAR</button></div>`;
   }).join('') || '<p class="empty">Este torneo no tiene equipos.</p>';
   document.querySelector('#sanctions').innerHTML = sanctions.map((item) => `<div class="config-row"><span><strong>${escapeHtml(item.teamName)}</strong>: ${escapeHtml(item.reason)}</span><button class="danger" data-action="delete-sanction" data-id="${item.teamId}">QUITAR</button></div>`).join('') || '<p class="empty">Sin sanciones.</p>';
+  renderPlayers();
   disable(document.querySelector('#team-form'), !tournament);
   disable(document.querySelector('#membership-form'), !phase || !groups.length || !available.length);
   disable(document.querySelector('#sanction-form'), !memberships.length);
@@ -142,8 +149,19 @@ function initTeamPage() {
     try { await request(`/api/phases/${phase.id}/teams/${teamId}/sanction`, { method: 'PUT', body: JSON.stringify({ reason: document.querySelector('#sanction-reason').value }) }); event.target.reset(); await loadTeamPage(selectedTournament().id, phase.id); message('Sanción guardada.'); }
     catch (error) { message(error.message, true); }
   });
+  document.querySelector('#player-form').addEventListener('submit', async (event) => {
+    event.preventDefault(); const teamId = document.querySelector('#player-team').value;
+    try {
+      await request(`/api/teams/${teamId}/players`, { method: 'POST', body: JSON.stringify({ number: document.querySelector('#player-number').value, name: document.querySelector('#player-name').value }) });
+      event.target.reset(); players = await request(`/api/teams/${teamId}/players`); renderPlayers(); message('Jugador agregado.');
+    } catch (error) { message(error.message, true); }
+  });
   document.querySelector('#admin-tournament').addEventListener('change', () => loadTeamPage(selectedTournament()?.id).catch((error) => message(error.message, true)));
   document.querySelector('#admin-phase').addEventListener('change', () => loadTeamPage(selectedTournament()?.id, selectedPhase()?.id).catch((error) => message(error.message, true)));
+  document.querySelector('#player-team').addEventListener('change', async (event) => {
+    try { players = await request(`/api/teams/${event.target.value}/players`); renderPlayers(); }
+    catch (error) { message(error.message, true); }
+  });
   document.querySelector('#teams').addEventListener('click', async (event) => {
     const button = event.target.closest('[data-action]'); if (!button) return;
     const team = teams.find(({ id }) => id === Number(button.dataset.id)), phase = selectedPhase();
@@ -151,7 +169,20 @@ function initTeamPage() {
       if (button.dataset.action === 'edit-team') { const name = prompt('Nombre del equipo', team.name); if (!name) return; await request(`/api/teams/${team.id}`, { method: 'PUT', body: JSON.stringify({ name }) }); }
       if (button.dataset.action === 'remove-membership') { if (!confirm(`¿Quitar a ${team.name} de esta fase?`)) return; await request(`/api/phases/${phase.id}/memberships/${team.id}`, { method: 'DELETE' }); }
       if (button.dataset.action === 'delete-team') { if (!confirm(`¿Eliminar a ${team.name} del torneo?`)) return; await request(`/api/teams/${team.id}`, { method: 'DELETE' }); }
-      await loadTeamPage(selectedTournament().id, phase?.id); message('Cambio guardado.');
+      await loadTeamPage(selectedTournament().id, phase?.id, document.querySelector('#player-team').value); message('Cambio guardado.');
+    } catch (error) { message(error.message, true); }
+  });
+  document.querySelector('#players').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-action]'); if (!button) return;
+    const player = players.find(({ id }) => id === Number(button.dataset.id)), teamId = document.querySelector('#player-team').value;
+    try {
+      if (button.dataset.action === 'edit-player') {
+        const number = prompt('Número del jugador', player.number), name = prompt('Nombre opcional', player.name || '');
+        if (number === null || name === null) return;
+        await request(`/api/players/${player.id}`, { method: 'PUT', body: JSON.stringify({ number, name }) });
+      }
+      if (button.dataset.action === 'toggle-player') await request(`/api/players/${player.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: player.status === 'REGISTERED' ? 'UNREGISTERED' : 'REGISTERED' }) });
+      players = await request(`/api/teams/${teamId}/players`); renderPlayers(); message('Jugador actualizado.');
     } catch (error) { message(error.message, true); }
   });
   document.querySelector('#sanctions').addEventListener('click', async (event) => {

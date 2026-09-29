@@ -19,6 +19,10 @@ import { TeamRepository } from "./repository/team_repository";
 import { TeamService } from "./service/team_service";
 import { TeamController } from "./controller/team_controller";
 import { TeamRoute } from "./routes/teams";
+import { PlayerRepository } from "./repository/player_repository";
+import { PlayerService } from "./service/player_service";
+import { PlayerController } from "./controller/player_controller";
+import { PlayerRoute } from "./routes/players";
 import { PhaseDetailRepository } from "./repository/phase_detail_repository";
 import { PhaseDetailService } from "./service/phase_detail_service";
 import { PhaseDetailController } from "./controller/phase_detail_controller";
@@ -79,6 +83,9 @@ class App {
         const teamService = new TeamService(new TeamRepository(this.dbConnection))
         const teamController = new TeamController(teamService, tournamentService)
         this.app.use(new TeamRoute(teamController).router)
+
+        const playerService = new PlayerService(new PlayerRepository(this.dbConnection))
+        this.app.use(new PlayerRoute(new PlayerController(playerService, teamService)).router)
 
         const phaseDetailService = new PhaseDetailService(new PhaseDetailRepository(this.dbConnection), phaseService)
         const phaseDetailController = new PhaseDetailController(phaseDetailService, phaseService, groupService, teamService)

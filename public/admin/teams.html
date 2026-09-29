@@ -36,6 +36,15 @@
       <h2>Equipos del torneo</h2>
       <div id="teams" aria-live="polite"></div>
 
+      <h3>Nómina de jugadores</h3>
+      <label>Equipo<select id="player-team"></select></label>
+      <form id="player-form" class="compact-form">
+        <label>Número<input id="player-number" inputmode="numeric" pattern="[0-9]+" required></label>
+        <label>Nombre opcional<input id="player-name" maxlength="100"></label>
+        <button class="primary">AGREGAR JUGADOR</button>
+      </form>
+      <div id="players" aria-live="polite"></div>
+
       <h3>Sanciones de la fase</h3>
       <form id="sanction-form" class="compact-form">
         <label>Equipo<select id="sanction-team" required></select></label>
