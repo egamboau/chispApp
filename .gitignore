@@ -6,4 +6,4 @@ data/
 *.db-wal
 npm-debug.log*
 .vscode/*
-!.vscode/launch.json
+
