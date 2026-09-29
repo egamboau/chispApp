@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "node server.js",
-    "dev": "NODE_ENV=development node --watch server.js",
-    "test": "node --test"
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "NODE_ENV=development tsx watch src/index.ts",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json"
   },
   "engines": {
     "node": ">=20"
@@ -13,6 +15,14 @@
   "dependencies": {
     "better-sqlite3": "^12.2.0",
     "express": "^5.1.0",
-    "jose": "^6.2.12"
+    "jose": "^6.2.12",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
   }
 }

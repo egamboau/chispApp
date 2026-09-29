@@ -1,10 +1,12 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { spawn } = require('node:child_process');
-const fs = require('node:fs');
-const http = require('node:http');
-const os = require('node:os');
-const path = require('node:path');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import fs from 'node:fs';
+import http, { type Server } from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import type { Readable } from 'node:stream';
+import Database from 'better-sqlite3';
 
 const port = 43127;
 const jwksPort = 43128;
@@ -12,18 +14,22 @@ const audience = 'test-audience';
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tournament-test-'));
 const base = `http://127.0.0.1:${port}`;
 const teamDomain = `http://127.0.0.1:${jwksPort}`;
-let server, jwksServer, accessToken, expiredToken, wrongAudienceToken, wrongIssuerToken;
+let server: ChildProcessByStdio<null, Readable, Readable>, jwksServer: Server;
+let accessToken: string, expiredToken: string, wrongAudienceToken: string, wrongIssuerToken: string;
 let serverLogs = '';
+type JsonResult = { response: Response; body: any };
+type ApiRow = { teamId: number; teamName: string; destination: string | null; possibleDestinations: string[]; requiresTiebreaker: boolean; points: number; played: number };
+type ApiGroup = { id: number; name: string; standings: ApiRow[] };
 
 async function waitForServer() {
   for (let attempt = 0; attempt < 40; attempt++) {
-    try { if ((await fetch(`${base}/api/matches`)).ok) return; } catch (error) { serverLogs += `\nprobe: ${error.cause?.message || error.message}`; }
+    try { if ((await fetch(`${base}/api/matches`)).ok) return; } catch (error) { serverLogs += `\nprobe: ${error instanceof Error ? error.message : String(error)}`; }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(`Server did not start: ${serverLogs}`);
 }
 
-async function waitForLog(text) {
+async function waitForLog(text: string) {
   for (let attempt = 0; attempt < 40; attempt++) {
     if (serverLogs.includes(text)) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -31,14 +37,14 @@ async function waitForLog(text) {
   throw new Error(`Log not found: ${text}`);
 }
 
-async function json(url, options = {}) {
+async function json(url: string, options: RequestInit = {}): Promise<JsonResult> {
   const { headers, ...init } = options;
   const adminUrl = url.replace(/^\/api(?=\/|$)/, '/api/admin');
-  const response = await fetch(`${base}${adminUrl}`, { ...init, headers: { 'content-type': 'application/json', 'cf-access-jwt-assertion': accessToken, ...headers } });
+  const response = await fetch(`${base}${adminUrl}`, { ...init, headers: { 'content-type': 'application/json', 'cf-access-jwt-assertion': accessToken, ...(headers as Record<string, string> | undefined) } });
   return { response, body: response.status === 204 ? null : await response.json() };
 }
 
-async function publicJson(url, options = {}) {
+async function publicJson(url: string, options: RequestInit = {}): Promise<JsonResult> {
   const response = await fetch(`${base}${url}`, options);
   return { response, body: response.status === 204 ? null : await response.json() };
 }
@@ -51,15 +57,15 @@ test.before(async () => {
     if (req.url !== '/cdn-cgi/access/certs') { res.writeHead(404).end(); return; }
     res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ keys: [jwk] }));
   });
-  await new Promise((resolve) => jwksServer.listen(jwksPort, '127.0.0.1', resolve));
-  const sign = (issuer, tokenAudience, expiration) => new SignJWT({ email: 'admin@example.com', type: 'app' })
+  await new Promise<void>((resolve) => jwksServer.listen(jwksPort, '127.0.0.1', resolve));
+  const sign = (issuer: string, tokenAudience: string, expiration: string | number) => new SignJWT({ email: 'admin@example.com', type: 'app' })
     .setProtectedHeader({ alg: 'RS256', kid: jwk.kid }).setIssuer(issuer).setAudience(tokenAudience).setIssuedAt().setExpirationTime(expiration).sign(privateKey);
   accessToken = await sign(teamDomain, audience, '1h');
   expiredToken = await sign(teamDomain, audience, Math.floor(Date.now() / 1000) - 60);
   wrongAudienceToken = await sign(teamDomain, 'wrong-audience', '1h');
   wrongIssuerToken = await sign(teamDomain + '/wrong', audience, '1h');
 
-  const legacyDb = new (require('better-sqlite3'))(path.join(tempDir, 'test.db'));
+  const legacyDb = new Database(path.join(tempDir, 'test.db'));
   legacyDb.exec(`CREATE TABLE matches (
     id INTEGER PRIMARY KEY AUTOINCREMENT, tournamentType TEXT NOT NULL, date TEXT NOT NULL, time TEXT NOT NULL,
     teamA TEXT NOT NULL, teamB TEXT NOT NULL, lineTeam TEXT NOT NULL, court INTEGER NOT NULL,
@@ -74,11 +80,11 @@ test.before(async () => {
   INSERT INTO phases(id,tournamentId,name) VALUES(1,1,'Fase 1'),(2,2,'Fase 1');
   INSERT INTO groups_table(id,phaseId,name) VALUES(1,1,'General'),(2,2,'General')`);
   legacyDb.close();
-  const env = { ...process.env, NODE_ENV: 'production', PORT: String(port), DATABASE_PATH: path.join(tempDir, 'test.db'), CF_ACCESS_TEAM_DOMAIN: teamDomain, CF_ACCESS_AUD: audience };
+  const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'production', PORT: String(port), DATABASE_PATH: path.join(tempDir, 'test.db'), CF_ACCESS_TEAM_DOMAIN: teamDomain, CF_ACCESS_AUD: audience };
   delete env.NODE_TEST_CONTEXT;
-  server = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'] });
-  server.stdout.on('data', (chunk) => { serverLogs += chunk; });
-  server.stderr.on('data', (chunk) => { serverLogs += chunk; });
+  server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { cwd: path.join(__dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'] });
+  server.stdout.on('data', (chunk: Buffer) => { serverLogs += chunk; });
+  server.stderr.on('data', (chunk: Buffer) => { serverLogs += chunk; });
   await waitForServer();
 });
 
@@ -95,8 +101,8 @@ test('protege el panel y separa la API pública de la administrativa', async () 
   assert.equal((await fetch(`${base}/api/events`, { method: 'HEAD' })).status, 200);
   assert.equal((await json('/api/teams')).response.status, 200);
   const hidden = await json('/api/tournaments', { method: 'POST', body: JSON.stringify({ name: 'Oculto', active: false }) });
-  assert.equal((await publicJson('/api/tournaments')).body.some(({ id }) => id === hidden.body.id), false);
-  assert.equal((await json('/api/tournaments')).body.some(({ id }) => id === hidden.body.id), true);
+  assert.equal((await publicJson('/api/tournaments')).body.some(({ id }: { id: number }) => id === hidden.body.id), false);
+  assert.equal((await json('/api/tournaments')).body.some(({ id }: { id: number }) => id === hidden.body.id), true);
   await json(`/api/tournaments/${hidden.body.id}`, { method: 'DELETE' });
 });
 
@@ -106,7 +112,7 @@ test('migra horas existentes a jornadas sin perder el partido', async () => {
   assert.equal(result.body[0].teamA, 'Legado A');
   assert.equal('time' in result.body[0], false);
   const teams = await json('/api/teams?tournamentType=MALE');
-  assert.deepEqual(teams.body.map(({ name }) => name), ['Legado A', 'Legado B', 'Legado Línea']);
+  assert.deepEqual(teams.body.map(({ name }: { name: string }) => name), ['Legado A', 'Legado B', 'Legado Línea']);
   const phases = await json('/api/tournaments/1/phases');
   assert.equal(phases.body[0].tournamentType, 'MALE');
 });
@@ -129,7 +135,7 @@ test('guarda equipos separados por torneo', async () => {
   const id = result.body.id;
 
   result = await json('/api/teams?tournamentType=FEMALE');
-  assert.deepEqual(result.body.map(({ name }) => name), ['Panteras']);
+  assert.deepEqual(result.body.map(({ name }: { name: string }) => name), ['Panteras']);
 
   result = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentType: 'FEMALE', name: 'panteras' }) });
   assert.equal(result.response.status, 409);
@@ -144,7 +150,7 @@ test('guarda equipos separados por torneo', async () => {
 
 test.after(async () => {
   server.kill('SIGTERM');
-  await new Promise((resolve) => jwksServer.close(resolve));
+  await new Promise<void>((resolve) => jwksServer.close(() => resolve()));
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
@@ -213,6 +219,7 @@ test('registra peticiones API con un identificador', async () => {
   const result = await json('/api/no-existe');
   assert.equal(result.response.status, 404);
   const requestId = result.response.headers.get('x-request-id');
+  assert.ok(requestId);
   assert.match(requestId, /^[0-9a-f-]{36}$/);
   await waitForLog(requestId);
   assert.match(serverLogs, new RegExp(`"event":"request","requestId":"${requestId}".*"status":404`));
@@ -221,7 +228,7 @@ test('registra peticiones API con un identificador', async () => {
 test('notifica cambios por SSE', async () => {
   const controller = new AbortController();
   const stream = await fetch(`${base}/api/events`, { signal: controller.signal });
-  const reader = stream.body.getReader();
+  const reader = stream.body!.getReader();
   await reader.read();
   const created = await json('/api/matches', { method: 'POST', body: JSON.stringify({ tournamentType: 'FEMALE', date: '2026-09-21', jornada: 'MORNING', teamA: 'Águilas', teamB: 'Panteras', lineTeam: 'Lobas', court: 2 }) });
   const event = new TextDecoder().decode((await reader.read()).value);
@@ -236,12 +243,12 @@ test('administra fases, rangos, grupos y sanciones con destinos compartidos', as
   result = await json(`/api/tournaments/${tournamentId}/phases`, { method: 'POST', body: JSON.stringify({ name: 'Liga', type: 'TABLE', tournamentType: 'FEMALE', sortOrder: 1 }) });
   const phaseId = result.body.id;
   assert.equal(result.body.tournamentType, 'FEMALE');
-  const groupIds = [];
+  const groupIds: number[] = [];
   for (const name of ['A', 'B']) {
     result = await json(`/api/phases/${phaseId}/groups`, { method: 'POST', body: JSON.stringify({ name }) });
     groupIds.push(result.body.id);
   }
-  const teamIds = [];
+  const teamIds: number[] = [];
   for (const name of ['Uno', 'Dos', 'Tres', 'Cuatro']) {
     result = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentId, name }) });
     teamIds.push(result.body.id);
@@ -260,16 +267,16 @@ test('administra fases, rangos, grupos y sanciones con destinos compartidos', as
 
   result = await json(`/api/phases/${phaseId}/standings`);
   assert.equal(result.body.groups.length, 2);
-  for (const group of result.body.groups) assert.deepEqual(group.standings[0].possibleDestinations, ['Segunda fase', 'Copa']);
+  for (const group of result.body.groups as ApiGroup[]) assert.deepEqual(group.standings[0]!.possibleDestinations, ['Segunda fase', 'Copa']);
 
   result = await json(`/api/phases/${phaseId}/teams/${teamIds[0]}/sanction`, { method: 'PUT', body: JSON.stringify({ reason: 'Artículo 19' }) });
   assert.equal(result.response.status, 200);
   result = await json(`/api/phases/${phaseId}/standings`);
-  const groupA = result.body.groups.find((group) => group.name === 'A').standings;
-  const groupB = result.body.groups.find((group) => group.name === 'B').standings;
+  const groupA = (result.body.groups as ApiGroup[]).find((group) => group.name === 'A')!.standings;
+  const groupB = (result.body.groups as ApiGroup[]).find((group) => group.name === 'B')!.standings;
   assert.deepEqual(groupA.map((row) => row.teamName), ['Dos', 'Uno']);
   assert.deepEqual(groupA.map((row) => row.destination), ['Segunda fase', 'Copa']);
-  assert.equal(groupB[0].requiresTiebreaker, true);
+  assert.equal(groupB[0]!.requiresTiebreaker, true);
 
   result = await json('/api/matches', { method: 'POST', body: JSON.stringify({ phaseId, groupId: groupIds[0], date: '2026-09-22', jornada: 'MORNING', court: 1, teamAId: teamIds[0], teamBId: teamIds[2], lineTeamId: teamIds[1] }) });
   assert.equal(result.response.status, 201);
@@ -283,11 +290,11 @@ test('administra fases, rangos, grupos y sanciones con destinos compartidos', as
   await json(`/api/matches/${crossGroupMatchId}/finish`, { method: 'POST' });
   await json(`/api/matches/${crossGroupMatchId}/result`, { method: 'PATCH', body: JSON.stringify({ scoreA: 2, scoreB: 0 }) });
   result = await json(`/api/phases/${phaseId}/standings`);
-  assert.equal(result.body.groups.find((group) => group.id === groupIds[0]).standings.find((row) => row.teamId === teamIds[0]).points, 3);
-  assert.equal(result.body.groups.find((group) => group.id === groupIds[1]).standings.find((row) => row.teamId === teamIds[2]).played, 1);
+  assert.equal((result.body.groups as ApiGroup[]).find((group) => group.id === groupIds[0])!.standings.find((row) => row.teamId === teamIds[0])!.points, 3);
+  assert.equal((result.body.groups as ApiGroup[]).find((group) => group.id === groupIds[1])!.standings.find((row) => row.teamId === teamIds[2])!.played, 1);
   await json(`/api/matches/${crossGroupMatchId}/reopen`, { method: 'POST' });
   result = await json(`/api/phases/${phaseId}/standings`);
-  assert.equal(result.body.groups.find((group) => group.id === groupIds[0]).standings.find((row) => row.teamId === teamIds[0]).played, 0);
+  assert.equal((result.body.groups as ApiGroup[]).find((group) => group.id === groupIds[0])!.standings.find((row) => row.teamId === teamIds[0])!.played, 0);
   await json(`/api/matches/${crossGroupMatchId}`, { method: 'DELETE' });
 
   result = await json(`/api/tournaments/${tournamentId}/phases`, { method: 'POST', body: JSON.stringify({ name: 'Final', type: 'ELIMINATION', tournamentType: 'MALE', sortOrder: 2 }) });
@@ -299,7 +306,7 @@ test('administra fases, rangos, grupos y sanciones con destinos compartidos', as
   result = await json(`/api/phases/${phaseId}`, { method: 'DELETE' });
   assert.equal(result.response.status, 204);
   result = await json(`/api/tournaments/${tournamentId}/phases`);
-  assert.deepEqual(result.body.map(({ name }) => name), ['Final']);
+  assert.deepEqual(result.body.map(({ name }: { name: string }) => name), ['Final']);
   result = await json('/api/tournaments');
-  assert.equal(result.body.find(({ id }) => id === tournamentId).currentPhaseId, null);
+  assert.equal(result.body.find(({ id }: { id: number }) => id === tournamentId).currentPhaseId, null);
 });
