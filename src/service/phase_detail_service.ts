@@ -1,5 +1,5 @@
 import { Match } from "../models/match";
-import { ClassificationRule, Membership, PhaseScoring, PhaseStandings, RuleInput, Sanction, ScoringRankingRow, ScoringRow, ScoringTable, Standing } from "../models/phase_details";
+import { ClassificationRule, Membership, PhaseScoring, PhaseStandings, RuleInput, Sanction, ScoringRankingRow, ScoringRow, ScoringTable, Standing, TeamCards } from "../models/phase_details";
 import { Team } from "../models/team";
 import { PhaseDetailRepository } from "../repository/phase_detail_repository";
 import { PhaseService } from "./phase_service";
@@ -74,6 +74,18 @@ export class PhaseDetailService {
         return this.repository.deleteSanction(phaseId, teamId)
     }
 
+    getTeamCards(phaseId: number): TeamCards[] {
+        return this.repository.getTeamCards(phaseId)
+    }
+
+    upsertTeamCards(cards: TeamCards): TeamCards {
+        return this.repository.upsertTeamCards(cards)
+    }
+
+    deleteTeamCards(phaseId: number, teamId: number): boolean {
+        return this.repository.deleteTeamCards(phaseId, teamId)
+    }
+
     getStandings(phaseId: number): PhaseStandings | undefined {
         const phase = this.phaseService.getPhaseById(phaseId)
         if (!phase) return undefined
@@ -81,10 +93,11 @@ export class PhaseDetailService {
 
         const rules = this.getRules(phase.id)
         const sanctions = new Map(this.repository.getSanctions(phase.id).map(item => [item.teamId, item.reason]))
+        const teamCards = new Map(this.repository.getTeamCards(phase.id).map(item => [item.teamId, item]))
         const matches = this.repository.getFinishedMatches(phase.id)
         const groups = this.repository.getGroups(phase.id).map(group => ({
             ...group,
-            standings: PhaseDetailService.calculateGroupStandings(this.repository.getGroupMembers(phase.id, group.id), matches, rules, sanctions),
+            standings: PhaseDetailService.calculateGroupStandings(this.repository.getGroupMembers(phase.id, group.id), matches, rules, sanctions, teamCards),
         }))
         return { phase, hasStandings: true, rules, groups }
     }
@@ -151,10 +164,10 @@ export class PhaseDetailService {
         return rules.find(rule => PhaseDetailService.rulePositions(rule).includes(position))?.label || null
     }
 
-    static calculateGroupStandings(members: Pick<Team, 'id' | 'name'>[], matches: StandingMatch[], rules: StandingRule[], sanctions: Map<number, string>): Standing[] {
+    static calculateGroupStandings(members: Pick<Team, 'id' | 'name'>[], matches: StandingMatch[], rules: StandingRule[], sanctions: Map<number, string>, teamCards = new Map<number, Pick<TeamCards, 'yellowCards' | 'redCards'>>()): Standing[] {
         const rows = new Map<number, StandingBase>(members.map(team => [team.id, {
             teamId: team.id, teamName: team.name, played: 0, wins: 0, draws: 0, losses: 0,
-            goalsFor: 0, goalsAgainst: 0, goalDifference: 0, points: 0, yellowCards: 0, redCards: 0,
+            goalsFor: 0, goalsAgainst: 0, goalDifference: 0, points: 0, yellowCards: teamCards.get(team.id)?.yellowCards || 0, redCards: teamCards.get(team.id)?.redCards || 0,
             sanctioned: sanctions.has(team.id), sanctionReason: sanctions.get(team.id) || null,
         }]))
 

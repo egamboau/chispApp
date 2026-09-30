@@ -4,7 +4,7 @@ const statusLabels = { SCHEDULED: 'Programado', LIVE: 'En juego', FINISHED: 'Fin
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
 const options = (items, label = 'name') => items.map((item) => `<option value="${item.id}">${escapeHtml(typeof label === 'function' ? label(item) : item[label])}</option>`).join('');
 const phaseLabel = (phase) => `${phase.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'} · ${phase.name}`;
-let tournaments = [], phases = [], groups = [], teams = [], players = [], memberships = [], rules = [], sanctions = [], matches = [], scoring = [], scoringTables = [];
+let tournaments = [], phases = [], groups = [], teams = [], players = [], memberships = [], rules = [], sanctions = [], teamCards = [], matches = [], scoring = [], scoringTables = [];
 
 async function request(url, init = {}) {
   const response = await fetch(url.replace(/^\/api(?=\/|$)/, '/api/admin'), { headers: { 'Content-Type': 'application/json' }, ...init });
@@ -103,7 +103,7 @@ async function loadTeamPage(tournamentId, phaseId, playerTeamId) {
   phases = tournament ? await request(`/api/tournaments/${tournament.id}/phases`) : [];
   const phase = choose(document.querySelector('#admin-phase'), phases, phaseId ?? tournament?.currentPhaseId, phaseLabel);
   teams = tournament ? await request(`/api/teams?tournamentId=${tournament.id}`) : [];
-  [groups, memberships, sanctions] = phase ? await Promise.all([request(`/api/phases/${phase.id}/groups`), request(`/api/phases/${phase.id}/memberships`), request(`/api/phases/${phase.id}/sanctions`)]) : [[], [], []];
+  [groups, memberships, sanctions, teamCards] = phase ? await Promise.all([request(`/api/phases/${phase.id}/groups`), request(`/api/phases/${phase.id}/memberships`), request(`/api/phases/${phase.id}/sanctions`), request(`/api/phases/${phase.id}/team-cards`)]) : [[], [], [], []];
   const playerTeam = choose(document.querySelector('#player-team'), teams, playerTeamId);
   players = playerTeam ? await request(`/api/teams/${playerTeam.id}/players`) : [];
   renderTeamPage();
@@ -120,15 +120,18 @@ function renderTeamPage() {
   document.querySelector('#membership-team').innerHTML = options(available);
   document.querySelector('#membership-group').innerHTML = options(groups);
   document.querySelector('#sanction-team').innerHTML = options(teams.filter(({ id }) => memberIds.has(id)));
+  document.querySelector('#team-cards-team').innerHTML = options(teams.filter(({ id }) => memberIds.has(id)));
   document.querySelector('#teams').innerHTML = teams.map((team) => {
     const membership = memberships.find(({ teamId }) => teamId === team.id);
     return `<div class="config-row"><span><strong>${escapeHtml(team.name)}</strong><small>${membership ? `Grupo ${escapeHtml(membership.groupName)}` : phase ? 'Sin grupo en esta fase' : 'En el torneo'}</small></span><button data-action="edit-team" data-id="${team.id}">EDITAR</button>${membership ? `<button data-action="remove-membership" data-id="${team.id}">QUITAR DE FASE</button>` : ''}<button class="danger" data-action="delete-team" data-id="${team.id}">ELIMINAR</button></div>`;
   }).join('') || '<p class="empty">Este torneo no tiene equipos.</p>';
   document.querySelector('#sanctions').innerHTML = sanctions.map((item) => `<div class="config-row"><span><strong>${escapeHtml(item.teamName)}</strong>: ${escapeHtml(item.reason)}</span><button class="danger" data-action="delete-sanction" data-id="${item.teamId}">QUITAR</button></div>`).join('') || '<p class="empty">Sin sanciones.</p>';
+  document.querySelector('#team-cards').innerHTML = teamCards.map((item) => `<div class="config-row"><span><strong>${escapeHtml(item.teamName)}</strong>: ${item.yellowCards} 🟨 · ${item.redCards} 🟥</span><button data-action="edit-team-cards" data-id="${item.teamId}">EDITAR</button><button class="danger" data-action="delete-team-cards" data-id="${item.teamId}">ELIMINAR</button></div>`).join('') || '<p class="empty">Sin tarjetas fuera de partido.</p>';
   renderPlayers();
   disable(document.querySelector('#team-form'), !tournament);
   disable(document.querySelector('#membership-form'), !phase || !groups.length || !available.length);
   disable(document.querySelector('#sanction-form'), !memberships.length);
+  disable(document.querySelector('#team-cards-form'), !memberships.length);
 }
 function initTeamPage() {
   document.querySelector('#team-form').addEventListener('submit', async (event) => {
@@ -147,6 +150,11 @@ function initTeamPage() {
   document.querySelector('#sanction-form').addEventListener('submit', async (event) => {
     event.preventDefault(); const phase = selectedPhase(), teamId = document.querySelector('#sanction-team').value;
     try { await request(`/api/phases/${phase.id}/teams/${teamId}/sanction`, { method: 'PUT', body: JSON.stringify({ reason: document.querySelector('#sanction-reason').value }) }); event.target.reset(); await loadTeamPage(selectedTournament().id, phase.id); message('Sanción guardada.'); }
+    catch (error) { message(error.message, true); }
+  });
+  document.querySelector('#team-cards-form').addEventListener('submit', async (event) => {
+    event.preventDefault(); const phase = selectedPhase(), teamId = document.querySelector('#team-cards-team').value;
+    try { await request(`/api/phases/${phase.id}/teams/${teamId}/cards`, { method: 'PUT', body: JSON.stringify({ yellowCards: document.querySelector('#team-yellow-cards').value, redCards: document.querySelector('#team-red-cards').value }) }); event.target.reset(); await loadTeamPage(selectedTournament().id, phase.id); message('Tarjetas guardadas.'); }
     catch (error) { message(error.message, true); }
   });
   document.querySelector('#player-form').addEventListener('submit', async (event) => {
@@ -190,6 +198,15 @@ function initTeamPage() {
     try { await request(`/api/phases/${selectedPhase().id}/teams/${button.dataset.id}/sanction`, { method: 'DELETE' }); await loadTeamPage(selectedTournament().id, selectedPhase().id); message('Sanción eliminada.'); }
     catch (error) { message(error.message, true); }
   });
+  document.querySelector('#team-cards').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-action]'); if (!button) return;
+    const item = teamCards.find(({ teamId }) => teamId === Number(button.dataset.id));
+    try {
+      if (button.dataset.action === 'edit-team-cards') { document.querySelector('#team-cards-team').value = item.teamId; document.querySelector('#team-yellow-cards').value = item.yellowCards; document.querySelector('#team-red-cards').value = item.redCards; return; }
+      if (button.dataset.action === 'delete-team-cards') await request(`/api/phases/${selectedPhase().id}/teams/${item.teamId}/cards`, { method: 'DELETE' });
+      await loadTeamPage(selectedTournament().id, selectedPhase().id); message('Tarjetas eliminadas.');
+    } catch (error) { message(error.message, true); }
+  });
   loadTeamPage().catch((error) => message(error.message, true));
 }
 
@@ -216,7 +233,7 @@ function resetMatchForm() {
 }
 function matchCard(match) {
   const score = match.status === 'LIVE' ? `<div class="score-controls">${['A', 'B'].map((side) => `<div><strong>${escapeHtml(match[`team${side}`])}</strong><span><button data-action="score" data-team="${side}" data-delta="-1" ${match[`score${side}`] === 0 ? 'disabled' : ''}>−</button><b>${match[`score${side}`]}</b><button data-action="score" data-team="${side}" data-delta="1">+</button></span></div>`).join('')}</div>` : match.status === 'FINISHED' ? `<div class="score-controls final-score">${['A', 'B'].map((side) => `<label><strong>${escapeHtml(match[`team${side}`])}</strong><input data-result="score${side}" type="number" min="0" step="1" value="${match[`score${side}`]}"></label>`).join('')}</div>` : `<h3>${escapeHtml(match.teamA)} <small>vs</small> ${escapeHtml(match.teamB)}</h3>`;
-  return `<article class="match-card ${match.tournamentType.toLowerCase()}" data-id="${match.id}"><div class="meta"><span class="badge">${match.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'}</span><strong>${escapeHtml(match.phaseName)} · ${escapeHtml(match.groupName)} · Cancha ${match.court}</strong><span>${match.date} · ${jornadaLabels[match.jornada]}</span><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span></div>${score}<p>Línea: <strong>${escapeHtml(match.lineTeam)}</strong></p><div class="cards"><label>${escapeHtml(match.teamA)} 🟨<input data-card="yellowCardsA" type="number" min="0" value="${match.yellowCardsA}"></label><label>🟥<input data-card="redCardsA" type="number" min="0" value="${match.redCardsA}"></label><label>${escapeHtml(match.teamB)} 🟨<input data-card="yellowCardsB" type="number" min="0" value="${match.yellowCardsB}"></label><label>🟥<input data-card="redCardsB" type="number" min="0" value="${match.redCardsB}"></label><button data-action="cards">GUARDAR TARJETAS</button></div><div class="actions">${match.status === 'SCHEDULED' ? '<button data-action="edit">EDITAR</button><button class="danger" data-action="delete">ELIMINAR</button><button class="primary" data-action="start">INICIAR</button>' : ''}${match.status === 'LIVE' ? '<button class="danger" data-action="reset">REINICIAR MARCADOR</button><button class="finish" data-action="finish">FINALIZAR PARTIDO</button>' : ''}${match.status === 'FINISHED' ? `<button data-action="result">GUARDAR RESULTADO</button><button class="primary" data-action="reopen">REABRIR PARTIDO</button><a class="primary" href="/admin/scoring.html?matchId=${match.id}">ADMINISTRAR GOLEO</a>` : ''}</div></article>`;
+  return `<article class="match-card ${match.tournamentType.toLowerCase()}" data-id="${match.id}"><div class="meta"><span class="badge">${match.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'}</span><strong>${escapeHtml(match.phaseName)} · ${escapeHtml(match.groupName)} · Cancha ${match.court}</strong><span>${match.date} · ${jornadaLabels[match.jornada]} · Orden ${match.sortOrder ?? 'sin definir'}</span><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span></div>${score}<p>Línea: <strong>${escapeHtml(match.lineTeam)}</strong></p><div class="cards"><label>${escapeHtml(match.teamA)} 🟨<input data-card="yellowCardsA" type="number" min="0" value="${match.yellowCardsA}"></label><label>🟥<input data-card="redCardsA" type="number" min="0" value="${match.redCardsA}"></label><label>${escapeHtml(match.teamB)} 🟨<input data-card="yellowCardsB" type="number" min="0" value="${match.yellowCardsB}"></label><label>🟥<input data-card="redCardsB" type="number" min="0" value="${match.redCardsB}"></label><button data-action="cards">GUARDAR TARJETAS</button></div><div class="actions"><button data-action="order">EDITAR ORDEN</button>${match.status === 'SCHEDULED' ? '<button data-action="edit">EDITAR</button><button class="danger" data-action="delete">ELIMINAR</button><button class="primary" data-action="start">INICIAR</button>' : ''}${match.status === 'LIVE' ? '<button class="danger" data-action="reset">REINICIAR MARCADOR</button><button class="finish" data-action="finish">FINALIZAR PARTIDO</button>' : ''}${match.status === 'FINISHED' ? `<button data-action="result">GUARDAR RESULTADO</button><button class="primary" data-action="reopen">REABRIR PARTIDO</button><a class="primary" href="/admin/scoring.html?matchId=${match.id}">ADMINISTRAR GOLEO</a>` : ''}</div></article>`;
 }
 function renderMatches() {
   const date = document.querySelector('#filter-date').value, court = Number(document.querySelector('#filter-court').value);
@@ -234,7 +251,7 @@ function initCalendarPage() {
   document.querySelector('#line-visibility').addEventListener('click', async () => { const date = document.querySelector('#filter-date').value, visible = matches.some((match) => match.date === date && match.lineVisible); try { await request(`/api/line-visibility/${date}`, { method: 'PUT', body: JSON.stringify({ visible: !visible }) }); await loadCalendarPage(selectedTournament().id, currentPhase.id); document.querySelector('#filter-date').value = date; renderMatches(); message(`Líneas ${visible ? 'ocultadas' : 'publicadas'}.`); } catch (error) { message(error.message, true); } });
   document.querySelector('#match-form').addEventListener('submit', async (event) => {
     event.preventDefault(); const matchId = document.querySelector('#match-id').value;
-    const body = Object.fromEntries(['groupId', 'date', 'jornada', 'court', 'teamAId', 'teamBId', 'lineTeamId'].map((key) => [key, document.querySelector(`#${key}`).value])); body.phaseId = currentPhase.id;
+    const body = Object.fromEntries(['groupId', 'date', 'jornada', 'court', 'sortOrder', 'teamAId', 'teamBId', 'lineTeamId'].map((key) => [key, document.querySelector(`#${key}`).value])); body.phaseId = currentPhase.id;
     try { await request(matchId ? `/api/matches/${matchId}` : '/api/matches', { method: matchId ? 'PUT' : 'POST', body: JSON.stringify(body) }); resetMatchForm(); await loadCalendarPage(selectedTournament().id, currentPhase.id); message('Partido guardado.'); }
     catch (error) { message(error.message, true); }
   });
@@ -242,8 +259,9 @@ function initCalendarPage() {
     const button = event.target.closest('[data-action]'); if (!button) return;
     const article = button.closest('[data-id]'), match = matches.find(({ id }) => id === Number(article.dataset.id));
     try {
-      if (button.dataset.action === 'edit') { for (const key of ['date', 'jornada', 'court']) document.querySelector(`#${key}`).value = match[key]; document.querySelector('#groupId').value = match.groupId; renderMatchTeams(match); document.querySelector('#match-id').value = match.id; document.querySelector('#cancel-edit').hidden = false; return; }
-      if (button.dataset.action === 'delete') { if (!confirm(`¿Eliminar ${match.teamA} vs ${match.teamB}?`)) return; await request(`/api/matches/${match.id}`, { method: 'DELETE' }); }
+      if (button.dataset.action === 'edit') { for (const key of ['date', 'jornada', 'court', 'sortOrder']) document.querySelector(`#${key}`).value = match[key] ?? ''; document.querySelector('#groupId').value = match.groupId; renderMatchTeams(match); document.querySelector('#match-id').value = match.id; document.querySelector('#cancel-edit').hidden = false; return; }
+      if (button.dataset.action === 'order') { const value = prompt('Orden oficial (vacío para dejarlo sin definir)', match.sortOrder ?? ''); if (value === null) return; await request(`/api/matches/${match.id}/order`, { method: 'PATCH', body: JSON.stringify({ sortOrder: value.trim() || null }) }); }
+      else if (button.dataset.action === 'delete') { if (!confirm(`¿Eliminar ${match.teamA} vs ${match.teamB}?`)) return; await request(`/api/matches/${match.id}`, { method: 'DELETE' }); }
       else if (button.dataset.action === 'score') await request(`/api/matches/${match.id}/score`, { method: 'PATCH', body: JSON.stringify({ team: button.dataset.team, delta: Number(button.dataset.delta) }) });
       else if (button.dataset.action === 'result') { if (!confirm('¿Guardar la corrección del resultado final?')) return; const body = Object.fromEntries([...article.querySelectorAll('[data-result]')].map((input) => [input.dataset.result, Number(input.value)])); await request(`/api/matches/${match.id}/result`, { method: 'PATCH', body: JSON.stringify(body) }); }
       else if (button.dataset.action === 'reopen') { if (!confirm('¿Reabrir este partido conservando el marcador?')) return; await request(`/api/matches/${match.id}/reopen`, { method: 'POST' }); }

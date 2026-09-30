@@ -31,6 +31,14 @@ export interface Sanction {
     teamName?: string;
 }
 
+export interface TeamCards {
+    phaseId: number;
+    teamId: number;
+    yellowCards: number;
+    redCards: number;
+    teamName?: string;
+}
+
 export interface Standing {
     teamId: number;
     teamName: string;

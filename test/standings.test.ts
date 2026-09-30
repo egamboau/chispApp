@@ -56,6 +56,11 @@ test('usa rojas, luego amarillas, y conserva posición compartida si persiste', 
   assert.equal(result[0]!.requiresTiebreaker, true);
 });
 
+test('suma tarjetas de partidos y sanciones independientes', () => {
+  const [row] = calculateGroupStandings([team(1)], [game(1, 2, 0, 0, { yellowCardsA: 2, redCardsA: 1 })], [], new Map(), new Map([[1, { yellowCards: 3, redCards: 2 }]]));
+  assert.deepEqual({ yellowCards: row!.yellowCards, redCards: row!.redCards }, { yellowCards: 5, redCards: 3 });
+});
+
 test('deja destinos pendientes al cruzar rangos y aplica sanción solo en esa frontera', () => {
   const rules = [{ startPosition: 1, endPosition: 1, label: 'Segunda fase' }, { startPosition: 2, endPosition: 2, label: 'Copa' }];
   let result = order([1, 2], [], rules);

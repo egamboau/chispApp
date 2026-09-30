@@ -19,7 +19,9 @@ export class MatchService {
     ) {}
 
     getMatches(filters: MatchFilters, isAdmin = false): Match[] {
-        return this.repository.getMatches(filters).map(match => this.publicMatch(match, isAdmin))
+        const matches = [...this.repository.getMatches(filters)]
+        if (!isAdmin) this.shuffleUnpublishedDates(matches)
+        return matches.map(match => this.publicMatch(match, isAdmin))
     }
 
     getMatch(id: number, isAdmin = false): Match | undefined {
@@ -65,12 +67,14 @@ export class MatchService {
             date: this.clean(body.date),
             jornada: typeof body.jornada === 'string' ? body.jornada : '',
             court: Number(body.court),
+            sortOrder: body.sortOrder === '' || body.sortOrder == null ? null : Number(body.sortOrder),
         }
         const errors: string[] = []
         if (!phase || !group || group.phaseId !== phase.id) errors.push('Fase o grupo inválido.')
         if (!this.validDate(match.date)) errors.push('Fecha inválida.')
         if (!['MORNING', 'AFTERNOON'].includes(match.jornada)) errors.push('Jornada inválida.')
         if (!Number.isInteger(match.court) || match.court < 1) errors.push('Cancha inválida.')
+        if (match.sortOrder !== null && (!Number.isInteger(match.sortOrder) || match.sortOrder < 1)) errors.push('Orden inválido.')
         if (!a || !b || !line || new Set([a?.id, b?.id, line?.id]).size !== 3) errors.push('Los tres equipos deben existir y ser diferentes.')
         if (phase && group && a && !this.repository.hasMembership(phase.id, a.id, group.id)) errors.push('El equipo A debe pertenecer al grupo seleccionado.')
         if (phase && b && !this.repository.hasMembership(phase.id, b.id)) errors.push('El equipo B debe pertenecer a la fase.')
@@ -83,6 +87,10 @@ export class MatchService {
 
     updateMatch(id: number, match: MatchInput): Match {
         return this.repository.updateMatch(id, match)
+    }
+
+    updateSortOrder(id: number, sortOrder: number | null): Match | undefined {
+        return this.repository.updateSortOrder(id, sortOrder)
     }
 
     deleteMatch(id: number): boolean {
@@ -143,5 +151,24 @@ export class MatchService {
 
     private publicMatch(match: Match, isAdmin: boolean): Match {
         return isAdmin || match.lineVisible ? match : { ...match, lineTeam: null, lineTeamId: null }
+    }
+
+    private shuffleUnpublishedDates(matches: Match[]): void {
+        const dates = new Map<string, number[]>()
+        matches.forEach((match, index) => {
+            const indexes = dates.get(match.date)
+            if (indexes) indexes.push(index)
+            else dates.set(match.date, [index])
+        })
+        for (const indexes of dates.values()) {
+            if (indexes.some(index => matches[index]!.lineVisible)) continue
+            for (let index = indexes.length - 1; index > 0; index--) {
+                const randomIndex = Math.floor(Math.random() * (index + 1))
+                const left = indexes[index]!, right = indexes[randomIndex]!
+                const match = matches[left]!
+                matches[left] = matches[right]!
+                matches[right] = match
+            }
+        }
     }
 }

@@ -25,14 +25,30 @@
   <main>
     <section id="live" class="view active" aria-live="polite"></section>
     <section id="calendar" class="view" aria-live="polite">
-      <div class="filters" role="group" aria-label="Filtrar calendario">
-        <button class="active" data-filter="ALL">TODOS</button>
-        <button data-filter="MALE">MASCULINO</button>
-        <button data-filter="FEMALE">FEMENINO</button>
+      <div class="filters" aria-label="Filtrar calendario">
+        <div class="filter-buttons" role="group" aria-label="Torneo">
+          <button class="active" data-filter="ALL">TODOS</button>
+          <button data-filter="MALE">MASCULINO</button>
+          <button data-filter="FEMALE">FEMENINO</button>
+        </div>
+        <label>Fecha<input id="calendar-date" type="date"></label>
+        <label>Estado<select id="calendar-status">
+          <option value="">Todos</option>
+          <option value="SCHEDULED">Programado</option>
+          <option value="LIVE">En juego</option>
+          <option value="FINISHED">Final</option>
+        </select></label>
+        <button id="clear-calendar-filters" type="button">LIMPIAR</button>
       </div>
       <div id="calendar-list"></div>
     </section>
-    <section id="results" class="view" aria-live="polite"></section>
+    <section id="results" class="view" aria-live="polite">
+      <div class="filters" aria-label="Filtrar resultados">
+        <label>Fecha<input id="results-date" type="date"></label>
+        <button id="clear-results-filter" type="button">LIMPIAR</button>
+      </div>
+      <div id="results-list"></div>
+    </section>
     <section id="standings" class="view" aria-live="polite"></section>
     <section id="scoring" class="view" aria-live="polite"></section>
   </main>

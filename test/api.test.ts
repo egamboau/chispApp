@@ -18,7 +18,7 @@ let server: ChildProcessByStdio<null, Readable, Readable>, jwksServer: Server;
 let accessToken: string, expiredToken: string, wrongAudienceToken: string, wrongIssuerToken: string;
 let serverLogs = '';
 type JsonResult = { response: Response; body: any };
-type ApiRow = { teamId: number; teamName: string; destination: string | null; possibleDestinations: string[]; requiresTiebreaker: boolean; points: number; played: number };
+type ApiRow = { teamId: number; teamName: string; destination: string | null; possibleDestinations: string[]; requiresTiebreaker: boolean; points: number; played: number; yellowCards: number; redCards: number };
 type ApiGroup = { id: number; name: string; standings: ApiRow[] };
 
 async function waitForServer() {
@@ -110,6 +110,7 @@ test('migra horas existentes a jornadas sin perder el partido', async () => {
   const result = await json('/api/matches?date=2026-09-19');
   assert.equal(result.body[0].jornada, 'MORNING');
   assert.equal(result.body[0].teamA, 'Legado A');
+  assert.equal(result.body[0].sortOrder, null);
   assert.equal('time' in result.body[0], false);
   const teams = await json('/api/teams?tournamentType=MALE');
   assert.deepEqual(teams.body.map(({ name }: { name: string }) => name), ['Legado A', 'Legado B', 'Legado Línea']);
@@ -124,10 +125,10 @@ test('sirve las páginas administrativas y la pantalla pública', async () => {
   assert.equal(display.headers.get('cache-control'), 'no-store');
   assert.match(await tournamentsAdmin.text(), /href="\/admin\/scoring.html"[\s\S]*id="phase-tournament-type"[\s\S]*id="rule-form"/);
   assert.match(await teamsAdmin.text(), /id="membership-form"[\s\S]*id="player-form"/);
-  assert.match(await calendarAdmin.text(), /id="admin-phase"[\s\S]*id="match-form"[\s\S]*id="line-visibility"/);
+  assert.match(await calendarAdmin.text(), /id="admin-phase"[\s\S]*id="match-form"[\s\S]*id="sortOrder"[\s\S]*id="line-visibility"/);
   assert.match(await scoringAdmin.text(), /id="scoring-match"[\s\S]*id="scoring-form"[\s\S]*id="scoring-list"/);
   assert.match(await (await fetch(`${base}/admin/scoring.html`, auth)).text(), /id="scoring-table-form"[\s\S]*id="create-scoring-table"[\s\S]*id="scoringTable"/);
-  assert.match(await adminJs.text(), /ADMINISTRAR GOLEO/);
+  assert.match(await adminJs.text(), /EDITAR ORDEN[\s\S]*ADMINISTRAR GOLEO/);
   assert.match(await display.text(), /data-view="standings"[\s\S]*data-view="scoring"/);
   assert.match(await css.text(), /@media \(max-width: 900px\)/);
 });
@@ -370,6 +371,32 @@ test('oculta las líneas hasta que un administrador publique la fecha', async ()
   await json(`/api/matches/${matchId}`, { method: 'DELETE' });
 });
 
+test('ordena partidos publicados y permite cambiar el orden de un finalizado', async () => {
+  const date = '2026-09-24';
+  const create = (name: string, court: number, sortOrder?: number) => json('/api/matches', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', date, jornada: 'MORNING', teamA: `${name} A`, teamB: `${name} B`, lineTeam: `${name} Línea`, court, sortOrder }) });
+  const second = (await create('Orden segundo', 1, 2)).body;
+  const unordered = (await create('Orden libre', 2)).body;
+  const first = (await create('Orden primero', 3, 1)).body;
+  assert.equal(unordered.sortOrder, null);
+  let result = await json(`/api/matches/${first.id}`, { method: 'PUT', body: JSON.stringify({ tournamentType: 'MALE', date, jornada: 'MORNING', teamA: first.teamA, teamB: first.teamB, lineTeam: first.lineTeam, court: 3 }) });
+  assert.equal(result.body.sortOrder, 1);
+
+  await json(`/api/line-visibility/${date}`, { method: 'PUT', body: JSON.stringify({ visible: true }) });
+  result = await publicJson(`/api/matches?date=${date}`);
+  assert.deepEqual(result.body.map(({ id }: { id: number }) => id), [first.id, second.id, unordered.id]);
+
+  await json(`/api/matches/${second.id}/start`, { method: 'POST' });
+  await json(`/api/matches/${second.id}/finish`, { method: 'POST' });
+  result = await json(`/api/matches/${second.id}/order`, { method: 'PATCH', body: JSON.stringify({ sortOrder: 3 }) });
+  assert.deepEqual({ status: result.body.status, sortOrder: result.body.sortOrder }, { status: 'FINISHED', sortOrder: 3 });
+  result = await json(`/api/matches/${second.id}/order`, { method: 'PATCH', body: JSON.stringify({ sortOrder: null }) });
+  assert.equal(result.body.sortOrder, null);
+  assert.equal((await json(`/api/matches/${second.id}/order`, { method: 'PATCH', body: JSON.stringify({ sortOrder: 0 }) })).response.status, 400);
+
+  await json(`/api/line-visibility/${date}`, { method: 'PUT', body: JSON.stringify({ visible: false }) });
+  for (const match of [first, second, unordered]) await json(`/api/matches/${match.id}`, { method: 'DELETE' });
+});
+
 test('rechaza equipos repetidos', async () => {
   const result = await json('/api/matches', { method: 'POST', body: JSON.stringify({ tournamentType: 'MALE', date: '2026-09-20', jornada: 'MORNING', teamA: 'Tigres', teamB: 'tigres', lineTeam: 'Halcones', court: 1 }) });
   assert.equal(result.response.status, 400);
@@ -431,12 +458,19 @@ test('administra fases, rangos, grupos y sanciones con destinos compartidos', as
 
   result = await json(`/api/phases/${phaseId}/teams/${teamIds[0]}/sanction`, { method: 'PUT', body: JSON.stringify({ reason: 'Artículo 19' }) });
   assert.equal(result.response.status, 200);
+  result = await json(`/api/phases/${phaseId}/teams/${teamIds[0]}/cards`, { method: 'PUT', body: JSON.stringify({ yellowCards: 2, redCards: 1 }) });
+  assert.equal(result.response.status, 200);
+  result = await json(`/api/phases/${phaseId}/teams/${teamIds[0]}/cards`, { method: 'PUT', body: JSON.stringify({ yellowCards: 3, redCards: 1 }) });
+  assert.equal(result.response.status, 200);
+  result = await json(`/api/phases/${phaseId}/team-cards`);
+  assert.deepEqual(result.body.map(({ teamId, yellowCards, redCards }: ApiRow) => ({ teamId, yellowCards, redCards })), [{ teamId: teamIds[0], yellowCards: 3, redCards: 1 }]);
   result = await json(`/api/phases/${phaseId}/standings`);
   const groupA = (result.body.groups as ApiGroup[]).find((group) => group.name === 'A')!.standings;
   const groupB = (result.body.groups as ApiGroup[]).find((group) => group.name === 'B')!.standings;
   assert.deepEqual(groupA.map((row) => row.teamName), ['Dos', 'Uno']);
   assert.deepEqual(groupA.map((row) => row.destination), ['Segunda fase', 'Copa']);
   assert.equal(groupB[0]!.requiresTiebreaker, true);
+  assert.deepEqual({ yellowCards: groupA.find((row) => row.teamId === teamIds[0])!.yellowCards, redCards: groupA.find((row) => row.teamId === teamIds[0])!.redCards }, { yellowCards: 3, redCards: 1 });
 
   result = await json('/api/matches', { method: 'POST', body: JSON.stringify({ phaseId, groupId: groupIds[0], date: '2026-09-22', jornada: 'MORNING', court: 1, teamAId: teamIds[0], teamBId: teamIds[2], lineTeamId: teamIds[1] }) });
   assert.equal(result.response.status, 201);
@@ -447,15 +481,22 @@ test('administra fases, rangos, grupos y sanciones con destinos compartidos', as
   result = await json(`/api/matches/${crossGroupMatchId}`);
   assert.equal(result.body.tournamentType, 'MALE');
   await json(`/api/matches/${crossGroupMatchId}/start`, { method: 'POST' });
+  await json(`/api/matches/${crossGroupMatchId}/cards`, { method: 'PATCH', body: JSON.stringify({ yellowCardsA: 1, redCardsA: 1, yellowCardsB: 0, redCardsB: 0 }) });
   await json(`/api/matches/${crossGroupMatchId}/finish`, { method: 'POST' });
   await json(`/api/matches/${crossGroupMatchId}/result`, { method: 'PATCH', body: JSON.stringify({ scoreA: 2, scoreB: 0 }) });
   result = await json(`/api/phases/${phaseId}/standings`);
-  assert.equal((result.body.groups as ApiGroup[]).find((group) => group.id === groupIds[0])!.standings.find((row) => row.teamId === teamIds[0])!.points, 3);
+  const teamStanding = (result.body.groups as ApiGroup[]).find((group) => group.id === groupIds[0])!.standings.find((row) => row.teamId === teamIds[0])!;
+  assert.equal(teamStanding.points, 3);
+  assert.deepEqual({ yellowCards: teamStanding.yellowCards, redCards: teamStanding.redCards }, { yellowCards: 4, redCards: 2 });
   assert.equal((result.body.groups as ApiGroup[]).find((group) => group.id === groupIds[1])!.standings.find((row) => row.teamId === teamIds[2])!.played, 1);
   await json(`/api/matches/${crossGroupMatchId}/reopen`, { method: 'POST' });
   result = await json(`/api/phases/${phaseId}/standings`);
   assert.equal((result.body.groups as ApiGroup[]).find((group) => group.id === groupIds[0])!.standings.find((row) => row.teamId === teamIds[0])!.played, 0);
   await json(`/api/matches/${crossGroupMatchId}`, { method: 'DELETE' });
+  result = await json(`/api/phases/${phaseId}/teams/${teamIds[0]}/cards`, { method: 'DELETE' });
+  assert.equal(result.response.status, 204);
+  result = await json(`/api/phases/${phaseId}/team-cards`);
+  assert.deepEqual(result.body, []);
 
   result = await json(`/api/tournaments/${tournamentId}/phases`, { method: 'POST', body: JSON.stringify({ name: 'Final', type: 'ELIMINATION', tournamentType: 'MALE', sortOrder: 2 }) });
   result = await json(`/api/phases/${result.body.id}/standings`);

@@ -8,6 +8,7 @@ import { notify } from "../utils/events";
 const idSchema = z.coerce.number().int().positive();
 const scoreSchema = z.object({ team: z.enum(['A', 'B']), delta: z.union([z.literal(-1), z.literal(1)]) });
 const resultSchema = z.object({ scoreA: z.coerce.number().int().nonnegative(), scoreB: z.coerce.number().int().nonnegative() });
+const sortOrderSchema = z.object({ sortOrder: z.union([z.coerce.number().int().positive(), z.null()]) });
 const cardsSchema = z.object({
     yellowCardsA: z.coerce.number().int().nonnegative(), redCardsA: z.coerce.number().int().nonnegative(),
     yellowCardsB: z.coerce.number().int().nonnegative(), redCardsB: z.coerce.number().int().nonnegative(),
@@ -74,10 +75,20 @@ export class MatchController {
         const existing = this.service.getMatch(id.data, true)
         if (!existing) return res.status(404).json({ error: 'Partido no encontrado.' })
         if (existing.status !== 'SCHEDULED') return res.status(409).json({ error: 'Solo se puede editar un partido programado.' })
-        const { match, errors } = this.service.buildInput(req.body)
+        const body = Object.hasOwn(req.body, 'sortOrder') ? req.body : { ...req.body, sortOrder: existing.sortOrder }
+        const { match, errors } = this.service.buildInput(body)
         if (errors.length) return res.status(400).json({ error: errors.join(' ') })
         const updated = this.service.updateMatch(id.data, match)
         notify('updated', updated.id)
+        res.json(updated)
+    }
+
+    updateSortOrder: RequestHandler = (req, res) => {
+        const id = idSchema.safeParse(req.params.id), input = sortOrderSchema.safeParse(req.body)
+        if (!id.success || !input.success) return res.status(400).json({ error: 'Orden inválido.' })
+        const updated = this.service.updateSortOrder(id.data, input.data.sortOrder)
+        if (!updated) return res.status(404).json({ error: 'Partido no encontrado.' })
+        notify('order', updated.id)
         res.json(updated)
     }
 
