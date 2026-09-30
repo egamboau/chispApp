@@ -52,6 +52,15 @@
         <button class="danger">GUARDAR SANCIÓN</button>
       </form>
       <div id="sanctions" aria-live="polite"></div>
+
+      <h3>Tarjetas fuera de partido</h3>
+      <form id="team-cards-form" class="compact-form">
+        <label>Equipo<select id="team-cards-team" required></select></label>
+        <label>Amarillas<input id="team-yellow-cards" type="number" min="0" step="1" value="0" required></label>
+        <label>Rojas<input id="team-red-cards" type="number" min="0" step="1" value="0" required></label>
+        <button class="danger">GUARDAR TARJETAS</button>
+      </form>
+      <div id="team-cards" aria-live="polite"></div>
     </section>
   </main>
   <footer>© 2026 Eduardo Gamboa.</footer>

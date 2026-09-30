@@ -11,6 +11,7 @@ const idSchema = z.coerce.number().int().positive();
 const membershipSchema = z.object({ groupId: idSchema, teamId: idSchema });
 const groupSchema = z.object({ groupId: idSchema });
 const sanctionSchema = z.object({ reason: z.string().trim().min(1) });
+const cardsSchema = z.object({ yellowCards: z.coerce.number().int().nonnegative(), redCards: z.coerce.number().int().nonnegative() }).refine(value => value.yellowCards + value.redCards > 0);
 const scoringTableSchema = z.object({ name: z.string().trim().min(1).max(100) });
 const ruleSchema = z.object({
     positions: z.array(z.coerce.number().int().positive()).min(1).optional(),
@@ -136,6 +137,29 @@ export class PhaseDetailController {
         if (!phaseId.success || !teamId.success) return res.status(400).json({ error: 'Id inválido.' })
         if (!this.service.deleteSanction(phaseId.data, teamId.data)) return res.status(404).json({ error: 'Sanción no encontrada.' })
         notify('sanction', phaseId.data)
+        res.status(204).end()
+    }
+
+    getTeamCards: RequestHandler = (req, res) => {
+        const phaseId = idSchema.safeParse(req.params.id)
+        if (!phaseId.success) return res.status(400).json({ error: 'Id de fase inválido.' })
+        res.json(this.service.getTeamCards(phaseId.data))
+    }
+
+    upsertTeamCards: RequestHandler = (req, res) => {
+        const phaseId = idSchema.safeParse(req.params.id), teamId = idSchema.safeParse(req.params.teamId), input = cardsSchema.safeParse(req.body)
+        if (!phaseId.success || !teamId.success || !input.success) return res.status(400).json({ error: 'Las tarjetas deben ser enteros no negativos y al menos una debe ser mayor que cero.' })
+        if (!this.service.hasMembership(phaseId.data, teamId.data)) return res.status(400).json({ error: 'El equipo no pertenece a la fase.' })
+        const cards = this.service.upsertTeamCards({ phaseId: phaseId.data, teamId: teamId.data, ...input.data })
+        notify('cards', phaseId.data)
+        res.json(cards)
+    }
+
+    deleteTeamCards: RequestHandler = (req, res) => {
+        const phaseId = idSchema.safeParse(req.params.id), teamId = idSchema.safeParse(req.params.teamId)
+        if (!phaseId.success || !teamId.success) return res.status(400).json({ error: 'Id inválido.' })
+        if (!this.service.deleteTeamCards(phaseId.data, teamId.data)) return res.status(404).json({ error: 'Tarjetas no encontradas.' })
+        notify('cards', phaseId.data)
         res.status(204).end()
     }
 

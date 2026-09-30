@@ -27,7 +27,7 @@ export class MatchRepository {
         for (const key of ['tournamentType', 'status', 'date'] as const) {
             if (filters[key]) { clauses.push(`m.${key}=@${key}`); params[key] = filters[key] }
         }
-        const query = `${matchSelect}${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''} ORDER BY m.date,CASE m.jornada WHEN 'MORNING' THEN 0 ELSE 1 END,m.court,m.id`
+        const query = `${matchSelect}${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''} ORDER BY m.date,m.sortOrder IS NULL,m.sortOrder,CASE m.jornada WHEN 'MORNING' THEN 0 ELSE 1 END,m.court,m.id`
         return clauses.length ? this.dbConnection.fetchAllFromNamedQuery<Match>(query, params) : this.dbConnection.fetchAllFromQuery<Match>(query)
     }
 
@@ -59,13 +59,17 @@ export class MatchRepository {
     }
 
     insertMatch(match: MatchInput): Match {
-        const result = this.dbConnection.executeNamedQuery('INSERT INTO matches(tournamentType,date,jornada,teamA,teamB,lineTeam,court,phaseId,groupId,teamAId,teamBId,lineTeamId) VALUES(@tournamentType,@date,@jornada,@teamA,@teamB,@lineTeam,@court,@phaseId,@groupId,@teamAId,@teamBId,@lineTeamId)', match)
+        const result = this.dbConnection.executeNamedQuery('INSERT INTO matches(tournamentType,date,jornada,teamA,teamB,lineTeam,court,sortOrder,phaseId,groupId,teamAId,teamBId,lineTeamId) VALUES(@tournamentType,@date,@jornada,@teamA,@teamB,@lineTeam,@court,@sortOrder,@phaseId,@groupId,@teamAId,@teamBId,@lineTeamId)', match)
         return this.getMatch(Number(result.lastInsertRowid))!
     }
 
     updateMatch(id: number, match: MatchInput): Match {
-        this.dbConnection.executeNamedQuery('UPDATE matches SET tournamentType=@tournamentType,date=@date,jornada=@jornada,teamA=@teamA,teamB=@teamB,lineTeam=@lineTeam,court=@court,phaseId=@phaseId,groupId=@groupId,teamAId=@teamAId,teamBId=@teamBId,lineTeamId=@lineTeamId,updatedAt=CURRENT_TIMESTAMP WHERE id=@id', { ...match, id })
+        this.dbConnection.executeNamedQuery('UPDATE matches SET tournamentType=@tournamentType,date=@date,jornada=@jornada,teamA=@teamA,teamB=@teamB,lineTeam=@lineTeam,court=@court,sortOrder=@sortOrder,phaseId=@phaseId,groupId=@groupId,teamAId=@teamAId,teamBId=@teamBId,lineTeamId=@lineTeamId,updatedAt=CURRENT_TIMESTAMP WHERE id=@id', { ...match, id })
         return this.getMatch(id)!
+    }
+
+    updateSortOrder(id: number, sortOrder: number | null): Match | undefined {
+        return this.dbConnection.executeQuery('UPDATE matches SET sortOrder=?,updatedAt=CURRENT_TIMESTAMP WHERE id=?', sortOrder, id).changes ? this.getMatch(id) : undefined
     }
 
     deleteMatch(id: number): boolean {

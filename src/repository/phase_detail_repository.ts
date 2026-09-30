@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import DBConnection, { DatabaseConnectionError } from "../db/db_connection";
 import { Group } from "../models/group";
 import { Match } from "../models/match";
-import { ClassificationRule, Membership, RuleInput, Sanction, ScoringRow, ScoringTable } from "../models/phase_details";
+import { ClassificationRule, Membership, RuleInput, Sanction, ScoringRow, ScoringTable, TeamCards } from "../models/phase_details";
 import { Team } from "../models/team";
 
 export class PhaseDetailRepository {
@@ -74,6 +74,19 @@ export class PhaseDetailRepository {
 
     deleteSanction(phaseId: number, teamId: number): boolean {
         return this.dbConnection.executeQuery('DELETE FROM sanctions WHERE phaseId=? AND teamId=?', phaseId, teamId).changes > 0
+    }
+
+    getTeamCards(phaseId: number): TeamCards[] {
+        return this.dbConnection.fetchAllFromParameterizedQuery<TeamCards>('SELECT c.*,t.name teamName FROM phase_team_cards c JOIN teams t ON t.id=c.teamId WHERE c.phaseId=? ORDER BY t.name', phaseId)
+    }
+
+    upsertTeamCards(cards: TeamCards): TeamCards {
+        this.dbConnection.executeNamedQuery('INSERT INTO phase_team_cards(phaseId,teamId,yellowCards,redCards) VALUES(@phaseId,@teamId,@yellowCards,@redCards) ON CONFLICT(phaseId,teamId) DO UPDATE SET yellowCards=excluded.yellowCards,redCards=excluded.redCards', cards)
+        return this.dbConnection.fetchOneFromQuery<TeamCards>('SELECT * FROM phase_team_cards WHERE phaseId=? AND teamId=?', cards.phaseId, cards.teamId)!
+    }
+
+    deleteTeamCards(phaseId: number, teamId: number): boolean {
+        return this.dbConnection.executeQuery('DELETE FROM phase_team_cards WHERE phaseId=? AND teamId=?', phaseId, teamId).changes > 0
     }
 
     getFinishedMatches(phaseId: number): Match[] {

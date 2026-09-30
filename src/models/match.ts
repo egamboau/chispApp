@@ -7,6 +7,7 @@ export interface Match {
     teamB:string;
     lineTeam:string | null;
     court:number;
+    sortOrder:number | null;
     scoreA:number;
     scoreB:number;
     status:'SCHEDULED' | 'LIVE' | 'FINISHED';
@@ -40,6 +41,7 @@ export interface MatchInput {
     date: string;
     jornada: string;
     court: number;
+    sortOrder: number | null;
 }
 
 export interface MatchFilters {

@@ -9,6 +9,7 @@ let selectedScoringTable = 'Torneo Regular';
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
 const badge = (match) => `<span class="badge ${match.tournamentType.toLowerCase()}">${labels[match.tournamentType]}</span>`;
 const shortDate = (date) => new Intl.DateTimeFormat('es-GT', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${date}T12:00:00`));
+const byJornada = (dayMatches) => ['MORNING', 'AFTERNOON'].flatMap((jornada) => dayMatches.filter((match) => match.jornada === jornada));
 
 function liveCard(match) {
   return `<article class="live-card ${match.tournamentType.toLowerCase()}">
@@ -28,26 +29,29 @@ function render() {
 }
 
 function renderResults() {
-  const days = matches.filter((match) => match.status === 'FINISHED').reduce((grouped, match) => {
+  const date = document.querySelector('#results-date').value;
+  const days = matches.filter((match) => match.status === 'FINISHED' && (!date || match.date === date)).reduce((grouped, match) => {
     (grouped[match.date] ||= []).push(match);
     return grouped;
   }, {});
-  document.querySelector('#results').innerHTML = Object.entries(days).reverse().map(([date, dayMatches]) => `
+  document.querySelector('#results-list').innerHTML = Object.entries(days).reverse().map(([date, dayMatches]) => `
     <section class="day"><h2>${shortDate(date)}</h2>${dayMatches.map((match) => `<article class="calendar-match ${match.tournamentType.toLowerCase()}">
       <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${escapeHtml(match.teamA)} <b>${match.scoreA} – ${match.scoreB}</b> ${escapeHtml(match.teamB)}</h3><p>Línea: ${match.lineVisible ? escapeHtml(match.lineTeam) : 'Por publicar'}</p></div><span class="status finished">FINAL</span>
-    </article>`).join('')}</section>`).join('') || '<div class="empty"><h2>No hay resultados anteriores</h2></div>';
+    </article>`).join('')}</section>`).join('') || `<div class="empty"><h2>${date ? 'No hay resultados para la fecha seleccionada' : 'No hay resultados anteriores'}</h2></div>`;
 }
 
 function renderCalendar() {
-  const selected = filter === 'ALL' ? matches : matches.filter((match) => match.tournamentType === filter);
+  const date = document.querySelector('#calendar-date').value;
+  const status = document.querySelector('#calendar-status').value;
+  const selected = matches.filter((match) => (filter === 'ALL' || match.tournamentType === filter) && (!date || match.date === date) && (!status || match.status === status));
   const days = selected.reduce((grouped, match) => {
     (grouped[match.date] ||= []).push(match);
     return grouped;
   }, {});
   document.querySelector('#calendar-list').innerHTML = Object.entries(days).map(([date, dayMatches]) => `
-    <section class="day"><h2>${shortDate(date)}</h2>${dayMatches.map((match) => `<article class="calendar-match ${match.tournamentType.toLowerCase()}">
+    <section class="day"><h2>${shortDate(date)}</h2>${byJornada(dayMatches).map((match) => `<article class="calendar-match ${match.tournamentType.toLowerCase()}">
       <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${escapeHtml(match.teamA)} ${match.status === 'SCHEDULED' ? '<small>vs</small>' : `<b>${match.scoreA} – ${match.scoreB}</b>`} ${escapeHtml(match.teamB)}</h3><p>Línea: ${match.lineVisible ? escapeHtml(match.lineTeam) : 'Por publicar'}</p></div><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span>
-    </article>`).join('')}</section>`).join('') || '<div class="empty"><h2>No hay partidos</h2></div>';
+    </article>`).join('')}</section>`).join('') || `<div class="empty"><h2>${filter !== 'ALL' || date || status ? 'No hay partidos para los filtros seleccionados' : 'No hay partidos'}</h2></div>`;
 }
 
 function renderStandings(data) {
@@ -135,12 +139,26 @@ document.querySelector('nav').addEventListener('click', (event) => {
   document.querySelector(`#${button.dataset.view}`).classList.add('active');
 });
 
-document.querySelector('.filters').addEventListener('click', (event) => {
+document.querySelector('#calendar .filter-buttons').addEventListener('click', (event) => {
   const button = event.target.closest('[data-filter]');
   if (!button) return;
   filter = button.dataset.filter;
-  document.querySelectorAll('.filters button').forEach((item) => item.classList.toggle('active', item === button));
+  document.querySelectorAll('#calendar [data-filter]').forEach((item) => item.classList.toggle('active', item === button));
   renderCalendar();
+});
+document.querySelector('#calendar-date').addEventListener('change', renderCalendar);
+document.querySelector('#calendar-status').addEventListener('change', renderCalendar);
+document.querySelector('#results-date').addEventListener('change', renderResults);
+document.querySelector('#clear-calendar-filters').addEventListener('click', () => {
+  filter = 'ALL';
+  document.querySelector('#calendar-date').value = '';
+  document.querySelector('#calendar-status').value = '';
+  document.querySelectorAll('#calendar [data-filter]').forEach((item) => item.classList.toggle('active', item.dataset.filter === filter));
+  renderCalendar();
+});
+document.querySelector('#clear-results-filter').addEventListener('click', () => {
+  document.querySelector('#results-date').value = '';
+  renderResults();
 });
 document.querySelector('#tournament-select').addEventListener('change', loadPhases);
 document.querySelector('#phase-select').addEventListener('change', () => { loadStandings(); loadScoring(); loadMatches(); });

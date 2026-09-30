@@ -4,7 +4,7 @@ body { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; margin: 0; h
 header { min-height: 110px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2rem; padding: 1.2rem 3vw; border-bottom: 1px solid #38506b; }
 h1 { margin: 0; font-size: clamp(2rem, 4vw, 4.5rem); letter-spacing: .12em; }
 .brand p { margin: .25rem 0 0; color: var(--muted); font-size: clamp(.7rem, 1vw, 1rem); font-weight: 700; }
-nav, .filters { display: flex; gap: .8rem; }
+nav, .filters, .filter-buttons { display: flex; gap: .8rem; }
 .selectors { display: flex; gap: .6rem; }
 .selectors label { display: grid; gap: .2rem; color: var(--muted); font-size: .75rem; font-weight: 800; text-transform: uppercase; }
 .selectors select { min-height: 42px; max-width: 180px; padding: .4rem; border: 1px solid #67809c; border-radius: 8px; background: #172b45; color: white; font-weight: 700; }
@@ -51,7 +51,9 @@ abbr { margin-left: .3rem; padding: .15rem .35rem; border-radius: 4px; backgroun
 .scoring-table th:nth-child(3), .scoring-table td:nth-child(3) { text-align: left; }
 .scoring-table th:last-child, .scoring-table td:last-child { text-align: center; }
 .empty-ranking { padding: 1rem; background: #102238; color: var(--muted); }
-.filters { position: sticky; top: 0; z-index: 2; justify-content: center; padding: .5rem; background: #07111fe8; }
+.filters { position: sticky; top: 0; z-index: 2; align-items: end; justify-content: center; flex-wrap: wrap; padding: .5rem; background: #07111fe8; }
+.filters label { display: grid; gap: .2rem; color: var(--muted); font-size: .75rem; font-weight: 800; text-transform: uppercase; }
+.filters input, .filters select { min-height: 58px; padding: .6rem; border: 2px solid #67809c; border-radius: 12px; background: #172b45; color: white; font: 700 1rem system-ui; }
 .day h2 { margin: 2rem 0 1rem; text-transform: uppercase; font-size: clamp(1.5rem, 2.5vw, 2.8rem); }
 .calendar-match { display: grid; grid-template-columns: 130px 1fr auto; align-items: center; gap: 1.5rem; margin-bottom: 1rem; padding: 1.2rem 1.5rem; border-left-width: 8px; }
 .calendar-match .jornada { color: var(--accent); font-size: 2.3rem; font-weight: 900; }
@@ -76,6 +78,9 @@ footer p { margin: 0; }
   nav { width: 100%; }
   nav { flex-wrap: wrap; }
   nav button { flex: 1; padding: .5rem .2rem; min-width: 18%; min-height: 50px; font-size: clamp(.6rem, 2.2vw, .95rem); }
+  .filters, .filter-buttons { width: 100%; }
+  .filter-buttons button, .filters label { flex: 1; min-width: 120px; }
+  .filters input, .filters select { width: 100%; }
   main { height: auto; min-height: calc(100dvh - 180px); padding: 1rem; }
   footer { flex-direction: column; gap: .35rem; }
   .score { grid-template-columns: 1fr auto auto auto 1fr; }

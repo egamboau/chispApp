@@ -59,6 +59,7 @@ class DBConnection {
           teamA TEXT NOT NULL, teamB TEXT NOT NULL, lineTeam TEXT NOT NULL,
           court INTEGER NOT NULL CHECK (court > 0), scoreA INTEGER NOT NULL DEFAULT 0 CHECK (scoreA >= 0),
           scoreB INTEGER NOT NULL DEFAULT 0 CHECK (scoreB >= 0),
+          sortOrder INTEGER CHECK (sortOrder IS NULL OR sortOrder > 0),
           status TEXT NOT NULL DEFAULT 'SCHEDULED' CHECK (status IN ('SCHEDULED', 'LIVE', 'FINISHED')),
           createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )`;
@@ -95,6 +96,7 @@ class DBConnection {
         CREATE TABLE IF NOT EXISTS groups_table (id INTEGER PRIMARY KEY AUTOINCREMENT,phaseId INTEGER NOT NULL REFERENCES phases(id) ON DELETE RESTRICT,name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 100),UNIQUE(phaseId,name));
         CREATE TABLE IF NOT EXISTS phase_memberships (phaseId INTEGER NOT NULL REFERENCES phases(id) ON DELETE RESTRICT,groupId INTEGER NOT NULL REFERENCES groups_table(id) ON DELETE RESTRICT,teamId INTEGER NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,PRIMARY KEY(phaseId,teamId));
         CREATE TABLE IF NOT EXISTS sanctions (phaseId INTEGER NOT NULL REFERENCES phases(id) ON DELETE RESTRICT,teamId INTEGER NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,reason TEXT NOT NULL CHECK(length(trim(reason))>0),PRIMARY KEY(phaseId,teamId));
+        CREATE TABLE IF NOT EXISTS phase_team_cards (phaseId INTEGER NOT NULL REFERENCES phases(id) ON DELETE RESTRICT,teamId INTEGER NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,yellowCards INTEGER NOT NULL DEFAULT 0 CHECK(yellowCards>=0),redCards INTEGER NOT NULL DEFAULT 0 CHECK(redCards>=0),CHECK(yellowCards+redCards>0),PRIMARY KEY(phaseId,teamId));
         CREATE TABLE IF NOT EXISTS published_line_dates (date TEXT PRIMARY KEY);
         CREATE TABLE IF NOT EXISTS classification_rules (id INTEGER PRIMARY KEY AUTOINCREMENT,phaseId INTEGER NOT NULL REFERENCES phases(id) ON DELETE CASCADE,startPosition INTEGER NOT NULL CHECK(startPosition>0),endPosition INTEGER NOT NULL CHECK(endPosition>=startPosition),label TEXT NOT NULL CHECK(length(trim(label))>0));`);
 
@@ -109,6 +111,7 @@ class DBConnection {
             'teamAId INTEGER REFERENCES teams(id)',
             'teamBId INTEGER REFERENCES teams(id)',
             'lineTeamId INTEGER REFERENCES teams(id)',
+            'sortOrder INTEGER CHECK(sortOrder IS NULL OR sortOrder>0)',
             'yellowCardsA INTEGER NOT NULL DEFAULT 0 CHECK(yellowCardsA>=0)',
             'redCardsA INTEGER NOT NULL DEFAULT 0 CHECK(redCardsA>=0)',
             'yellowCardsB INTEGER NOT NULL DEFAULT 0 CHECK(yellowCardsB>=0)',
@@ -279,6 +282,7 @@ class DBConnection {
             this.database.prepare('UPDATE tournaments SET currentPhaseId=NULL WHERE currentPhaseId=?').run(id)
             this.database.prepare('DELETE FROM phase_memberships WHERE phaseId=?').run(id)
             this.database.prepare('DELETE FROM sanctions WHERE phaseId=?').run(id)
+            this.database.prepare('DELETE FROM phase_team_cards WHERE phaseId=?').run(id)
             this.database.prepare('DELETE FROM groups_table WHERE phaseId=?').run(id)
             this.database.prepare('DELETE FROM phases WHERE id=?').run(id)
         })()
