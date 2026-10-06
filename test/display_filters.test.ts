@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-test('filtra calendario por fecha y estado, y resultados por fecha', () => {
+test('calendario omite finalizados y resultados conserva el histórico', () => {
   const elements: Record<string, { value: string; innerHTML: string }> = {
-    '#calendar-date': { value: '2026-10-01', innerHTML: '' },
-    '#calendar-status': { value: 'SCHEDULED', innerHTML: '' },
+    '#calendar-date': { value: '', innerHTML: '' },
+    '#calendar-status': { value: '', innerHTML: '' },
     '#calendar-list': { value: '', innerHTML: '' },
     '#results-date': { value: '2026-10-02', innerHTML: '' },
     '#results-list': { value: '', innerHTML: '' },
@@ -29,7 +29,8 @@ test('filtra calendario por fecha y estado, y resultados por fecha', () => {
   const calendarHtml = elements['#calendar-list']!.innerHTML;
   const resultsHtml = elements['#results-list']!.innerHTML;
   assert.match(calendarHtml, /Mañana 1[\s\S]*Mañana 2[\s\S]*Tarde 1[\s\S]*Tarde 2/);
-  assert.doesNotMatch(calendarHtml, /En juego|Resultado/);
+  assert.match(calendarHtml, /En juego/);
+  assert.doesNotMatch(calendarHtml, /Resultado/);
   assert.match(resultsHtml, /Resultado/);
   assert.doesNotMatch(resultsHtml, /Programado|En juego/);
 });
