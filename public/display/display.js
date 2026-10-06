@@ -43,7 +43,7 @@ function renderResults() {
 function renderCalendar() {
   const date = document.querySelector('#calendar-date').value;
   const status = document.querySelector('#calendar-status').value;
-  const selected = matches.filter((match) => (filter === 'ALL' || match.tournamentType === filter) && (!date || match.date === date) && (!status || match.status === status));
+  const selected = matches.filter((match) => match.status !== 'FINISHED' && (filter === 'ALL' || match.tournamentType === filter) && (!date || match.date === date) && (!status || match.status === status));
   const days = selected.reduce((grouped, match) => {
     (grouped[match.date] ||= []).push(match);
     return grouped;
