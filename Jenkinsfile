@@ -23,13 +23,16 @@ pipeline {
             script {
               env.COMMIT_SHA = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
               env.IMAGE = "nas-server.local:5000/jupas-app:sha-${env.COMMIT_SHA.take(12)}"
-              sendGitHubStatus('pending', 'Building Docker image...', 'Jenkins / Build')
+              env.BACKUP_IMAGE = "nas-server.local:5000/jupas-app-backup:sha-${env.COMMIT_SHA.take(12)}"
+              env.BACKUP_LATEST = 'nas-server.local:5000/jupas-app-backup:latest'
+              sendGitHubStatus('pending', 'Building Docker images...', 'Jenkins / Build')
             }
             sh 'docker build --pull -t "$IMAGE" .'
+            sh 'docker build --pull -t "$BACKUP_IMAGE" -t "$BACKUP_LATEST" backup'
           }
           post {
             success {
-              script { sendGitHubStatus('success', 'Docker image built', 'Jenkins / Build') }
+              script { sendGitHubStatus('success', 'Docker images built', 'Jenkins / Build') }
             }
             failure {
               script { sendGitHubStatus('failure', 'Docker build failed', 'Jenkins / Build') }
@@ -41,7 +44,11 @@ pipeline {
           when { branch 'main' }
           steps {
             script { sendGitHubStatus('pending', 'Pushing Docker image...', 'Jenkins / Push') }
-            sh 'docker push "$IMAGE"'
+            sh '''
+              docker push "$IMAGE"
+              docker push "$BACKUP_IMAGE"
+              docker push "$BACKUP_LATEST"
+            '''
           }
           post {
             success {
@@ -51,6 +58,28 @@ pipeline {
               script { sendGitHubStatus('failure', 'Docker push failed', 'Jenkins / Push') }
             }
           }
+        }
+      }
+    }
+
+    stage('Backup') {
+      when { branch 'main' }
+      agent { label 'base' }
+      steps {
+        script { sendGitHubStatus('pending', 'Backing up SQLite...', 'Jenkins / Backup') }
+        sh '''
+          set -eu
+          : "${NFS_SERVER:?Set NFS_SERVER in Jenkins}"
+          : "${NFS_EXPORT:?Set NFS_EXPORT in Jenkins}"
+          sh backup/run-swarm-job.sh
+        '''
+      }
+      post {
+        success {
+          script { sendGitHubStatus('success', 'SQLite backup completed', 'Jenkins / Backup') }
+        }
+        failure {
+          script { sendGitHubStatus('failure', 'SQLite backup failed', 'Jenkins / Backup') }
         }
       }
     }
