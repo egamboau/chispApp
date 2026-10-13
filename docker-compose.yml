@@ -12,5 +12,13 @@ services:
       - tournament-data:/data
     restart: unless-stopped
 
+  backup:
+    build: ./backup
+    image: ${BACKUP_IMAGE:-tournament-backup:latest}
+    profiles: [tools]
+    volumes:
+      - tournament-data:/data:ro
+      - ${RCLONE_CONFIG_PATH:-./rclone.conf}:/run/secrets/rclone.conf:ro
+
 volumes:
   tournament-data:

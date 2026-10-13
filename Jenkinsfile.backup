@@ -1,0 +1,29 @@
+pipeline {
+  agent { label 'base' }
+
+  environment {
+    BACKUP_IMAGE = 'nas-server.local:5000/jupas-app-backup:latest'
+  }
+
+  options {
+    disableConcurrentBuilds()
+    withFolderProperties()
+  }
+
+  triggers {
+    cron('TZ=America/Guatemala\n0 2 * * *')
+  }
+
+  stages {
+    stage('Backup') {
+      steps {
+        sh '''
+          set -eu
+          : "${NFS_SERVER:?Set NFS_SERVER in Jenkins}"
+          : "${NFS_EXPORT:?Set NFS_EXPORT in Jenkins}"
+          sh backup/run-swarm-job.sh
+        '''
+      }
+    }
+  }
+}

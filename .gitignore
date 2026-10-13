@@ -4,6 +4,7 @@ data/
 *.db
 *.db-shm
 *.db-wal
+rclone.conf
 npm-debug.log*
 .vscode/*
 

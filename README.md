@@ -89,13 +89,65 @@ El despliegue falla si faltan las variables de Access. `docker compose` usa `NOD
 
 ## Backup de SQLite
 
-Detén brevemente las escrituras y copia el archivo desde el volumen mediante un contenedor temporal:
+El respaldo usa la API de backup de SQLite, valida el snapshot, lo comprime y lo sube a `onedrive:Documents/Jupas/ChispAppBackups/` sin detener la aplicación.
+
+### Configurar OneDrive
+
+Instala rclone en una computadora con navegador y crea un archivo protegido fuera del repositorio:
 
 ```bash
-docker run --rm -v jupas-app_tournament-data:/data -v "$PWD":/backup alpine cp /data/tournament.db /backup/tournament-backup.db
+install -d -m 700 "$HOME/.config/chispapp"
+rclone config --config "$HOME/.config/chispapp/rclone.conf"
 ```
 
-En Swarm, consulta el nombre real del volumen con `docker volume ls` y sustitúyelo en el comando. Para restaurar, detén el servicio y copia el backup de vuelta como `/data/tournament.db`.
+Crea el remote con el nombre exacto `onedrive`, selecciona Microsoft OneDrive y completa el inicio de sesión. Si configuras desde una máquina sin navegador, responde que no deseas abrirlo automáticamente, ejecuta `rclone authorize onedrive` en una computadora con navegador y pega el resultado cuando se solicite.
+
+Prueba el acceso y crea la carpeta inicial:
+
+```bash
+rclone --config "$HOME/.config/chispapp/rclone.conf" lsd onedrive:
+rclone --config "$HOME/.config/chispapp/rclone.conf" mkdir onedrive:Documents/Jupas/ChispAppBackups
+```
+
+No copies `rclone.conf` al repositorio: contiene los tokens de OneDrive. Para probar el contenedor localmente:
+
+```bash
+docker compose build backup
+RCLONE_CONFIG_PATH="$HOME/.config/chispapp/rclone.conf" \
+  docker compose --profile tools up --no-deps --abort-on-container-exit --exit-code-from backup backup
+```
+
+El archivo se guarda como `/backups/tournament-FECHA.db.gz` dentro del contenedor detenido. No uses `--rm`: al eliminar o recrear el contenedor también se eliminan sus respaldos. Para copiar los archivos antes de una restauración:
+
+```bash
+mkdir -p backups
+docker compose cp backup:/backups/. ./backups/
+gzip -t backups/tournament-*.db.gz
+```
+
+Para restaurar, detén la aplicación, descomprime el archivo elegido como `tournament.db` y reemplaza la base del volumen.
+
+En un manager de Swarm, crea el secreto una sola vez usando la ruta real del archivo:
+
+```bash
+docker secret create chispapp-rclone-config /ruta/protegida/rclone.conf
+docker secret inspect chispapp-rclone-config
+```
+
+En producción, el pipeline principal publica `jupas-app-backup:sha-COMMIT` y ejecuta un job de Swarm antes del despliegue. El job monta el mismo export NFS en modo solo lectura e inyecta el secreto como `/run/secrets/rclone.conf`. Si el snapshot, la autenticación o la transferencia fallan, Jenkins no despliega la nueva versión.
+
+Para los respaldos diarios, crea otro job **Pipeline from SCM** apuntando a `main`, configura `Jenkinsfile.backup` como **Script Path** y conserva las variables `NFS_SERVER` y `NFS_EXPORT` en las propiedades de la carpeta. Ese pipeline ejecuta `jupas-app-backup:latest` todos los días a las 02:00, hora de Guatemala.
+
+Los secretos de Swarm no se pueden modificar. Para renovar una autorización vencida, genera y prueba otro `rclone.conf`, localiza y elimina primero el job de backup completado que usa el secreto, y vuelve a crearlo:
+
+```bash
+docker service ls --filter label=com.chispapp.backup=true
+docker service rm NOMBRE_DEL_JOB_COMPLETADO
+docker secret rm chispapp-rclone-config
+docker secret create chispapp-rclone-config /ruta/protegida/rclone.conf
+```
+
+El contenedor copia el secreto a un archivo temporal escribible para que rclone pueda renovar el token durante cada ejecución; esa copia se elimina al terminar.
 
 ## Pruebas
 
