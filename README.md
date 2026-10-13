@@ -136,7 +136,7 @@ docker secret inspect chispapp-rclone-config
 
 En producción, el pipeline principal publica `jupas-app-backup:sha-COMMIT` y ejecuta un job de Swarm antes del despliegue. El job monta el mismo export NFS en modo solo lectura e inyecta el secreto como `/run/secrets/rclone.conf`. Si el snapshot, la autenticación o la transferencia fallan, Jenkins no despliega la nueva versión.
 
-Para los respaldos diarios, crea otro job **Pipeline from SCM** apuntando a `main`, configura `Jenkinsfile.backup` como **Script Path** y conserva las variables `NFS_SERVER` y `NFS_EXPORT` en las propiedades de la carpeta. Ese pipeline ejecuta `jupas-app-backup:latest` todos los días a las 02:00, hora de Guatemala.
+Para el respaldo semanal, crea otro job **Pipeline from SCM** apuntando a `main`, configura `Jenkinsfile.backup` como **Script Path** y conserva las variables `NFS_SERVER` y `NFS_EXPORT` en las propiedades de la carpeta. Ese pipeline ejecuta `jupas-app-backup:latest` cada martes a las 00:00, hora de Guatemala.
 
 Los secretos de Swarm no se pueden modificar. Para renovar una autorización vencida, genera y prueba otro `rclone.conf`, localiza y elimina primero el job de backup completado que usa el secreto, y vuelve a crearlo:
 

@@ -11,7 +11,7 @@ pipeline {
   }
 
   triggers {
-    cron('TZ=America/Guatemala\n0 2 * * *')
+    cron('TZ=America/Guatemala\n0 0 * * 2')
   }
 
   stages {
