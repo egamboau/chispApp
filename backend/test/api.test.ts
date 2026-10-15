@@ -80,7 +80,10 @@ test.before(async () => {
   INSERT INTO phases(id,tournamentId,name) VALUES(1,1,'Fase 1'),(2,2,'Fase 1');
   INSERT INTO groups_table(id,phaseId,name) VALUES(1,1,'General'),(2,2,'General')`);
   legacyDb.close();
-  const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'production', PORT: String(port), DATABASE_PATH: path.join(tempDir, 'test.db'), CF_ACCESS_TEAM_DOMAIN: teamDomain, CF_ACCESS_AUD: audience };
+  const frontendDistPath = path.join(tempDir, 'frontend');
+  fs.mkdirSync(frontendDistPath);
+  fs.writeFileSync(path.join(frontendDistPath, 'index.html'), '<main>React preview</main>');
+  const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'production', PORT: String(port), DATABASE_PATH: path.join(tempDir, 'test.db'), FRONTEND_DIST_PATH: frontendDistPath, CF_ACCESS_TEAM_DOMAIN: teamDomain, CF_ACCESS_AUD: audience };
   delete env.NODE_TEST_CONTEXT;
   server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { cwd: path.join(__dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'] });
   server.stdout.on('data', (chunk: Buffer) => { serverLogs += chunk; });
@@ -121,7 +124,7 @@ test('migra horas existentes a jornadas sin perder el partido', async () => {
 
 test('sirve las páginas administrativas y la pantalla pública', async () => {
   const auth = { headers: { 'cf-access-jwt-assertion': accessToken } };
-  const [tournamentsAdmin, teamsAdmin, calendarAdmin, scoringAdmin, adminJs, display, css] = await Promise.all([fetch(`${base}/admin/`, auth), fetch(`${base}/admin/teams.html`, auth), fetch(`${base}/admin/calendar.html`, auth), fetch(`${base}/admin/scoring.html`, auth), fetch(`${base}/admin/admin.js`, auth), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);
+  const [tournamentsAdmin, teamsAdmin, calendarAdmin, scoringAdmin, adminJs, display, css, react, reactDeepLink, root] = await Promise.all([fetch(`${base}/admin/`, auth), fetch(`${base}/admin/teams.html`, auth), fetch(`${base}/admin/calendar.html`, auth), fetch(`${base}/admin/scoring.html`, auth), fetch(`${base}/admin/admin.js`, auth), fetch(`${base}/display/`), fetch(`${base}/display/display.css`), fetch(`${base}/react/`), fetch(`${base}/react/deep/link`), fetch(base, { redirect: 'manual' })]);
   assert.equal(display.headers.get('cache-control'), 'no-store');
   assert.match(await tournamentsAdmin.text(), /href="\/admin\/scoring.html"[\s\S]*id="phase-tournament-type"[\s\S]*id="rule-form"/);
   assert.match(await teamsAdmin.text(), /id="membership-form"[\s\S]*id="player-form"/);
@@ -131,6 +134,12 @@ test('sirve las páginas administrativas y la pantalla pública', async () => {
   assert.match(await adminJs.text(), /EDITAR ORDEN[\s\S]*ADMINISTRAR GOLEO/);
   assert.match(await display.text(), /data-view="standings"[\s\S]*data-view="scoring"/);
   assert.match(await css.text(), /@media \(max-width: 900px\)/);
+  const reactHtml = await react.text();
+  assert.equal(react.status, 200);
+  assert.equal(react.headers.get('cache-control'), 'no-store');
+  assert.equal(reactDeepLink.status, 200);
+  assert.equal(await reactDeepLink.text(), reactHtml);
+  assert.equal(root.headers.get('location'), '/display');
 });
 
 test('guarda equipos separados por torneo', async () => {
