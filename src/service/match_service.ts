@@ -183,15 +183,22 @@ export class MatchService {
     }
 
     insertScoring(scoring: MatchPlayerScoringInput): MatchPlayerScoring {
+        if (!this.participantsConfirmed(scoring.matchId)) throw new DatabaseConnectionError('ParticipantReferenceError', 'Los participantes deben estar resueltos y confirmados para registrar resultados.', undefined)
         return this.scoringRepository.insert(scoring)
     }
 
     updateScoring(scoring: MatchPlayerScoringInput): MatchPlayerScoring {
+        if (!this.participantsConfirmed(scoring.matchId)) throw new DatabaseConnectionError('ParticipantReferenceError', 'Los participantes deben estar resueltos y confirmados para registrar resultados.', undefined)
         return this.scoringRepository.update(scoring)
     }
 
     deleteScoring(matchId: number, playerId: number): boolean {
         return this.scoringRepository.delete(matchId, playerId)
+    }
+
+    participantsConfirmed(id: number): boolean {
+        const match = this.repository.getMatch(id)
+        return Boolean(match?.participants && Object.values(match.participants).every(item => item?.status === 'CONFIRMED'))
     }
 
     validDate(value: string): boolean {
@@ -212,7 +219,8 @@ export class MatchService {
     }
 
     private publicMatch(match: Match, isAdmin: boolean): Match {
-        return isAdmin || match.lineVisible ? match : { ...match, lineTeam: null, lineTeamId: null }
+        return isAdmin || match.lineVisible ? match : { ...match, lineTeam: null, lineTeamId: null,
+            ...(match.participants && { participants: { ...match.participants, lineTeam: null } }) }
     }
 
     private shuffleUnpublishedDates(matches: Match[]): void {

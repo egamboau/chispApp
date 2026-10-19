@@ -1,4 +1,5 @@
 import { Request, RequestHandler } from "express";
+import { DatabaseConnectionError } from "../db/db_connection";
 import { z } from "zod";
 import { MatchFilters } from "../models/match";
 import { MatchService } from "../service/match_service";
@@ -6,6 +7,16 @@ import { PlayerService } from "../service/player_service";
 import { notify } from "../utils/events";
 
 const idSchema = z.coerce.number().int().positive();
+const participantSchema = z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('TEAM'), teamId: idSchema }).strict(),
+    z.object({ kind: z.literal('GROUP_POSITION'), sourcePhaseId: idSchema, sourceGroupId: idSchema, position: idSchema }).strict(),
+    z.object({ kind: z.literal('MATCH_WINNER'), sourceMatchId: idSchema }).strict(),
+]);
+const participantMatchSchema = z.object({
+    phaseId: idSchema, groupId: idSchema, date: z.string(), jornada: z.enum(['MORNING', 'AFTERNOON']),
+    court: idSchema, sortOrder: z.preprocess(value => value === '' || value == null ? null : value, idSchema.nullable()),
+    participants: z.object({ teamA: participantSchema, teamB: participantSchema, lineTeam: participantSchema }).strict(),
+});
 const scoreSchema = z.object({ team: z.enum(['A', 'B']), delta: z.union([z.literal(-1), z.literal(1)]) });
 const resultSchema = z.object({ scoreA: z.coerce.number().int().nonnegative(), scoreB: z.coerce.number().int().nonnegative() });
 const sortOrderSchema = z.object({ sortOrder: z.union([z.coerce.number().int().positive(), z.null()]) });
@@ -62,6 +73,8 @@ export class MatchController {
     }
 
     insertMatch: RequestHandler = (req, res) => {
+        if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) return res.status(400).json({ error: 'Datos de partido inválidos.' })
+        if (Object.hasOwn(req.body, 'participants')) return this.saveParticipantMatch(req.body, res)
         const { match, errors } = this.service.buildInput(req.body)
         if (errors.length) return res.status(400).json({ error: errors.join(' ') })
         const created = this.service.insertMatch(match)
@@ -70,11 +83,13 @@ export class MatchController {
     }
 
     updateMatch: RequestHandler = (req, res) => {
+        if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) return res.status(400).json({ error: 'Datos de partido inválidos.' })
         const id = idSchema.safeParse(req.params.id)
         if (!id.success) return res.status(400).json({ error: 'Id de partido inválido.' })
         const existing = this.service.getMatch(id.data, true)
         if (!existing) return res.status(404).json({ error: 'Partido no encontrado.' })
         if (existing.status !== 'SCHEDULED') return res.status(409).json({ error: 'Solo se puede editar un partido programado.' })
+        if (Object.hasOwn(req.body, 'participants')) return this.saveParticipantMatch({ ...req.body, sortOrder: Object.hasOwn(req.body, 'sortOrder') ? req.body.sortOrder : existing.sortOrder }, res, id.data)
         if (this.service.hasParticipantReferences(id.data)) return res.status(409).json({ error: 'Este partido requiere editar sus referencias de participantes.' })
         const body = Object.hasOwn(req.body, 'sortOrder') ? req.body : { ...req.body, sortOrder: existing.sortOrder }
         const { match, errors } = this.service.buildInput(body)
@@ -82,6 +97,23 @@ export class MatchController {
         const updated = this.service.updateMatch(id.data, match)
         notify('updated', updated.id)
         res.json(updated)
+    }
+
+    private saveParticipantMatch(body: unknown, res: Parameters<RequestHandler>[1], id?: number) {
+        const input = participantMatchSchema.safeParse(body)
+        if (!input.success) return res.status(400).json({ error: `Participantes o datos de partido inválidos: ${input.error.issues.map(issue => issue.path.join('.')).join(', ')}.` })
+        try {
+            const match = this.service.saveParticipantMatch(input.data, id)
+            notify(id === undefined ? 'created' : 'updated', match.id)
+            return res.status(id === undefined ? 201 : 200).json(match)
+        } catch (error) {
+            if (error instanceof DatabaseConnectionError && error.name === 'ParticipantReferenceError') return res.status(400).json({ error: error.message })
+            const cause = error instanceof DatabaseConnectionError ? error.cause : error
+            if (cause instanceof Error && 'code' in cause && String(cause.code).startsWith('SQLITE_CONSTRAINT')) {
+                return res.status(409).json({ error: `Referencia de participante inválida: ${cause.message}` })
+            }
+            throw error
+        }
     }
 
     updateSortOrder: RequestHandler = (req, res) => {
@@ -173,6 +205,7 @@ export class MatchController {
         if (!input.success) return res.status(400).json({ error: 'Anotación inválida.' })
         const match = this.service.getMatch(matchId.data, true)
         if (!match) return res.status(404).json({ error: 'Partido no encontrado.' })
+        if (!this.service.participantsConfirmed(match.id)) return res.status(409).json({ error: 'Los participantes deben estar resueltos y confirmados para registrar resultados.' })
         const player = this.playerService.getPlayer(input.data.playerId)
         if (!player) return res.status(404).json({ error: 'Jugador no encontrado.' })
         if (![match.teamAId, match.teamBId].includes(player.teamId)) return res.status(400).json({ error: 'El jugador no pertenece al partido.' })
@@ -188,6 +221,7 @@ export class MatchController {
         if (!input.success) return res.status(400).json({ error: 'Anotación inválida.' })
         const match = this.service.getMatch(matchId.data, true)
         if (!match) return res.status(404).json({ error: 'Partido no encontrado.' })
+        if (!this.service.participantsConfirmed(match.id)) return res.status(409).json({ error: 'Los participantes deben estar resueltos y confirmados para registrar resultados.' })
         const player = this.playerService.getPlayer(playerId.data)
         if (!player) return res.status(404).json({ error: 'Jugador no encontrado.' })
         if (![match.teamAId, match.teamBId].includes(player.teamId)) return res.status(400).json({ error: 'El jugador no pertenece al partido.' })

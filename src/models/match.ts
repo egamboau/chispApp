@@ -26,6 +26,7 @@ export interface Match {
     phaseName?: string;
     groupName?: string;
     lineVisible?: number;
+    participants?: MatchParticipantDetails;
 }
 
 export type MatchParticipant =
@@ -43,6 +44,15 @@ export type StoredMatchParticipants = Record<keyof MatchParticipants, {
     reference: MatchParticipant;
     resolvedTeamId: number | null;
 }>;
+
+export type ParticipantResolutionStatus = 'PENDING' | 'RESOLVED' | 'CONFIRMED';
+
+export type MatchParticipantDetails = Record<keyof MatchParticipants, {
+    reference: MatchParticipant;
+    resolvedTeamId: number | null;
+    resolvedTeam: { id: number; name: string } | null;
+    status: ParticipantResolutionStatus;
+} | null>;
 
 export interface MatchInput {
     phaseId: number;
