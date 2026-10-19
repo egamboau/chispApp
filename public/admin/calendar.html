@@ -16,17 +16,20 @@
       <label>Fase<select id="admin-phase"></select></label>
       <form id="match-form">
         <input type="hidden" id="match-id">
-        <label>Grupo del equipo A<select id="groupId" required></select></label>
+        <label>Grupo del partido<select id="groupId" required></select></label>
         <label>Fecha<input id="date" type="date" required></label>
         <label>Jornada<select id="jornada" required><option value="MORNING">Mañana</option><option value="AFTERNOON">Tarde</option></select></label>
         <label>Cancha<input id="court" type="number" min="1" step="1" inputmode="numeric" required></label>
         <label>Orden oficial<input id="sortOrder" type="number" min="1" step="1" inputmode="numeric" placeholder="Sin definir"></label>
-        <label>Equipo A<select id="teamAId" required></select></label>
-        <label>Equipo B<select id="teamBId" required></select></label>
-        <label>Equipo de línea<select id="lineTeamId" required></select></label>
+        <div id="match-participants" class="participant-fields"></div>
+        <p id="assignment-warning" role="status" hidden></p>
         <div class="form-actions"><button class="primary" type="submit">GUARDAR PARTIDO</button><button id="cancel-edit" type="button" hidden>CANCELAR</button></div>
       </form>
       <p id="message" role="alert"></p>
+      <label>Previsualizar fase origen<select id="positions-phase"></select></label>
+      <button id="preview-positions" type="button">PREVISUALIZAR RESOLUCIÓN</button>
+      <p>Guarda el partido para incluir sus posiciones en la previsualización.</p>
+      <div id="phase-positions" aria-live="polite"></div>
     </section>
 
     <section class="matches-section">

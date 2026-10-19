@@ -106,3 +106,8 @@ footer { padding: 1rem; color: var(--muted); text-align: center; font-size: .8re
   .scoring-row { grid-template-columns: 1fr auto; }
   .scoring-row button { grid-row: 2; }
 }
+
+.participant-fields, #assignment-warning { grid-column: 1 / -1; }
+.participant-fields { display: grid; gap: .9rem; }
+.participant-fields fieldset { min-width: 0; border: 1px solid #dce3ea; border-radius: 9px; display: grid; gap: .6rem; }
+.participant-fields [hidden] { display: none; }
