@@ -11,11 +11,20 @@ const badge = (match) => `<span class="badge ${match.tournamentType.toLowerCase(
 const shortDate = (date) => new Intl.DateTimeFormat('es-GT', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${date}T12:00:00`));
 const byJornada = (dayMatches) => ['MORNING', 'AFTERNOON'].flatMap((jornada) => dayMatches.filter((match) => match.jornada === jornada));
 
+function participantName(match, role) {
+  if (role === 'lineTeam' && !match.lineVisible) return 'Por publicar';
+  const participant = match.participants?.[role];
+  if (participant?.status === 'PENDING') {
+    return `<span class="participant-pending">${escapeHtml(match[role])} <small>Por definir</small></span>`;
+  }
+  return escapeHtml(participant?.resolvedTeam?.name ?? match[role]);
+}
+
 function liveCard(match) {
   return `<article class="live-card ${match.tournamentType.toLowerCase()}">
     <div class="card-top">${badge(match)}<strong>CANCHA ${match.court}</strong></div>
-    <div class="score"><span>${escapeHtml(match.teamA)}</span><b>${match.scoreA}</b><i>–</i><b>${match.scoreB}</b><span>${escapeHtml(match.teamB)}</span></div>
-    <p>Línea: <strong>${match.lineVisible ? escapeHtml(match.lineTeam) : 'Por publicar'}</strong></p>
+    <div class="score"><span>${participantName(match, 'teamA')}</span><b>${match.scoreA}</b><i>–</i><b>${match.scoreB}</b><span>${participantName(match, 'teamB')}</span></div>
+    <p>Línea: <strong>${participantName(match, 'lineTeam')}</strong></p>
   </article>`;
 }
 
@@ -36,7 +45,7 @@ function renderResults() {
   }, {});
   document.querySelector('#results-list').innerHTML = Object.entries(days).reverse().map(([date, dayMatches]) => `
     <section class="day"><h2>${shortDate(date)}</h2>${dayMatches.map((match) => `<article class="calendar-match ${match.tournamentType.toLowerCase()}">
-      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${escapeHtml(match.teamA)} <b>${match.scoreA} – ${match.scoreB}</b> ${escapeHtml(match.teamB)}</h3><p>Línea: ${match.lineVisible ? escapeHtml(match.lineTeam) : 'Por publicar'}</p></div><span class="status finished">FINAL</span>
+      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${participantName(match, 'teamA')} <b>${match.scoreA} – ${match.scoreB}</b> ${participantName(match, 'teamB')}</h3><p>Línea: ${participantName(match, 'lineTeam')}</p></div><span class="status finished">FINAL</span>
     </article>`).join('')}</section>`).join('') || `<div class="empty"><h2>${date ? 'No hay resultados para la fecha seleccionada' : 'No hay resultados anteriores'}</h2></div>`;
 }
 
@@ -50,7 +59,7 @@ function renderCalendar() {
   }, {});
   document.querySelector('#calendar-list').innerHTML = Object.entries(days).map(([date, dayMatches]) => `
     <section class="day"><h2>${shortDate(date)}</h2>${byJornada(dayMatches).map((match) => `<article class="calendar-match ${match.tournamentType.toLowerCase()}">
-      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${escapeHtml(match.teamA)} ${match.status === 'SCHEDULED' ? '<small>vs</small>' : `<b>${match.scoreA} – ${match.scoreB}</b>`} ${escapeHtml(match.teamB)}</h3><p>Línea: ${match.lineVisible ? escapeHtml(match.lineTeam) : 'Por publicar'}</p></div><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span>
+      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${participantName(match, 'teamA')} ${match.status === 'SCHEDULED' ? '<small>vs</small>' : `<b>${match.scoreA} – ${match.scoreB}</b>`} ${participantName(match, 'teamB')}</h3><p>Línea: ${participantName(match, 'lineTeam')}</p></div><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span>
     </article>`).join('')}</section>`).join('') || `<div class="empty"><h2>${filter !== 'ALL' || date || status ? 'No hay partidos para los filtros seleccionados' : 'No hay partidos'}</h2></div>`;
 }
 
