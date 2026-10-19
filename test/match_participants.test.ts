@@ -284,8 +284,9 @@ test('la edición HTTP antigua devuelve conflicto antes de crear equipos o perde
         status(value: number) { status = value; return this; },
         json(value: unknown) { body = value; return this; },
     };
+    const { participants, ...schedule } = f.input();
     await controller.updateMatch({ params: { id: String(match.id) }, body: {
-        ...f.input(), teamA: 'Equipo ficticio A', teamB: 'Equipo ficticio B', lineTeam: 'Equipo ficticio línea',
+        ...schedule, teamA: 'Equipo ficticio A', teamB: 'Equipo ficticio B', lineTeam: 'Equipo ficticio línea',
     } } as never, response as never, error => { throw error; });
     assert.equal(status, 409);
     assert.match((body as { error: string }).error, /referencias/);
@@ -334,4 +335,63 @@ test('migra nombres históricos sin perder resultados, tarjetas, orden ni goleo'
     assert.deepEqual(serviceFor(reopened).getMatchParticipants(7), service.getMatchParticipants(7));
     assert.equal(reopened.fetchOneFromQuery<{ total: number }>('SELECT total FROM match_player_scoring WHERE matchId=7')?.total, 2);
     assert.equal(reopened.getAllTeams().length, 3);
+});
+
+test('issue 42: CRUD HTTP expone los tres placeholders, confirmación y bloqueos sin crear equipos', async t => {
+    const f = completedTable(t);
+    const controller = new MatchController(f.service, null as never);
+    const call = async (handler: typeof controller.insertMatch, body: unknown = {}, id?: number, admin = true) => {
+        let status = 200;
+        let result: any;
+        const response = {
+            status(value: number) { status = value; return this; },
+            json(value: unknown) { result = value; return this; },
+            end() { return this; },
+        };
+        await handler({ body, params: { id: String(id), matchId: String(id) }, query: {}, isAdmin: admin } as never,
+            response as never, error => { throw error; });
+        return { status, body: result };
+    };
+    const input = f.input(), teamCount = f.db.getAllTeams().length;
+    const created = await call(controller.insertMatch, input);
+    assert.equal(created.status, 201);
+    const id = created.body.id;
+    for (const role of ['teamA', 'teamB', 'lineTeam'] as const) {
+        assert.equal(created.body[`${role}Id`], null);
+        assert.deepEqual(created.body.participants[role], {
+            reference: input.participants[role], resolvedTeamId: null, resolvedTeam: null, status: 'PENDING',
+        });
+    }
+    assert.equal((await call(controller.startMatch, {}, id)).status, 409);
+    assert.equal((await call(controller.setResult, { scoreA: 1, scoreB: 0 }, id)).status, 409);
+    assert.equal((await call(controller.insertScoring, { playerId: 1, directGoals: 1, horquetas: 0, pepitas: 0 }, id)).status, 409);
+    const changed = await call(controller.updateMatch, { ...input, court: 2 }, id);
+    assert.equal(changed.status, 200);
+    assert.equal(changed.body.court, 2);
+    assert.deepEqual(changed.body.participants, created.body.participants);
+    assert.equal((await call(controller.insertMatch, null)).status, 400);
+    assert.equal((await call(controller.insertMatch, { ...input, participants: null })).status, 400);
+    assert.equal((await call(controller.insertMatch, { ...input, participants: { ...input.participants, teamA: { kind: 'TEAM', teamId: 0 } } })).status, 400);
+    const invalidReference = await call(controller.insertMatch, { ...input, participants: { ...input.participants, teamA: f.winner(999999) } });
+    assert.equal(invalidReference.status, 409);
+    assert.match(invalidReference.body.error, /Referencia/);
+    const hidden = await call(controller.getMatch, {}, id, false);
+    assert.equal(hidden.body.lineTeamId, null);
+    assert.equal(hidden.body.participants.lineTeam, null);
+    f.details.confirmPositions(f.table.id);
+    const confirmed = (await call(controller.getMatch, {}, id)).body;
+    for (const role of ['teamA', 'teamB', 'lineTeam'] as const) {
+        assert.deepEqual(confirmed.participants[role].reference, input.participants[role]);
+        assert.equal(confirmed.participants[role].status, 'CONFIRMED');
+        assert.deepEqual(confirmed.participants[role].resolvedTeam, { id: confirmed[`${role}Id`], name: confirmed[role] });
+    }
+    f.details.reopenPositions(f.table.id);
+    assert.equal((await call(controller.getMatch, {}, id)).body.participants.teamA.status, 'RESOLVED');
+    assert.equal((await call(controller.insertScoring, { playerId: 1, directGoals: 1, horquetas: 0, pepitas: 0 }, id)).status, 409);
+    f.details.confirmPositions(f.table.id);
+    assert.equal((await call(controller.startMatch, {}, id)).status, 200);
+    assert.equal((await call(controller.updateMatch, input, id)).status, 409);
+    assert.equal(f.db.getAllTeams().length, teamCount);
+    assert.equal((await call(controller.deleteMatch, {}, id)).status, 204);
+    assert.equal((await call(controller.getMatch, {}, id)).status, 404);
 });

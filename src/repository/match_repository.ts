@@ -1,6 +1,6 @@
 import DBConnection, { DatabaseConnectionError } from "../db/db_connection";
 import { Group } from "../models/group";
-import { Match, MatchFilters, MatchInput, MatchParticipant, MatchParticipants, StoredMatchParticipants } from "../models/match";
+import { Match, MatchFilters, MatchInput, MatchParticipant, MatchParticipants, StoredMatchParticipants, MatchParticipantDetails } from "../models/match";
 import { Phase } from "../models/phases";
 import { Team } from "../models/team";
 
@@ -14,8 +14,9 @@ const matchSelect = `SELECT m.*,t.name tournamentName,p.name phaseName,g.name gr
 export class MatchRepository {
     constructor(private readonly dbConnection: DBConnection) {}
 
-    getMatch(id: number): Match | undefined {
-        return this.dbConnection.fetchOneFromQuery<Match>(`${matchSelect} WHERE m.id=?`, id)
+    getMatch(id: number, includeParticipants = true): Match | undefined {
+        const match = this.dbConnection.fetchOneFromQuery<Match>(`${matchSelect} WHERE m.id=?`, id)
+        return match && (includeParticipants ? this.withParticipants(match) : match)
     }
 
     getMatches(filters: MatchFilters): Match[] {
@@ -28,7 +29,8 @@ export class MatchRepository {
             if (filters[key]) { clauses.push(`m.${key}=@${key}`); params[key] = filters[key] }
         }
         const query = `${matchSelect}${clauses.length ? ` WHERE ${clauses.join(' AND ')}` : ''} ORDER BY m.date,m.sortOrder IS NULL,m.sortOrder,CASE m.jornada WHEN 'MORNING' THEN 0 ELSE 1 END,m.court,m.id`
-        return clauses.length ? this.dbConnection.fetchAllFromNamedQuery<Match>(query, params) : this.dbConnection.fetchAllFromQuery<Match>(query)
+        const matches = clauses.length ? this.dbConnection.fetchAllFromNamedQuery<Match>(query, params) : this.dbConnection.fetchAllFromQuery<Match>(query)
+        return matches.map(match => this.withParticipants(match))
     }
 
     getCurrentPhase(tournamentType: string): Phase | undefined {
@@ -58,15 +60,15 @@ export class MatchRepository {
             : this.dbConnection.fetchOneFromQuery(sql, phaseId, teamId))
     }
 
-    insertMatch(match: MatchInput): Match {
+    insertMatch(match: MatchInput, includeParticipants = true): Match {
         const result = this.dbConnection.executeNamedQuery('INSERT INTO matches(tournamentType,date,jornada,teamA,teamB,lineTeam,court,sortOrder,phaseId,groupId,teamAId,teamBId,lineTeamId) VALUES(@tournamentType,@date,@jornada,@teamA,@teamB,@lineTeam,@court,@sortOrder,@phaseId,@groupId,@teamAId,@teamBId,@lineTeamId)', match)
-        return this.getMatch(Number(result.lastInsertRowid))!
+        return this.getMatch(Number(result.lastInsertRowid), includeParticipants)!
     }
 
-    updateMatch(id: number, match: MatchInput): Match {
+    updateMatch(id: number, match: MatchInput, includeParticipants = true): Match {
         if (this.hasParticipantReferences(id)) throw new DatabaseConnectionError('ParticipantReferenceError', 'Este partido requiere editar sus referencias de participantes.', undefined)
         this.dbConnection.executeNamedQuery('UPDATE matches SET tournamentType=@tournamentType,date=@date,jornada=@jornada,teamA=@teamA,teamB=@teamB,lineTeam=@lineTeam,court=@court,sortOrder=@sortOrder,phaseId=@phaseId,groupId=@groupId,teamAId=@teamAId,teamBId=@teamBId,lineTeamId=@lineTeamId,updatedAt=CURRENT_TIMESTAMP WHERE id=@id', { ...match, id })
-        return this.getMatch(id)!
+        return this.getMatch(id, includeParticipants)!
     }
 
     hasParticipantReferences(id: number): boolean {
@@ -74,7 +76,7 @@ export class MatchRepository {
     }
 
     getMatchParticipants(id: number): StoredMatchParticipants | undefined {
-        const match = this.getMatch(id)
+        const match = this.dbConnection.fetchOneFromQuery<Match>(`${matchSelect} WHERE m.id=?`, id)
         if (!match) return undefined
         type ReferenceRow = Exclude<MatchParticipant, { kind: 'TEAM' }> & { role: keyof MatchParticipants }
         const references = this.dbConnection.fetchAllFromParameterizedQuery<ReferenceRow>('SELECT * FROM match_participant_references WHERE matchId=?', id)
@@ -93,6 +95,22 @@ export class MatchRepository {
         return { teamA: participant('teamA'), teamB: participant('teamB'), lineTeam: participant('lineTeam') }
     }
 
+    private withParticipants(match: Match): Match {
+        const stored = this.getMatchParticipants(match.id)!
+        const participants = {} as MatchParticipantDetails
+        for (const role of ['teamA', 'teamB', 'lineTeam'] as const) {
+            const { reference, resolvedTeamId } = stored[role]
+            const confirmed = reference.kind === 'TEAM' || (reference.kind === 'GROUP_POSITION' && Boolean(
+                this.dbConnection.fetchOneFromQuery('SELECT 1 FROM phase_position_confirmations WHERE phaseId=?', reference.sourcePhaseId)))
+            participants[role] = {
+                reference, resolvedTeamId,
+                resolvedTeam: resolvedTeamId === null ? null : { id: resolvedTeamId, name: match[role]! },
+                status: resolvedTeamId === null ? 'PENDING' : confirmed ? 'CONFIRMED' : 'RESOLVED',
+            }
+        }
+        return { ...match, participants }
+    }
+
     saveParticipantMatch(match: MatchInput, participants: MatchParticipants, id?: number): Match {
         return this.dbConnection.transaction(() => {
             if (id !== undefined) {
@@ -100,7 +118,7 @@ export class MatchRepository {
                 if (!existing || existing.status !== 'SCHEDULED') throw new DatabaseConnectionError('ParticipantReferenceError', 'Solo se puede editar un partido programado existente.', undefined)
                 this.dbConnection.executeQuery('DELETE FROM match_participant_references WHERE matchId=?', id)
             }
-            const saved = id === undefined ? this.insertMatch(match) : this.updateMatch(id, match)
+            const saved = id === undefined ? this.insertMatch(match, false) : this.updateMatch(id, match, false)
             for (const role of ['teamA', 'teamB', 'lineTeam'] as const) {
                 const reference = participants[role]
                 if (reference.kind === 'TEAM') continue
@@ -111,7 +129,7 @@ export class MatchRepository {
                     reference.kind === 'GROUP_POSITION' ? reference.position : null,
                     reference.kind === 'MATCH_WINNER' ? reference.sourceMatchId : null)
             }
-            return saved
+            return this.getMatch(saved.id)!
         })
     }
 
