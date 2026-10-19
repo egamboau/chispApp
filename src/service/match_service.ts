@@ -1,4 +1,5 @@
-import { Match, MatchFilters, MatchInput } from "../models/match";
+import { Match, MatchFilters, MatchInput, MatchParticipant, ParticipantMatchInput, StoredMatchParticipants } from "../models/match";
+import { DatabaseConnectionError } from '../db/db_connection';
 import { MatchPlayerScoring, MatchPlayerScoringInput } from "../models/match_player_scoring";
 import { MatchPlayerScoringRepository } from "../repository/match_player_scoring_repository";
 import { Team } from "../models/team";
@@ -71,10 +72,7 @@ export class MatchService {
         }
         const errors: string[] = []
         if (!phase || !group || group.phaseId !== phase.id) errors.push('Fase o grupo inválido.')
-        if (!this.validDate(match.date)) errors.push('Fecha inválida.')
-        if (!['MORNING', 'AFTERNOON'].includes(match.jornada)) errors.push('Jornada inválida.')
-        if (!Number.isInteger(match.court) || match.court < 1) errors.push('Cancha inválida.')
-        if (match.sortOrder !== null && (!Number.isInteger(match.sortOrder) || match.sortOrder < 1)) errors.push('Orden inválido.')
+        errors.push(...this.scheduleErrors(match))
         if (!a || !b || !line || new Set([a?.id, b?.id, line?.id]).size !== 3) errors.push('Los tres equipos deben existir y ser diferentes.')
         if (phase && group && a && !this.repository.hasMembership(phase.id, a.id, group.id)) errors.push('El equipo A debe pertenecer al grupo seleccionado.')
         if (phase && b && !this.repository.hasMembership(phase.id, b.id)) errors.push('El equipo B debe pertenecer a la fase.')
@@ -87,6 +85,61 @@ export class MatchService {
 
     updateMatch(id: number, match: MatchInput): Match {
         return this.repository.updateMatch(id, match)
+    }
+
+    hasParticipantReferences(id: number): boolean {
+        return this.repository.hasParticipantReferences(id)
+    }
+
+    getMatchParticipants(id: number): StoredMatchParticipants | undefined {
+        return this.repository.getMatchParticipants(id)
+    }
+
+    saveParticipantMatch(input: ParticipantMatchInput, id?: number): Match {
+        const fail = (message: string): never => { throw new DatabaseConnectionError('ParticipantReferenceError', message, undefined) }
+        const phase = this.phaseService.getPhaseById(input.phaseId)
+        const group = this.groupService.getGroup(input.groupId)
+        if (!phase || !group || group.phaseId !== phase.id) return fail('Fase o grupo inválido.')
+        const errors = this.scheduleErrors(input)
+        if (errors.length) return fail(errors.join(' '))
+        const key = (participant: MatchParticipant): string => {
+            switch (participant.kind) {
+                case 'TEAM': return `TEAM:${participant.teamId}`
+                case 'GROUP_POSITION': return `GROUP_POSITION:${participant.sourcePhaseId}:${participant.sourceGroupId}:${participant.position}`
+                case 'MATCH_WINNER': return `MATCH_WINNER:${participant.sourceMatchId}`
+            }
+        }
+        const keys = Object.values(input.participants).map(key)
+        if (new Set(keys).size !== 3) return fail('Los tres participantes deben ser diferentes.')
+        const existing = id === undefined ? undefined : this.repository.getMatchParticipants(id)
+        const match: MatchInput = { ...input, tournamentType: phase.tournamentType,
+            teamA: '', teamB: '', lineTeam: '', teamAId: null, teamBId: null, lineTeamId: null }
+        for (const role of ['teamA', 'teamB', 'lineTeam'] as const) {
+            const participant = input.participants[role]
+            if (participant.kind === 'TEAM') {
+                const team = Number.isInteger(participant.teamId) && participant.teamId > 0 ? this.teamService.getTeam(participant.teamId) : undefined
+                if (!team || team.tournamentId !== phase.tournamentId || team.tournamentType !== phase.tournamentType) return fail('El equipo debe pertenecer al torneo y categoría del partido.')
+                if (role !== 'lineTeam' && !this.repository.hasMembership(phase.id, team.id, role === 'teamA' ? group.id : undefined)) return fail('El equipo debe estar inscrito en la fase y grupo correspondientes.')
+                match[role] = team.name
+                match[`${role}Id`] = team.id
+            } else {
+                if (participant.kind === 'GROUP_POSITION') {
+                    const source = this.phaseService.getPhaseById(participant.sourcePhaseId)
+                    const sourceGroup = this.groupService.getGroup(participant.sourceGroupId)
+                    if (!source || !sourceGroup) return fail('Fase o grupo origen inválido.')
+                    match[role] = `${source.name} · ${participant.position}.º ${sourceGroup.name}`
+                } else if (participant.kind === 'MATCH_WINNER') {
+                    if (!Number.isInteger(participant.sourceMatchId) || participant.sourceMatchId < 1) return fail('Partido origen inválido.')
+                    match[role] = `Ganador partido ${participant.sourceMatchId}`
+                } else return fail('Tipo de participante inválido.')
+                const previous = existing?.[role]
+                if (previous && key(previous.reference) === key(participant)) {
+                    match[`${role}Id`] = previous.resolvedTeamId
+                    if (previous.resolvedTeamId !== null) match[role] = this.teamService.getTeam(previous.resolvedTeamId)!.name
+                }
+            }
+        }
+        return this.repository.saveParticipantMatch(match, input.participants, id)
     }
 
     updateSortOrder(id: number, sortOrder: number | null): Match | undefined {
@@ -143,6 +196,15 @@ export class MatchService {
 
     validDate(value: string): boolean {
         return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))
+    }
+
+    private scheduleErrors(match: Pick<MatchInput, 'date' | 'jornada' | 'court' | 'sortOrder'>): string[] {
+        const errors: string[] = []
+        if (!this.validDate(match.date)) errors.push('Fecha inválida.')
+        if (!['MORNING', 'AFTERNOON'].includes(match.jornada)) errors.push('Jornada inválida.')
+        if (!Number.isInteger(match.court) || match.court < 1) errors.push('Cancha inválida.')
+        if (match.sortOrder !== null && (!Number.isInteger(match.sortOrder) || match.sortOrder < 1)) errors.push('Orden inválido.')
+        return errors
     }
 
     private clean(value: unknown): string {

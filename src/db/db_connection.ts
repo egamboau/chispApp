@@ -6,6 +6,7 @@ import { Match } from "../models/match";
 import { Tournament } from "../models/tournament";
 import { Group } from "../models/group";
 import { Team } from "../models/team";
+import { createMatchReferences, migrateMatchParticipants } from './match_participants';
 
 export class DatabaseConnectionError extends Error {
     constructor(name:string, message:string, cause: unknown) {
@@ -87,7 +88,6 @@ class DBConnection {
 
         this.database.exec(`
         CREATE TABLE IF NOT EXISTS teams (id INTEGER PRIMARY KEY AUTOINCREMENT,tournamentType TEXT NOT NULL CHECK(tournamentType IN ('MALE','FEMALE')),name TEXT NOT NULL COLLATE NOCASE CHECK(length(name) BETWEEN 1 AND 100),UNIQUE(tournamentType,name));
-        INSERT OR IGNORE INTO teams(tournamentType,name) SELECT tournamentType,teamA FROM matches UNION SELECT tournamentType,teamB FROM matches UNION SELECT tournamentType,lineTeam FROM matches;
         CREATE TABLE IF NOT EXISTS players (id INTEGER PRIMARY KEY AUTOINCREMENT,teamId INTEGER NOT NULL REFERENCES teams(id) ON DELETE RESTRICT,number TEXT NOT NULL CHECK(length(number)>0 AND number NOT GLOB '*[^0-9]*'),name TEXT CHECK(name IS NULL OR length(name) BETWEEN 1 AND 100),status TEXT NOT NULL DEFAULT 'REGISTERED' CHECK(status IN('REGISTERED','UNREGISTERED')),UNIQUE(teamId,number));
         CREATE TABLE IF NOT EXISTS match_player_scoring (matchId INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,playerId INTEGER NOT NULL REFERENCES players(id) ON DELETE RESTRICT,directGoals INTEGER NOT NULL DEFAULT 0 CHECK(directGoals>=0),horquetas INTEGER NOT NULL DEFAULT 0 CHECK(horquetas>=0),pepitas INTEGER NOT NULL DEFAULT 0 CHECK(pepitas>=0),scoringTable TEXT NOT NULL DEFAULT 'Torneo Regular' CHECK(length(trim(scoringTable)) BETWEEN 1 AND 100),total INTEGER GENERATED ALWAYS AS(directGoals+pepitas*2+horquetas*3) VIRTUAL,CHECK(directGoals+horquetas+pepitas>0),PRIMARY KEY(matchId,playerId));
         CREATE TABLE IF NOT EXISTS scoring_tables (id INTEGER PRIMARY KEY AUTOINCREMENT,tournamentId INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE RESTRICT,tournamentType TEXT NOT NULL CHECK(tournamentType IN('MALE','FEMALE')),name TEXT NOT NULL COLLATE NOCASE CHECK(length(trim(name)) BETWEEN 1 AND 100),UNIQUE(tournamentId,tournamentType,name));
@@ -101,6 +101,12 @@ class DBConnection {
         CREATE TABLE IF NOT EXISTS classification_rules (id INTEGER PRIMARY KEY AUTOINCREMENT,phaseId INTEGER NOT NULL REFERENCES phases(id) ON DELETE CASCADE,startPosition INTEGER NOT NULL CHECK(startPosition>0),endPosition INTEGER NOT NULL CHECK(endPosition>=startPosition),label TEXT NOT NULL CHECK(length(trim(label))>0));`);
 
 
+        createMatchReferences(this.database);
+        for (const role of ['teamA', 'teamB', 'lineTeam']) {
+            this.database.exec(`INSERT OR IGNORE INTO teams(tournamentType,name)
+                SELECT tournamentType,${role} FROM matches m WHERE NOT EXISTS(
+                    SELECT 1 FROM match_participant_references r WHERE r.matchId=m.id AND r.role='${role}')`);
+        }
         this.addColumn('teams', 'tournamentId INTEGER REFERENCES tournaments(id)');
         this.addColumn('classification_rules', 'positions TEXT');
         this.addColumn('phases', "tournamentType TEXT CHECK(tournamentType IN('MALE','FEMALE'))");
@@ -153,6 +159,7 @@ class DBConnection {
         CREATE TRIGGER IF NOT EXISTS match_scoring_table_type_update AFTER UPDATE OF tournamentType,phaseId ON matches BEGIN INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name) SELECT p.tournamentId,NEW.tournamentType,scoringTable FROM match_player_scoring JOIN phases p ON p.id=NEW.phaseId WHERE matchId=NEW.id; END;
         CREATE TRIGGER IF NOT EXISTS phase_scoring_table_insert AFTER INSERT ON phases WHEN NEW.tournamentType IS NOT NULL BEGIN INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name) VALUES(NEW.tournamentId,NEW.tournamentType,'Torneo Regular'); END;
         CREATE TRIGGER IF NOT EXISTS phase_scoring_table_update AFTER UPDATE OF tournamentId,tournamentType ON phases WHEN NEW.tournamentType IS NOT NULL BEGIN INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name) VALUES(NEW.tournamentId,NEW.tournamentType,'Torneo Regular'); END;`)
+        migrateMatchParticipants(this.database);
     }
 
     private addColumn(table:string, definition:string) {
