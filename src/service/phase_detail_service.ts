@@ -3,6 +3,7 @@ import { ClassificationRule, Membership, PhaseScoring, PhaseStandings, RuleInput
 import { Team } from "../models/team";
 import { PhaseDetailRepository } from "../repository/phase_detail_repository";
 import { PhaseService } from "./phase_service";
+import { DatabaseConnectionError } from "../db/db_connection";
 
 type StandingBase = Omit<Standing, 'position' | 'requiresTiebreaker' | 'destination' | 'possibleDestinations' | 'tiebreakerRule'>;
 type StandingRule = Pick<ClassificationRule, 'label'> & Partial<Pick<ClassificationRule, 'startPosition' | 'endPosition' | 'positions'>>;
@@ -100,6 +101,68 @@ export class PhaseDetailService {
             standings: PhaseDetailService.calculateGroupStandings(this.repository.getGroupMembers(phase.id, group.id), matches, rules, sanctions, teamCards),
         }))
         return { phase, hasStandings: true, rules, groups }
+    }
+
+    previewPositions(phaseId: number) {
+        const table = this.getStandings(phaseId)
+        if (!table) return undefined
+        const errors: string[] = []
+        if (!table.hasStandings) errors.push('Solo se pueden confirmar posiciones de una fase de tabla.')
+        if (!table.groups.length) errors.push('La fase no tiene grupos.')
+        const matches = this.repository.getPhaseMatches(phaseId)
+        if (matches.some(match => match.status !== 'FINISHED')) errors.push('La fase tiene partidos pendientes.')
+        for (const group of table.groups) {
+            const rows = group.standings
+            // shortcut: exige una vuelta completa; ampliar si se configura otro formato de tabla.
+            const complete = rows.length >= 2 && rows.every((a, index) => rows.slice(index + 1).every(b =>
+                matches.some(match => match.status === 'FINISHED' &&
+                    ((match.teamAId === a.teamId && match.teamBId === b.teamId) || (match.teamAId === b.teamId && match.teamBId === a.teamId)))))
+            if (!complete) errors.push(`Grupo ${group.name} incompleto: faltan enfrentamientos finalizados.`)
+            if (rows.some(row => row.requiresTiebreaker)) errors.push(`Grupo ${group.name}: hay empates sin resolver.`)
+        }
+        if (this.repository.hasInvalidPositionReferences(phaseId)) errors.push('Hay referencias de participantes inválidas.')
+        const assignments = this.repository.getPositionReferences(phaseId).map(reference => {
+            const row = table.groups.find(group => group.id === reference.sourceGroupId)?.standings.find(row => row.position === reference.position && !row.requiresTiebreaker)
+            if (!row) errors.push(`Partido ${reference.matchId}: posición ${reference.position} sin resolver.`)
+            const match = this.repository.getMatch(reference.matchId)
+            const resolvedTeamId = match[`${reference.role}Id`]
+            if (match.status !== 'SCHEDULED' && row?.teamId !== resolvedTeamId) errors.push(`Partido ${match.id} iniciado o terminado: no se pueden cambiar sus participantes.`)
+            return { ...reference, resolvedTeamId, teamId: row?.teamId ?? null, teamName: row?.teamName ?? null }
+        })
+        for (const matchId of new Set(assignments.map(item => item.matchId))) {
+            const match = this.repository.getMatch(matchId)
+            const ids = (['teamA', 'teamB', 'lineTeam'] as const).map(role => {
+                const assignment = assignments.find(item => item.matchId === matchId && item.role === role)
+                return assignment ? assignment.teamId : match[`${role}Id`]
+            }).filter(id => id !== null)
+            if (new Set(ids).size !== ids.length) errors.push(`Partido ${matchId}: los participantes resueltos deben ser diferentes.`)
+        }
+        const snapshot = JSON.stringify(table)
+        const confirmation = this.repository.getPositionConfirmation(phaseId)
+        const stale = Boolean(confirmation && (confirmation.snapshot !== snapshot || errors.length))
+        if (stale) errors.push('La clasificación cambió después de confirmar. Reabre y revisa las asignaciones antes de reconfirmar.')
+        return { phaseId, confirmedAt: confirmation?.confirmedAt ?? null, stale, canConfirm: errors.length === 0, errors, assignments, snapshot }
+    }
+
+    confirmPositions(phaseId: number) {
+        return this.repository.transaction(() => {
+            const preview = this.previewPositions(phaseId)
+            if (!preview) return undefined
+            if (!preview.canConfirm) throw new DatabaseConnectionError('PositionResolutionError', preview.errors.join(' '), undefined)
+            for (const assignment of preview.assignments) {
+                if (assignment.resolvedTeamId !== assignment.teamId) this.repository.assignPosition(assignment, assignment.teamId!, assignment.teamName!)
+            }
+            this.repository.confirmPositions(phaseId, preview.snapshot)
+            return this.previewPositions(phaseId)
+        })
+    }
+
+    reopenPositions(phaseId: number) {
+        return this.repository.transaction(() => {
+            if (!this.phaseService.getPhaseById(phaseId)) return undefined
+            this.repository.reopenPositions(phaseId)
+            return this.previewPositions(phaseId)
+        })
     }
 
     getScoring(phaseId: number): PhaseScoring | undefined {

@@ -38,6 +38,15 @@ async function loadTournamentPage(tournamentId, phaseId) {
   const phase = choose(document.querySelector('#admin-phase'), phases, phaseId ?? tournament?.currentPhaseId, phaseLabel);
   [groups, rules] = phase ? await Promise.all([request(`/api/phases/${phase.id}/groups`), request(`/api/phases/${phase.id}/classification-rules`)]) : [[], []];
   renderTournamentPage();
+  await renderPhasePositions(phase);
+}
+async function renderPhasePositions(phase) {
+  const target = document.querySelector('#phase-positions');
+  target.innerHTML = '';
+  if (phase?.type !== 'TABLE') return;
+  const preview = await request(`/api/phases/${phase.id}/positions`);
+  const roles = { teamA: 'Local', teamB: 'Visitante', lineTeam: 'Línea' };
+  target.innerHTML = `<h3>Cierre y asignación de posiciones</h3><p>${preview.confirmedAt ? `Confirmado: ${escapeHtml(preview.confirmedAt)}` : 'Posiciones sin confirmar.'} Las correcciones no cambian automáticamente los equipos asignados.</p>${preview.errors.map(error => `<p class="error">${escapeHtml(error)}</p>`).join('')}${preview.assignments.map(item => `<div class="config-row"><span>Partido ${item.matchId} · ${roles[item.role]} · ${item.position}.º ${escapeHtml(groups.find(group => group.id === item.sourceGroupId)?.name)} → <strong>${escapeHtml(item.teamName || 'Sin resolver')}</strong>${item.resolvedTeamId !== null && item.resolvedTeamId !== item.teamId ? ' (cambiaría el equipo asignado)' : ''}</span></div>`).join('')}<button class="primary" data-action="confirm-positions" ${preview.canConfirm ? '' : 'disabled'}>CONFIRMAR Y CONGELAR</button>${preview.confirmedAt ? '<button data-action="reopen-positions">REABRIR ASIGNACIONES</button>' : ''}`;
 }
 function renderTournamentPage() {
   const tournament = selectedTournament(), phase = selectedPhase();
@@ -82,6 +91,14 @@ function initTournamentPage() {
     const button = event.target.closest('[data-action]'); if (!button) return;
     const action = button.dataset.action, tournament = selectedTournament(), phase = selectedPhase();
     try {
+      if (action === 'confirm-positions') {
+        if (!confirm('¿Confirmar la clasificación y congelar los equipos previsualizados?')) return;
+        await request(`/api/phases/${phase.id}/positions/confirm`, { method: 'POST' });
+      }
+      if (action === 'reopen-positions') {
+        if (!confirm('¿Reabrir para revisar y reconfirmar? Los equipos asignados se conservan y los partidos pendientes no podrán iniciar hasta reconfirmar. Los iniciados o terminados no podrán cambiar de equipo.')) return;
+        await request(`/api/phases/${phase.id}/positions/reopen`, { method: 'POST' });
+      }
       if (action === 'edit-tournament') { const name = prompt('Nombre del torneo', tournament.name); if (!name) return; await request(`/api/tournaments/${tournament.id}`, { method: 'PUT', body: JSON.stringify({ name, active: Boolean(tournament.active), currentPhaseId: tournament.currentPhaseId }) }); }
       if (action === 'toggle-tournament') await request(`/api/tournaments/${tournament.id}`, { method: 'PUT', body: JSON.stringify({ name: tournament.name, active: !tournament.active, currentPhaseId: tournament.currentPhaseId }) });
       if (action === 'delete-tournament') { if (!confirm('¿Eliminar este torneo?')) return; await request(`/api/tournaments/${tournament.id}`, { method: 'DELETE' }); }

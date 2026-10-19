@@ -119,6 +119,24 @@ test('migra horas existentes a jornadas sin perder el partido', async () => {
   assert.equal(phases.body[0].tournamentType, 'MALE');
 });
 
+test('expone previsualización, confirmación y reapertura solo por la API administrativa', async () => {
+  assert.equal((await fetch(`${base}/api/admin/phases/1/positions`)).status, 403);
+  assert.equal((await publicJson('/api/phases/1/positions')).response.status, 404);
+  assert.equal((await publicJson('/api/phases/1/positions/confirm', { method: 'POST' })).response.status, 404);
+  assert.equal((await json('/api/phases/invalid/positions')).response.status, 400);
+  assert.equal((await json('/api/phases/999999/positions')).response.status, 404);
+  assert.equal((await json('/api/phases/999999/positions/confirm', { method: 'POST' })).response.status, 404);
+  assert.equal((await json('/api/phases/999999/positions/reopen', { method: 'POST' })).response.status, 404);
+  const preview = await json('/api/phases/1/positions');
+  assert.equal(preview.response.status, 200);
+  assert.equal(preview.body.canConfirm, false);
+  assert.equal('snapshot' in preview.body, false);
+  assert.equal((await json('/api/phases/1/positions/confirm', { method: 'POST' })).response.status, 409);
+  const reopened = await json('/api/phases/1/positions/reopen', { method: 'POST' });
+  assert.equal(reopened.response.status, 200);
+  assert.equal(reopened.body.confirmedAt, null);
+});
+
 test('sirve las páginas administrativas y la pantalla pública', async () => {
   const auth = { headers: { 'cf-access-jwt-assertion': accessToken } };
   const [tournamentsAdmin, teamsAdmin, calendarAdmin, scoringAdmin, adminJs, display, css] = await Promise.all([fetch(`${base}/admin/`, auth), fetch(`${base}/admin/teams.html`, auth), fetch(`${base}/admin/calendar.html`, auth), fetch(`${base}/admin/scoring.html`, auth), fetch(`${base}/admin/admin.js`, auth), fetch(`${base}/display/`), fetch(`${base}/display/display.css`)]);

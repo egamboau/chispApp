@@ -1,7 +1,12 @@
 import type Database from 'better-sqlite3';
 
 export function createMatchReferences(database: Database.Database): void {
-    database.exec(`CREATE TABLE IF NOT EXISTS match_participant_references (
+    database.exec(`CREATE TABLE IF NOT EXISTS phase_position_confirmations (
+        phaseId INTEGER PRIMARY KEY REFERENCES phases(id) ON DELETE CASCADE,
+        snapshot TEXT NOT NULL,
+        confirmedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS match_participant_references (
         matchId INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
         role TEXT NOT NULL CHECK(role IN ('teamA','teamB','lineTeam')),
         kind TEXT NOT NULL CHECK(kind IN ('GROUP_POSITION','MATCH_WINNER')),

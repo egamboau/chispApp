@@ -18,6 +18,8 @@ import { TournamentRepository } from '../src/repository/tournament_repository';
 import { TournamentService } from '../src/service/tournament_service';
 import { MatchPlayerScoringRepository } from '../src/repository/match_player_scoring_repository';
 import { MatchController } from '../src/controller/match_controller';
+import { PhaseDetailRepository } from '../src/repository/phase_detail_repository';
+import { PhaseDetailService } from '../src/service/phase_detail_service';
 
 function serviceFor(db: DBConnection): MatchService {
     return new MatchService(new MatchRepository(db), new PhaseService(new PhaseRepository(db)),
@@ -25,7 +27,7 @@ function serviceFor(db: DBConnection): MatchService {
         new TournamentService(new TournamentRepository(db)), new MatchPlayerScoringRepository(db));
 }
 
-function fixture(t: TestContext) {
+function fixture(t: TestContext, groupSize = 3) {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'jupas-participants-'));
     t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
     const databasePath = path.join(directory, 'test.db');
@@ -35,9 +37,9 @@ function fixture(t: TestContext) {
     const knockout = db.insertPhase({ tournamentId: tournament.id, name: 'Eliminación', type: 'ELIMINATION', tournamentType: 'MALE', sortOrder: 2 })!;
     const groupA = db.insertGroup(table.id, 'A')!, groupB = db.insertGroup(table.id, 'B')!;
     const knockoutGroup = db.insertGroup(knockout.id, 'General')!;
-    const teams = Array.from({ length: 6 }, (_, index) => db.insertTeam('MALE', tournament.id, `Equipo ${index + 1}`)!);
+    const teams = Array.from({ length: groupSize * 2 }, (_, index) => db.insertTeam('MALE', tournament.id, `Equipo ${index + 1}`)!);
     for (const [index, team] of teams.entries()) {
-        db.executeQuery('INSERT INTO phase_memberships VALUES(?,?,?)', table.id, index < 3 ? groupA.id : groupB.id, team.id);
+        db.executeQuery('INSERT INTO phase_memberships VALUES(?,?,?)', table.id, index < groupSize ? groupA.id : groupB.id, team.id);
         db.executeQuery('INSERT INTO phase_memberships VALUES(?,?,?)', knockout.id, knockoutGroup.id, team.id);
     }
     const position = (rank: number, groupId = groupA.id): MatchParticipant => ({ kind: 'GROUP_POSITION', sourcePhaseId: table.id, sourceGroupId: groupId, position: rank });
@@ -48,6 +50,113 @@ function fixture(t: TestContext) {
     });
     return { db, databasePath, tournament, table, knockout, groupA, groupB, knockoutGroup, teams, position, fixed, winner, input, service: serviceFor(db) };
 }
+
+function completedTable(t: TestContext, groupSize = 3) {
+    const f = fixture(t, groupSize);
+    const details = new PhaseDetailService(new PhaseDetailRepository(f.db), new PhaseService(new PhaseRepository(f.db)));
+    const sourceIds: number[] = [];
+    for (const [groupIndex, group] of [f.groupA, f.groupB].entries()) {
+        for (let a = 0; a < groupSize; a++) for (let b = a + 1; b < groupSize; b++) {
+            const offset = groupIndex * groupSize;
+            const match = f.service.saveParticipantMatch({ ...f.input({ teamA: f.fixed(offset + a), teamB: f.fixed(offset + b), lineTeam: f.fixed(groupIndex ? 0 : groupSize) }), phaseId: f.table.id, groupId: group.id });
+            f.db.executeQuery("UPDATE matches SET scoreA=1,status='FINISHED' WHERE id=?", match.id);
+            sourceIds.push(match.id);
+        }
+    }
+    return { ...f, details, sourceIds };
+}
+
+test('issue 41: previsualiza y confirma ambas pentagonales con trazabilidad e idempotencia', t => {
+    const f = completedTable(t, 5), match = f.service.saveParticipantMatch(f.input());
+    const before = f.service.getMatchParticipants(match.id)!;
+    const preview = f.details.previewPositions(f.table.id)!;
+    assert.equal(preview.canConfirm, true);
+    assert.equal(preview.confirmedAt, null);
+    assert.deepEqual(Object.fromEntries(preview.assignments.map(item => [item.role, item.teamId])), {
+        teamA: f.teams[0]!.id, teamB: f.teams[2]!.id, lineTeam: f.teams[7]!.id,
+    });
+    assert.deepEqual(f.service.getMatchParticipants(match.id), before);
+    assert.equal(f.service.changeStatus(match.id, 'SCHEDULED', 'LIVE'), undefined);
+    f.details.confirmPositions(f.table.id);
+    const confirmed = f.service.getMatchParticipants(match.id)!;
+    for (const role of ['teamA', 'teamB', 'lineTeam'] as const) assert.deepEqual(confirmed[role].reference, before[role].reference);
+    assert.deepEqual([confirmed.teamA.resolvedTeamId, confirmed.teamB.resolvedTeamId, confirmed.lineTeam.resolvedTeamId], [f.teams[0]!.id, f.teams[2]!.id, f.teams[7]!.id]);
+    assert.equal(f.service.getMatch(match.id, true)?.lineTeam, f.teams[7]!.name);
+    const saved = f.service.getMatch(match.id, true);
+    const confirmation = f.details.confirmPositions(f.table.id);
+    assert.equal(confirmation?.stale, false);
+    assert.deepEqual(f.service.getMatch(match.id, true), saved);
+    const reopened = new DBConnection(f.databasePath);
+    const restartedDetails = new PhaseDetailService(new PhaseDetailRepository(reopened), new PhaseService(new PhaseRepository(reopened)));
+    assert.deepEqual(restartedDetails.confirmPositions(f.table.id), confirmation);
+    assert.deepEqual(serviceFor(reopened).getMatchParticipants(match.id), confirmed);
+    assert.equal(f.db.getAllTeams().length, 10);
+    assert.deepEqual(f.db.fetchAllFromQuery('PRAGMA foreign_key_check'), []);
+    assert.equal(f.service.changeStatus(match.id, 'SCHEDULED', 'LIVE')?.status, 'LIVE');
+});
+
+test('bloquea fases incompletas, partidos pendientes y empates sin inventar desempates', t => {
+    const f = completedTable(t), match = f.service.saveParticipantMatch(f.input());
+    const sourceId = f.sourceIds[0]!;
+    f.db.executeQuery("UPDATE matches SET status='SCHEDULED' WHERE id=?", sourceId);
+    assert.match(f.details.previewPositions(f.table.id)!.errors.join(' '), /pendientes.*incompleto/);
+    assert.throws(() => f.details.confirmPositions(f.table.id));
+    f.db.executeQuery('DELETE FROM matches WHERE id=?', sourceId);
+    assert.match(f.details.previewPositions(f.table.id)!.errors.join(' '), /incompleto/);
+    f.db.executeQuery("UPDATE matches SET scoreA=0,scoreB=0 WHERE phaseId=?", f.table.id);
+    assert.match(f.details.previewPositions(f.table.id)!.errors.join(' '), /empates sin resolver/);
+    assert.throws(() => f.details.confirmPositions(f.table.id));
+    assert.equal(f.service.getMatch(match.id, true)?.teamAId, null);
+    assert.equal(f.details.previewPositions(f.table.id)!.confirmedAt, null);
+    assert.equal(f.details.previewPositions(999), undefined);
+    assert.equal(f.details.previewPositions(f.knockout.id)!.canConfirm, false);
+});
+
+test('advierte correcciones, conserva asignaciones y exige reapertura para reconfirmar', t => {
+    const f = completedTable(t), match = f.service.saveParticipantMatch(f.input());
+    f.details.confirmPositions(f.table.id);
+    const before = f.service.getMatchParticipants(match.id);
+    f.service.setResult(f.sourceIds[0]!, 0, 4);
+    const changed = f.details.previewPositions(f.table.id)!;
+    assert.equal(changed.stale, true);
+    assert.match(changed.errors.join(' '), /Reabre/);
+    assert.deepEqual(f.service.getMatchParticipants(match.id), before);
+    assert.throws(() => f.details.confirmPositions(f.table.id));
+    f.details.reopenPositions(f.table.id);
+    assert.equal(f.service.changeStatus(match.id, 'SCHEDULED', 'LIVE'), undefined);
+    f.details.confirmPositions(f.table.id);
+    assert.equal(f.service.getMatch(match.id, true)?.teamAId, f.teams[1]!.id);
+    assert.equal(f.service.getMatch(match.id, true)?.teamBId, f.teams[2]!.id);
+    assert.equal(f.details.previewPositions(f.table.id)!.stale, false);
+});
+
+for (const status of ['LIVE', 'FINISHED'] as const) test(`una corrección nunca reasigna un partido ${status} ni confirma parcialmente`, t => {
+    const f = completedTable(t);
+    const scheduled = f.service.saveParticipantMatch(f.input());
+    const frozen = f.service.saveParticipantMatch(f.input());
+    f.details.confirmPositions(f.table.id);
+    f.service.changeStatus(frozen.id, 'SCHEDULED', 'LIVE');
+    if (status === 'FINISHED') f.service.changeStatus(frozen.id, 'LIVE', 'FINISHED');
+    const before = f.service.getMatchParticipants(frozen.id);
+    f.service.setResult(f.sourceIds[0]!, 0, 4);
+    f.details.reopenPositions(f.table.id);
+    assert.throws(() => f.details.confirmPositions(f.table.id), /iniciado o terminado/);
+    assert.deepEqual(f.service.getMatchParticipants(frozen.id), before);
+    assert.equal(f.service.getMatch(scheduled.id, true)?.teamAId, f.teams[0]!.id);
+    assert.equal(f.details.previewPositions(f.table.id)!.confirmedAt, null);
+});
+
+test('rechaza colisiones con equipos fijos y revierte todas las asignaciones si falla una escritura', t => {
+    const f = completedTable(t);
+    const collision = f.service.saveParticipantMatch(f.input({ teamA: f.position(1), teamB: f.fixed(0), lineTeam: f.position(3, f.groupB.id) }));
+    assert.throws(() => f.details.confirmPositions(f.table.id), /deben ser diferentes/);
+    f.service.deleteMatch(collision.id);
+    const first = f.service.saveParticipantMatch(f.input()), second = f.service.saveParticipantMatch(f.input());
+    f.db.executeQuery(`CREATE TRIGGER fail_assignment BEFORE UPDATE OF teamAId ON matches WHEN NEW.id=${second.id} BEGIN SELECT RAISE(ABORT,'Fallo de escritura'); END`);
+    assert.throws(() => f.details.confirmPositions(f.table.id), { name: 'DatabaseError' });
+    assert.equal(f.service.getMatch(first.id, true)?.teamAId, null);
+    assert.equal(f.details.previewPositions(f.table.id)!.confirmedAt, null);
+});
 
 test('guarda fase, grupo y posición en los tres roles y no crea equipos al reiniciar', t => {
     const f = fixture(t), input = f.input();
