@@ -129,6 +129,13 @@ export class MatchRepository {
     }
 
     changeStatus(id: number, from: string, to: string): boolean {
+        if (to === 'LIVE' && from === 'SCHEDULED') {
+            const match = this.getMatch(id)
+            if (!match || [match.teamAId, match.teamBId, match.lineTeamId].some(teamId => teamId === null)) return false
+            if (this.dbConnection.fetchOneFromQuery(`SELECT 1 FROM match_participant_references r
+                LEFT JOIN phase_position_confirmations c ON c.phaseId=r.sourcePhaseId
+                WHERE r.matchId=? AND r.kind='GROUP_POSITION' AND c.phaseId IS NULL`, id)) return false
+        }
         return this.dbConnection.executeQuery('UPDATE matches SET status=?,updatedAt=CURRENT_TIMESTAMP WHERE id=? AND status=?', to, id, from).changes > 0
     }
 

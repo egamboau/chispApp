@@ -101,8 +101,37 @@ La migración automática agrega `match_participant_references` y completa IDs d
 equipos históricos que solo tenían nombre, sin cambiar nombres, marcadores ni
 goleo. El equipo resuelto permanece en las columnas de equipo existentes; asignarlo
 no elimina la referencia de origen. Las ediciones antiguas de un partido con
-referencias se rechazan para evitar perderlas. Esta entrega no incorpora resolución,
-confirmación, nuevos contratos HTTP ni selectores en las pantallas.
+referencias se rechazan para evitar perderlas. Los selectores de participantes se
+mantienen en el modelo interno; el formulario antiguo sigue creando equipos fijos.
+
+## Resolución y confirmación de posiciones (issue #41)
+
+En **Torneos → Fases → Cierre y asignación de posiciones**, selecciona la fase de
+tabla de origen para previsualizar qué equipos ocuparían las referencias de fases
+posteriores, incluidos los equipos de línea. Se reutiliza la tabla y sus desempates
+vigentes. Se exige al menos una vuelta completa de enfrentamientos finalizados por
+grupo, ningún partido pendiente en la fase y ningún empate sin resolver. No se
+elige arbitrariamente entre equipos empatados ni se crean equipos nuevos.
+
+**Confirmar y congelar** cierra la clasificación de origen y asigna todos sus
+participantes en una transacción idempotente. Conserva fase, grupo y posición
+originales, junto con una instantánea y fecha de confirmación. Los endpoints
+administrativos son `GET /api/admin/phases/:id/positions`,
+`POST /api/admin/phases/:id/positions/confirm` y
+`POST /api/admin/phases/:id/positions/reopen`.
+
+Las correcciones posteriores muestran una advertencia en la previsualización y no
+modifican equipos asignados. Usa **Reabrir asignaciones**, revisa y confirma otra
+vez. Reabrir conserva los equipos anteriores y bloquea el inicio de los partidos
+pendientes que dependen de esa fase hasta reconfirmar. Si la corrección cambiaría
+un participante de un partido iniciado o terminado, se rechaza toda la confirmación;
+esos encuentros conservan sus equipos. Las referencias `MATCH_WINNER` quedan fuera
+de esta resolución. Un encuentro con participantes sin resolver tampoco puede iniciar.
+
+La migración agrega `phase_position_confirmations` sin modificar los resultados
+existentes y se puede ejecutar nuevamente al reiniciar. Para volver a una versión
+sin esta funcionalidad después de confirmar, restaura el respaldo previo: esa
+versión no aplica los bloqueos de confirmación. No ejecutar ambas versiones a la vez.
 
 Antes de desplegar, generar y verificar el respaldo descrito abajo. La migración es
 aditiva e idempotente: si todavía no se guardaron referencias, se puede volver a la

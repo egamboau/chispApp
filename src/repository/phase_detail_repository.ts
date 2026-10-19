@@ -5,8 +5,54 @@ import { Match } from "../models/match";
 import { ClassificationRule, Membership, RuleInput, Sanction, ScoringRow, ScoringTable, TeamCards } from "../models/phase_details";
 import { Team } from "../models/team";
 
+export interface PositionReference {
+    matchId: number;
+    role: 'teamA' | 'teamB' | 'lineTeam';
+    sourceGroupId: number;
+    position: number;
+}
+
 export class PhaseDetailRepository {
     constructor(private readonly dbConnection: DBConnection) {}
+
+    transaction<T>(action: () => T): T {
+        return this.dbConnection.transaction(action)
+    }
+
+    getPositionReferences(phaseId: number): PositionReference[] {
+        return this.dbConnection.fetchAllFromParameterizedQuery<PositionReference>(
+            "SELECT * FROM match_participant_references WHERE kind='GROUP_POSITION' AND sourcePhaseId=? ORDER BY matchId,role", phaseId)
+    }
+
+    hasInvalidPositionReferences(phaseId: number): boolean {
+        return Boolean(this.dbConnection.fetchOneFromQuery(`SELECT 1 FROM invalid_match_references i
+            JOIN match_participant_references r ON r.matchId=i.matchId WHERE r.sourcePhaseId=?`, phaseId))
+    }
+
+    getPhaseMatches(phaseId: number): Match[] {
+        return this.dbConnection.fetchAllFromParameterizedQuery<Match>('SELECT * FROM matches WHERE phaseId=? ORDER BY id', phaseId)
+    }
+
+    getMatch(id: number): Match {
+        return this.dbConnection.fetchOneFromQuery<Match>('SELECT * FROM matches WHERE id=?', id)!
+    }
+
+    getPositionConfirmation(phaseId: number): { snapshot: string; confirmedAt: string } | undefined {
+        return this.dbConnection.fetchOneFromQuery('SELECT snapshot,confirmedAt FROM phase_position_confirmations WHERE phaseId=?', phaseId)
+    }
+
+    confirmPositions(phaseId: number, snapshot: string): void {
+        this.dbConnection.executeQuery(`INSERT INTO phase_position_confirmations(phaseId,snapshot) VALUES(?,?)
+            ON CONFLICT(phaseId) DO NOTHING`, phaseId, snapshot)
+    }
+
+    reopenPositions(phaseId: number): void {
+        this.dbConnection.executeQuery('DELETE FROM phase_position_confirmations WHERE phaseId=?', phaseId)
+    }
+
+    assignPosition(reference: PositionReference, teamId: number, teamName: string): void {
+        this.dbConnection.executeQuery(`UPDATE matches SET ${reference.role}Id=?,${reference.role}=?,updatedAt=CURRENT_TIMESTAMP WHERE id=?`, teamId, teamName, reference.matchId)
+    }
 
     getMemberships(phaseId: number): Membership[] {
         return this.dbConnection.fetchAllFromParameterizedQuery<Membership>('SELECT pm.*,t.name teamName,g.name groupName FROM phase_memberships pm JOIN teams t ON t.id=pm.teamId JOIN groups_table g ON g.id=pm.groupId WHERE pm.phaseId=? ORDER BY g.name,t.name', phaseId)

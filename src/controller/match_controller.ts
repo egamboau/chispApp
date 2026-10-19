@@ -217,7 +217,7 @@ export class MatchController {
             const updated = this.service.changeStatus(id.data, from, to)
             if (!updated) {
                 const match = this.service.getMatch(id.data, true)
-                return res.status(match ? 409 : 404).json({ error: match ? `El partido debe estar ${from}.` : 'Partido no encontrado.' })
+                return res.status(match ? 409 : 404).json({ error: match ? `El partido debe estar ${from} y tener sus participantes resueltos y confirmados para iniciar.` : 'Partido no encontrado.' })
             }
             notify(to.toLowerCase(), updated.id)
             res.json(updated)

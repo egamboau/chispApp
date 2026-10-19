@@ -171,6 +171,27 @@ export class PhaseDetailController {
         res.json(standings)
     }
 
+    previewPositions = this.positionsHandler('previewPositions')
+    confirmPositions = this.positionsHandler('confirmPositions')
+    reopenPositions = this.positionsHandler('reopenPositions')
+
+    private positionsHandler(action: 'previewPositions' | 'confirmPositions' | 'reopenPositions'): RequestHandler {
+        return (req, res) => {
+            const phaseId = idSchema.safeParse(req.params.id)
+            if (!phaseId.success) return res.status(400).json({ error: 'Id de fase inválido.' })
+            try {
+                const result = this.service[action](phaseId.data)
+                if (!result) return res.status(404).json({ error: 'Fase no encontrada.' })
+                if (action !== 'previewPositions') notify('positions', phaseId.data)
+                const { snapshot, ...preview } = result
+                res.json(preview)
+            } catch (error) {
+                if (error instanceof DatabaseConnectionError && error.name === 'PositionResolutionError') return res.status(409).json({ error: error.message })
+                throw error
+            }
+        }
+    }
+
     getScoring: RequestHandler = (req, res) => {
         const phaseId = idSchema.safeParse(req.params.id)
         if (!phaseId.success) return res.status(400).json({ error: 'Id de fase inválido.' })
