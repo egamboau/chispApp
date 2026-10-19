@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 // A small DOM fixture exercises the shipped admin script without a browser dependency.
-function calendar() {
+function calendar(reply: (url: string) => unknown = () => ({})) {
   const elements: Record<string, Element> = {};
   class Element {
     value = '';
@@ -40,7 +40,7 @@ function calendar() {
     },
     fetch: async (url: string, init: { body?: string; method?: string }) => {
       calls.push({ url, init });
-      return { ok: true, status: 200, json: async () => ({}) };
+      return { ok: true, status: 200, json: async () => reply(url) };
     },
     confirm: () => true,
     setTimeout: () => {},
@@ -138,4 +138,41 @@ test('equipo fijo conserva restricciones y partidos iniciados muestran el bloque
   const html = run(`matchCard({id: 8, tournamentType: 'MALE', status: 'LIVE', teamA: 'A', teamB: 'B', scoreA: 0, scoreB: 0})`);
   assert.match(html, /asignaciones de participantes están bloqueadas/);
   assert.doesNotMatch(html, /data-action="edit"/);
+});
+
+test('botones de confirmar y reabrir actualizan previsualización y calendario', async () => {
+  let confirmed = false, assigned = false;
+  const { elements, calls, run } = calendar(url => {
+    if (url.endsWith('/confirm')) { confirmed = assigned = true; return {}; }
+    if (url.endsWith('/reopen')) { confirmed = false; return {}; }
+    if (url.endsWith('/positions')) return {
+      confirmedAt: confirmed ? '2026-10-19' : null, errors: [], canConfirm: true,
+      assignments: [{matchId: 8, role: 'teamA', position: 1, sourceGroupId: 11, teamName: 'Equipo A',
+        resolvedTeamId: assigned ? 31 : null, teamId: 31}],
+    };
+    if (url.includes('/matches?')) return [{
+      id: 8, tournamentType: 'MALE', status: 'SCHEDULED', teamA: assigned ? 'Equipo A' : 'Clasificación · 1.º A',
+      teamB: 'Equipo B', lineTeam: 'Equipo C', date: '2026-10-20', jornada: 'MORNING', court: 1,
+    }];
+    throw new Error(`Petición inesperada: ${url}`);
+  });
+  run('loadCalendarPage = async () => {}; initCalendarPage();');
+  elements['#positions-phase']!.value = '1';
+  const click = (action: string) => elements['#phase-positions']!.listeners.click!({
+    target: { closest: () => ({ dataset: { action } }) },
+  });
+  await click('confirm-positions');
+  assert.deepEqual(calls.map(({ url, init }) => [url, init.method || 'GET']), [
+    ['/api/admin/phases/1/positions/confirm', 'POST'],
+    ['/api/admin/phases/1/positions', 'GET'],
+    ['/api/admin/matches?phaseId=2', 'GET'],
+  ]);
+  assert.match(elements['#phase-positions']!.innerHTML, /Confirmado: 2026-10-19/);
+  assert.match(elements['#matches']!.innerHTML, /Equipo A/);
+  assert.doesNotMatch(elements['#matches']!.innerHTML, /Clasificación · 1.º A/);
+  await click('reopen-positions');
+  assert.equal(calls[3]!.url, '/api/admin/phases/1/positions/reopen');
+  assert.equal(calls[3]!.init.method, 'POST');
+  assert.match(elements['#phase-positions']!.innerHTML, /Posiciones sin confirmar/);
+  assert.match(elements['#matches']!.innerHTML, /Equipo A/);
 });
