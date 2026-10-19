@@ -27,6 +27,8 @@ main { min-height: 0; padding: 2.5vh 3vw; }
 .score i { font-style: normal; font-size: 4vw; }
 .live-card p { margin: 0; color: var(--muted); text-align: center; font-size: clamp(1.15rem, 1.6vw, 1.8rem); }
 small { color: var(--muted); font-size: .65em; font-weight: 600; }
+.participant-pending { color: var(--accent); overflow-wrap: anywhere; }
+.participant-pending small { display: inline-block; padding: .15em .4em; border: 1px dashed currentColor; border-radius: 4px; }
 .empty { padding: 4vh; text-align: center; color: var(--muted); }
 .empty h2 { font-size: clamp(2rem, 4vw, 4rem); }
 #calendar, #results { overflow-y: auto; padding-bottom: 2rem; }
@@ -56,6 +58,7 @@ abbr { margin-left: .3rem; padding: .15rem .35rem; border-radius: 4px; backgroun
 .filters input, .filters select { min-height: 58px; padding: .6rem; border: 2px solid #67809c; border-radius: 12px; background: #172b45; color: white; font: 700 1rem system-ui; }
 .day h2 { margin: 2rem 0 1rem; text-transform: uppercase; font-size: clamp(1.5rem, 2.5vw, 2.8rem); }
 .calendar-match { display: grid; grid-template-columns: 130px 1fr auto; align-items: center; gap: 1.5rem; margin-bottom: 1rem; padding: 1.2rem 1.5rem; border-left-width: 8px; }
+.calendar-match > div { min-width: 0; }
 .calendar-match .jornada { color: var(--accent); font-size: 2.3rem; font-weight: 900; }
 .calendar-match h3 { margin: .7rem 0 .2rem; font-size: 1.7rem; }
 .calendar-match h3 b { color: var(--accent); margin: 0 .6rem; }
