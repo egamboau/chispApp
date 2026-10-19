@@ -15,8 +15,8 @@ export interface Match {
     updatedAt:string;
     phaseId:number;
     groupId:number;
-    teamAId:number;
-    teamBId:number;
+    teamAId:number | null;
+    teamBId:number | null;
     lineTeamId:number | null;
     yellowCardsA:number;
     redCardsA:number;
@@ -28,12 +28,28 @@ export interface Match {
     lineVisible?: number;
 }
 
+export type MatchParticipant =
+    | { kind: 'TEAM'; teamId: number }
+    | { kind: 'GROUP_POSITION'; sourcePhaseId: number; sourceGroupId: number; position: number }
+    | { kind: 'MATCH_WINNER'; sourceMatchId: number };
+
+export type MatchParticipants = Record<'teamA' | 'teamB' | 'lineTeam', MatchParticipant>;
+
+export type ParticipantMatchInput = Pick<MatchInput, 'phaseId' | 'groupId' | 'date' | 'jornada' | 'court' | 'sortOrder'> & {
+    participants: MatchParticipants;
+};
+
+export type StoredMatchParticipants = Record<keyof MatchParticipants, {
+    reference: MatchParticipant;
+    resolvedTeamId: number | null;
+}>;
+
 export interface MatchInput {
     phaseId: number;
     groupId: number;
-    teamAId: number;
-    teamBId: number;
-    lineTeamId: number;
+    teamAId: number | null;
+    teamBId: number | null;
+    lineTeamId: number | null;
     tournamentType: string;
     teamA: string;
     teamB: string;

@@ -172,6 +172,7 @@ export class PhaseDetailService {
         }]))
 
         for (const match of matches) {
+            if (match.teamAId === null || match.teamBId === null) continue
             const a = rows.get(match.teamAId), b = rows.get(match.teamBId), draw = match.scoreA === match.scoreB
             if (a) {
                 a.played++; a.goalsFor += match.scoreA; a.goalsAgainst += match.scoreB; a.yellowCards += match.yellowCardsA; a.redCards += match.redCardsA
@@ -196,6 +197,7 @@ export class PhaseDetailService {
         const direct = (items: StandingBase[]) => {
             const stats = new Map(items.map(item => [item.teamId, { points: 0, goalDifference: 0, goalsFor: 0 }]))
             for (const match of matches) {
+                if (match.teamAId === null || match.teamBId === null) continue
                 const a = stats.get(match.teamAId), b = stats.get(match.teamBId)
                 if (!a || !b) continue
                 a.goalsFor += match.scoreA; a.goalDifference += match.scoreA - match.scoreB

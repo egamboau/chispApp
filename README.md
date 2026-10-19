@@ -81,6 +81,36 @@ En producción no se publica el puerto 3000. El servicio `cloudflared` debe pert
 
 Las tablas se crean automáticamente al arrancar. No se cargan datos ficticios en producción.
 
+## Referencias de participantes (issue #40)
+
+El modelo interno permite equipos fijos (`TEAM`), posiciones de clasificación
+(`GROUP_POSITION`: fase, grupo y posición) y ganadores de encuentros eliminatorios
+(`MATCH_WINNER`: ID del partido). Los tres roles —local, visitante y línea— admiten
+cualquiera de estas variantes. Los contratos están en `src/models/match.ts`;
+`MatchService.saveParticipantMatch(input, id?)` guarda un partido nuevo o edita uno
+programado, y `getMatchParticipants(id)` devuelve la referencia original junto con
+el ID del equipo resuelto, que puede ser `null`.
+
+Las referencias de clasificación requieren una fase de tabla anterior del mismo
+torneo y categoría, un grupo de esa fase y una posición entre 1 y sus inscritos
+actuales. Los ganadores pueden proceder de la misma fase eliminatoria o de una
+anterior; se rechazan referencias circulares. El partido origen se identifica por
+su ID, por lo que cambiar su orden de calendario no altera la referencia.
+
+La migración automática agrega `match_participant_references` y completa IDs de
+equipos históricos que solo tenían nombre, sin cambiar nombres, marcadores ni
+goleo. El equipo resuelto permanece en las columnas de equipo existentes; asignarlo
+no elimina la referencia de origen. Las ediciones antiguas de un partido con
+referencias se rechazan para evitar perderlas. Esta entrega no incorpora resolución,
+confirmación, nuevos contratos HTTP ni selectores en las pantallas.
+
+Antes de desplegar, generar y verificar el respaldo descrito abajo. La migración es
+aditiva e idempotente: si todavía no se guardaron referencias, se puede volver a la
+imagen anterior conservando la base. Una vez guardadas, para revertir hay que detener
+la aplicación y restaurar el respaldo previo junto con la imagen anterior; se
+perderán los cambios posteriores al respaldo. No ejecutar versiones anteriores contra
+una base que ya tenga referencias: pueden interpretar sus etiquetas como equipos.
+
 ## Cloudflare Access
 
 Crea una aplicación Access para el mismo hostname con los paths `/admin`, `/admin/*`, `/api/admin` y `/api/admin/*`, y habilita **Protect with Access** en el Tunnel. El panel transforma sus llamadas a `/api/admin/*`; la aplicación valida `Cf-Access-Jwt-Assertion` contra el [JWKS de Cloudflare](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/). La API pública solo conserva las lecturas usadas por `/display`.

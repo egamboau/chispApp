@@ -75,6 +75,7 @@ export class MatchController {
         const existing = this.service.getMatch(id.data, true)
         if (!existing) return res.status(404).json({ error: 'Partido no encontrado.' })
         if (existing.status !== 'SCHEDULED') return res.status(409).json({ error: 'Solo se puede editar un partido programado.' })
+        if (this.service.hasParticipantReferences(id.data)) return res.status(409).json({ error: 'Este partido requiere editar sus referencias de participantes.' })
         const body = Object.hasOwn(req.body, 'sortOrder') ? req.body : { ...req.body, sortOrder: existing.sortOrder }
         const { match, errors } = this.service.buildInput(body)
         if (errors.length) return res.status(400).json({ error: errors.join(' ') })

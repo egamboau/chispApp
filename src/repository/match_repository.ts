@@ -1,6 +1,6 @@
-import DBConnection from "../db/db_connection";
+import DBConnection, { DatabaseConnectionError } from "../db/db_connection";
 import { Group } from "../models/group";
-import { Match, MatchFilters, MatchInput } from "../models/match";
+import { Match, MatchFilters, MatchInput, MatchParticipant, MatchParticipants, StoredMatchParticipants } from "../models/match";
 import { Phase } from "../models/phases";
 import { Team } from "../models/team";
 
@@ -64,8 +64,55 @@ export class MatchRepository {
     }
 
     updateMatch(id: number, match: MatchInput): Match {
+        if (this.hasParticipantReferences(id)) throw new DatabaseConnectionError('ParticipantReferenceError', 'Este partido requiere editar sus referencias de participantes.', undefined)
         this.dbConnection.executeNamedQuery('UPDATE matches SET tournamentType=@tournamentType,date=@date,jornada=@jornada,teamA=@teamA,teamB=@teamB,lineTeam=@lineTeam,court=@court,sortOrder=@sortOrder,phaseId=@phaseId,groupId=@groupId,teamAId=@teamAId,teamBId=@teamBId,lineTeamId=@lineTeamId,updatedAt=CURRENT_TIMESTAMP WHERE id=@id', { ...match, id })
         return this.getMatch(id)!
+    }
+
+    hasParticipantReferences(id: number): boolean {
+        return Boolean(this.dbConnection.fetchOneFromQuery('SELECT 1 FROM match_participant_references WHERE matchId=?', id))
+    }
+
+    getMatchParticipants(id: number): StoredMatchParticipants | undefined {
+        const match = this.getMatch(id)
+        if (!match) return undefined
+        type ReferenceRow = Exclude<MatchParticipant, { kind: 'TEAM' }> & { role: keyof MatchParticipants }
+        const references = this.dbConnection.fetchAllFromParameterizedQuery<ReferenceRow>('SELECT * FROM match_participant_references WHERE matchId=?', id)
+        const participant = (role: keyof MatchParticipants): StoredMatchParticipants['teamA'] => {
+            const row = references.find(reference => reference.role === role)
+            const resolvedTeamId = match[`${role}Id`]
+            let reference: MatchParticipant
+            if (row?.kind === 'GROUP_POSITION') reference = { kind: row.kind, sourcePhaseId: row.sourcePhaseId, sourceGroupId: row.sourceGroupId, position: row.position }
+            else if (row?.kind === 'MATCH_WINNER') reference = { kind: row.kind, sourceMatchId: row.sourceMatchId }
+            else {
+                if (resolvedTeamId === null) throw new DatabaseConnectionError('ParticipantReferenceError', 'El equipo fijo no tiene un ID válido.', undefined)
+                reference = { kind: 'TEAM', teamId: resolvedTeamId }
+            }
+            return { reference, resolvedTeamId }
+        }
+        return { teamA: participant('teamA'), teamB: participant('teamB'), lineTeam: participant('lineTeam') }
+    }
+
+    saveParticipantMatch(match: MatchInput, participants: MatchParticipants, id?: number): Match {
+        return this.dbConnection.transaction(() => {
+            if (id !== undefined) {
+                const existing = this.getMatch(id)
+                if (!existing || existing.status !== 'SCHEDULED') throw new DatabaseConnectionError('ParticipantReferenceError', 'Solo se puede editar un partido programado existente.', undefined)
+                this.dbConnection.executeQuery('DELETE FROM match_participant_references WHERE matchId=?', id)
+            }
+            const saved = id === undefined ? this.insertMatch(match) : this.updateMatch(id, match)
+            for (const role of ['teamA', 'teamB', 'lineTeam'] as const) {
+                const reference = participants[role]
+                if (reference.kind === 'TEAM') continue
+                this.dbConnection.executeQuery(`INSERT INTO match_participant_references(matchId,role,kind,sourcePhaseId,sourceGroupId,position,sourceMatchId)
+                    VALUES(?,?,?,?,?,?,?)`, saved.id, role, reference.kind,
+                    reference.kind === 'GROUP_POSITION' ? reference.sourcePhaseId : null,
+                    reference.kind === 'GROUP_POSITION' ? reference.sourceGroupId : null,
+                    reference.kind === 'GROUP_POSITION' ? reference.position : null,
+                    reference.kind === 'MATCH_WINNER' ? reference.sourceMatchId : null)
+            }
+            return saved
+        })
     }
 
     updateSortOrder(id: number, sortOrder: number | null): Match | undefined {
