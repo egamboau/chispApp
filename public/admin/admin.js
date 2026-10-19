@@ -40,13 +40,13 @@ async function loadTournamentPage(tournamentId, phaseId) {
   renderTournamentPage();
   await renderPhasePositions(phase);
 }
-async function renderPhasePositions(phase) {
+async function renderPhasePositions(phase, sourceGroups = groups) {
   const target = document.querySelector('#phase-positions');
   target.innerHTML = '';
   if (phase?.type !== 'TABLE') return;
   const preview = await request(`/api/phases/${phase.id}/positions`);
   const roles = { teamA: 'Local', teamB: 'Visitante', lineTeam: 'Línea' };
-  target.innerHTML = `<h3>Cierre y asignación de posiciones</h3><p>${preview.confirmedAt ? `Confirmado: ${escapeHtml(preview.confirmedAt)}` : 'Posiciones sin confirmar.'} Las correcciones no cambian automáticamente los equipos asignados.</p>${preview.errors.map(error => `<p class="error">${escapeHtml(error)}</p>`).join('')}${preview.assignments.map(item => `<div class="config-row"><span>Partido ${item.matchId} · ${roles[item.role]} · ${item.position}.º ${escapeHtml(groups.find(group => group.id === item.sourceGroupId)?.name)} → <strong>${escapeHtml(item.teamName || 'Sin resolver')}</strong>${item.resolvedTeamId !== null && item.resolvedTeamId !== item.teamId ? ' (cambiaría el equipo asignado)' : ''}</span></div>`).join('')}<button class="primary" data-action="confirm-positions" ${preview.canConfirm ? '' : 'disabled'}>CONFIRMAR Y CONGELAR</button>${preview.confirmedAt ? '<button data-action="reopen-positions">REABRIR ASIGNACIONES</button>' : ''}`;
+  target.innerHTML = `<h3>Cierre y asignación de posiciones</h3><p>${preview.confirmedAt ? `Confirmado: ${escapeHtml(preview.confirmedAt)}` : 'Posiciones sin confirmar.'} Las correcciones no cambian automáticamente los equipos asignados.</p>${preview.errors.map(error => `<p class="error">${escapeHtml(error)}</p>`).join('')}${preview.assignments.map(item => `<div class="config-row"><span>Partido ${item.matchId} · ${roles[item.role]} · ${item.position}.º ${escapeHtml(sourceGroups.find(group => group.id === item.sourceGroupId)?.name)} → <strong>${escapeHtml(item.teamName || 'Sin resolver')}</strong>${item.resolvedTeamId !== null && item.resolvedTeamId !== item.teamId ? ' (cambiaría el equipo asignado)' : ''}</span></div>`).join('')}<button class="primary" data-action="confirm-positions" ${preview.canConfirm ? '' : 'disabled'}>CONFIRMAR Y CONGELAR</button>${preview.confirmedAt ? '<button data-action="reopen-positions">REABRIR ASIGNACIONES</button>' : ''}`;
 }
 function renderTournamentPage() {
   const tournament = selectedTournament(), phase = selectedPhase();
@@ -227,30 +227,81 @@ function initTeamPage() {
   loadTeamPage().catch((error) => message(error.message, true));
 }
 
-let currentPhase;
+let currentPhase, sourceGroups = {};
+const participantRoles = { teamA: 'Local', teamB: 'Visitante', lineTeam: 'Línea' };
+const sourcePhases = () => phases.filter(phase => phase.type === 'TABLE' && phase.sortOrder < currentPhase?.sortOrder && phase.tournamentType === currentPhase?.tournamentType);
 async function loadCalendarPage(tournamentId, phaseId) {
   const tournament = await loadTournaments(tournamentId);
   phases = tournament ? await request(`/api/tournaments/${tournament.id}/phases`) : [];
   currentPhase = choose(document.querySelector('#admin-phase'), phases, phaseId ?? tournament?.currentPhaseId, phaseLabel);
   teams = tournament ? await request(`/api/teams?tournamentId=${tournament.id}`) : [];
   [groups, memberships, matches] = currentPhase ? await Promise.all([request(`/api/phases/${currentPhase.id}/groups`), request(`/api/phases/${currentPhase.id}/memberships`), request(`/api/matches?phaseId=${currentPhase.id}`)]) : [[], [], []];
+  sourceGroups = Object.fromEntries(await Promise.all(sourcePhases().map(async phase => [phase.id, await request(`/api/phases/${phase.id}/groups`)])));
   document.querySelector('#groupId').innerHTML = options(groups);
-  renderMatchTeams(); renderMatches();
+  resetMatchForm(); renderMatches();
+  choose(document.querySelector('#positions-phase'), sourcePhases());
+  await previewCalendarPositions();
   disable(document.querySelector('#match-form'), !currentPhase || !groups.length);
 }
 function renderMatchTeams(values = {}) {
-  const groupId = Number(document.querySelector('#groupId').value), memberIds = memberships.map((item) => item.teamId);
-  for (const id of ['teamAId', 'teamBId']) { const select = document.querySelector(`#${id}`), selected = values[id] || select.value, allowed = id === 'teamAId' ? memberships.filter((item) => item.groupId === groupId).map((item) => item.teamId) : memberIds; select.innerHTML = `<option value="">Seleccione</option>${options(teams.filter((team) => allowed.includes(team.id)))}`; select.value = selected; }
-  const line = document.querySelector('#lineTeamId'), selected = values.lineTeamId || line.value;
-  line.innerHTML = `<option value="">Seleccione</option>${options(teams)}`; line.value = selected;
+  const groupId = Number(document.querySelector('#groupId').value), memberIds = memberships.map(item => item.teamId);
+  for (const role of Object.keys(participantRoles)) {
+    const select = document.querySelector(`#${role}Id`), selected = values[`${role}Id`] ?? select.value;
+    const allowed = role === 'teamA' ? memberships.filter(item => item.groupId === groupId).map(item => item.teamId) : memberIds;
+    select.innerHTML = `<option value="">Seleccione</option>${options(teams.filter(team => role === 'lineTeam' || allowed.includes(team.id)))}`;
+    select.value = selected ?? '';
+  }
+}
+function renderParticipantGroups(role, preferred) {
+  const phaseId = document.querySelector(`#${role}-phase`).value;
+  choose(document.querySelector(`#${role}-group`), sourceGroups[phaseId] || [], preferred);
+}
+function toggleParticipant(role) {
+  const kind = document.querySelector(`#${role}-kind`).value, position = kind === 'GROUP_POSITION';
+  document.querySelector(`#${role}-fixed`).hidden = kind !== 'TEAM';
+  document.querySelector(`#${role}-position-fields`).hidden = !position;
+  document.querySelector(`#${role}Id`).required = kind === 'TEAM';
+  for (const field of ['phase', 'group', 'position']) document.querySelector(`#${role}-${field}`).required = position;
+}
+function renderParticipantFields(match = {}) {
+  document.querySelector('#match-participants').innerHTML = Object.entries(participantRoles).map(([role, label]) => `<fieldset><legend>${label}</legend><label>Asignación<select id="${role}-kind"><option value="TEAM">Equipo fijo</option><option value="GROUP_POSITION">Posición de grupo/fase</option></select></label><label id="${role}-fixed">Equipo<select id="${role}Id"></select></label><div id="${role}-position-fields"><label>Fase origen<select id="${role}-phase">${options(sourcePhases(), phaseLabel)}</select></label><label>Grupo origen<select id="${role}-group"></select></label><label>Posición<input id="${role}-position" type="number" min="1" step="1" value="1"></label></div></fieldset>`).join('');
+  renderMatchTeams(match);
+  for (const role of Object.keys(participantRoles)) {
+    const reference = match.participants?.[role]?.reference;
+    // Preserve winner references created through the API when editing the schedule.
+    if (reference?.kind === 'MATCH_WINNER') document.querySelector(`#${role}-kind`).innerHTML += '<option value="MATCH_WINNER">Ganador de partido (conservar)</option>';
+    document.querySelector(`#${role}-kind`).value = reference?.kind || 'TEAM';
+    if (reference?.kind === 'GROUP_POSITION') {
+      document.querySelector(`#${role}-phase`).value = reference.sourcePhaseId;
+      document.querySelector(`#${role}-position`).value = reference.position;
+    }
+    renderParticipantGroups(role, reference?.sourceGroupId);
+    toggleParticipant(role);
+    document.querySelector(`#${role}-kind`).addEventListener('change', () => toggleParticipant(role));
+    document.querySelector(`#${role}-phase`).addEventListener('change', () => renderParticipantGroups(role));
+  }
+  const warning = document.querySelector('#assignment-warning');
+  warning.hidden = !Object.values(match.participants || {}).some(item => item?.reference.kind !== 'TEAM' && item?.status === 'CONFIRMED');
+  warning.textContent = 'Asignaciones confirmadas: cambiar una referencia requiere revisar y confirmar otra vez la fase origen.';
+}
+function matchParticipants() {
+  const editing = matches.find(match => match.id === Number(document.querySelector('#match-id').value));
+  return Object.fromEntries(Object.keys(participantRoles).map(role => {
+    const kind = document.querySelector(`#${role}-kind`).value;
+    return [role, kind === 'GROUP_POSITION' ? { kind, sourcePhaseId: Number(document.querySelector(`#${role}-phase`).value), sourceGroupId: Number(document.querySelector(`#${role}-group`).value), position: Number(document.querySelector(`#${role}-position`).value) } : kind === 'MATCH_WINNER' ? editing.participants[role].reference : { kind, teamId: Number(document.querySelector(`#${role}Id`).value) }];
+  }));
+}
+async function previewCalendarPositions() {
+  const phase = phases.find(phase => phase.id === Number(document.querySelector('#positions-phase').value));
+  await renderPhasePositions(phase, sourceGroups[phase?.id] || []);
 }
 function resetMatchForm() {
   document.querySelector('#match-form').reset(); document.querySelector('#match-id').value = ''; document.querySelector('#cancel-edit').hidden = true;
-  document.querySelector('#groupId').innerHTML = options(groups); renderMatchTeams();
+  document.querySelector('#groupId').innerHTML = options(groups); renderParticipantFields();
 }
 function matchCard(match) {
   const score = match.status === 'LIVE' ? `<div class="score-controls">${['A', 'B'].map((side) => `<div><strong>${escapeHtml(match[`team${side}`])}</strong><span><button data-action="score" data-team="${side}" data-delta="-1" ${match[`score${side}`] === 0 ? 'disabled' : ''}>−</button><b>${match[`score${side}`]}</b><button data-action="score" data-team="${side}" data-delta="1">+</button></span></div>`).join('')}</div>` : match.status === 'FINISHED' ? `<div class="score-controls final-score">${['A', 'B'].map((side) => `<label><strong>${escapeHtml(match[`team${side}`])}</strong><input data-result="score${side}" type="number" min="0" step="1" value="${match[`score${side}`]}"></label>`).join('')}</div>` : `<h3>${escapeHtml(match.teamA)} <small>vs</small> ${escapeHtml(match.teamB)}</h3>`;
-  return `<article class="match-card ${match.tournamentType.toLowerCase()}" data-id="${match.id}"><div class="meta"><span class="badge">${match.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'}</span><strong>${escapeHtml(match.phaseName)} · ${escapeHtml(match.groupName)} · Cancha ${match.court}</strong><span>${match.date} · ${jornadaLabels[match.jornada]} · Orden ${match.sortOrder ?? 'sin definir'}</span><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span></div>${score}<p>Línea: <strong>${escapeHtml(match.lineTeam)}</strong></p><div class="cards"><label>${escapeHtml(match.teamA)} 🟨<input data-card="yellowCardsA" type="number" min="0" value="${match.yellowCardsA}"></label><label>🟥<input data-card="redCardsA" type="number" min="0" value="${match.redCardsA}"></label><label>${escapeHtml(match.teamB)} 🟨<input data-card="yellowCardsB" type="number" min="0" value="${match.yellowCardsB}"></label><label>🟥<input data-card="redCardsB" type="number" min="0" value="${match.redCardsB}"></label><button data-action="cards">GUARDAR TARJETAS</button></div><div class="actions"><button data-action="order">EDITAR ORDEN</button>${match.status === 'SCHEDULED' ? '<button data-action="edit">EDITAR</button><button class="danger" data-action="delete">ELIMINAR</button><button class="primary" data-action="start">INICIAR</button>' : ''}${match.status === 'LIVE' ? '<button class="danger" data-action="reset">REINICIAR MARCADOR</button><button class="finish" data-action="finish">FINALIZAR PARTIDO</button>' : ''}${match.status === 'FINISHED' ? `<button data-action="result">GUARDAR RESULTADO</button><button class="primary" data-action="reopen">REABRIR PARTIDO</button><a class="primary" href="/admin/scoring.html?matchId=${match.id}">ADMINISTRAR GOLEO</a>` : ''}</div></article>`;
+  return `<article class="match-card ${match.tournamentType.toLowerCase()}" data-id="${match.id}"><div class="meta"><span class="badge">${match.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'}</span><strong>${escapeHtml(match.phaseName)} · ${escapeHtml(match.groupName)} · Cancha ${match.court}</strong><span>${match.date} · ${jornadaLabels[match.jornada]} · Orden ${match.sortOrder ?? 'sin definir'}</span><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span></div>${score}${match.status !== 'SCHEDULED' ? '<p>Partido iniciado o terminado: las asignaciones de participantes están bloqueadas.</p>' : ''}<p>Línea: <strong>${escapeHtml(match.lineTeam)}</strong></p><div class="cards"><label>${escapeHtml(match.teamA)} 🟨<input data-card="yellowCardsA" type="number" min="0" value="${match.yellowCardsA}"></label><label>🟥<input data-card="redCardsA" type="number" min="0" value="${match.redCardsA}"></label><label>${escapeHtml(match.teamB)} 🟨<input data-card="yellowCardsB" type="number" min="0" value="${match.yellowCardsB}"></label><label>🟥<input data-card="redCardsB" type="number" min="0" value="${match.redCardsB}"></label><button data-action="cards">GUARDAR TARJETAS</button></div><div class="actions"><button data-action="order">EDITAR ORDEN</button>${match.status === 'SCHEDULED' ? '<button data-action="edit">EDITAR</button><button class="danger" data-action="delete">ELIMINAR</button><button class="primary" data-action="start">INICIAR</button>' : ''}${match.status === 'LIVE' ? '<button class="danger" data-action="reset">REINICIAR MARCADOR</button><button class="finish" data-action="finish">FINALIZAR PARTIDO</button>' : ''}${match.status === 'FINISHED' ? `<button data-action="result">GUARDAR RESULTADO</button><button class="primary" data-action="reopen">REABRIR PARTIDO</button><a class="primary" href="/admin/scoring.html?matchId=${match.id}">ADMINISTRAR GOLEO</a>` : ''}</div></article>`;
 }
 function renderMatches() {
   const date = document.querySelector('#filter-date').value, court = Number(document.querySelector('#filter-court').value);
@@ -261,6 +312,15 @@ function renderMatches() {
 }
 function initCalendarPage() {
   document.querySelector('#admin-tournament').addEventListener('change', () => loadCalendarPage(selectedTournament()?.id).catch((error) => message(error.message, true)));
+  document.querySelector('#preview-positions').addEventListener('click', () => previewCalendarPositions().catch(error => message(error.message, true)));
+  document.querySelector('#positions-phase').addEventListener('change', () => previewCalendarPositions().catch(error => message(error.message, true)));
+  document.querySelector('#phase-positions').addEventListener('click', async event => {
+    const action = event.target.closest('[data-action]')?.dataset.action;
+    if (!['confirm-positions', 'reopen-positions'].includes(action)) return;
+    const phaseId = document.querySelector('#positions-phase').value;
+    if (!confirm(action === 'confirm-positions' ? '¿Confirmar y congelar los equipos previsualizados?' : '¿Reabrir asignaciones? Los equipos se conservan; los partidos iniciados o terminados no pueden cambiar de equipo.')) return;
+    try { await request(`/api/phases/${phaseId}/positions/${action === 'confirm-positions' ? 'confirm' : 'reopen'}`, { method: 'POST' }); await previewCalendarPositions(); matches = await request(`/api/matches?phaseId=${currentPhase.id}`); renderMatches(); } catch (error) { message(error.message, true); }
+  });
   document.querySelector('#groupId').addEventListener('change', () => renderMatchTeams());
   document.querySelector('#admin-phase').addEventListener('change', () => loadCalendarPage(selectedTournament()?.id, selectedPhase()?.id).catch((error) => message(error.message, true)));
   document.querySelectorAll('.filters input').forEach((input) => input.addEventListener('input', renderMatches));
@@ -268,7 +328,8 @@ function initCalendarPage() {
   document.querySelector('#line-visibility').addEventListener('click', async () => { const date = document.querySelector('#filter-date').value, visible = matches.some((match) => match.date === date && match.lineVisible); try { await request(`/api/line-visibility/${date}`, { method: 'PUT', body: JSON.stringify({ visible: !visible }) }); await loadCalendarPage(selectedTournament().id, currentPhase.id); document.querySelector('#filter-date').value = date; renderMatches(); message(`Líneas ${visible ? 'ocultadas' : 'publicadas'}.`); } catch (error) { message(error.message, true); } });
   document.querySelector('#match-form').addEventListener('submit', async (event) => {
     event.preventDefault(); const matchId = document.querySelector('#match-id').value;
-    const body = Object.fromEntries(['groupId', 'date', 'jornada', 'court', 'sortOrder', 'teamAId', 'teamBId', 'lineTeamId'].map((key) => [key, document.querySelector(`#${key}`).value])); body.phaseId = currentPhase.id;
+    const body = Object.fromEntries(['groupId', 'date', 'jornada', 'court', 'sortOrder'].map((key) => [key, document.querySelector(`#${key}`).value])); body.phaseId = currentPhase.id; body.participants = matchParticipants();
+    if (matchId && !document.querySelector('#assignment-warning').hidden && !confirm('¿Guardar los cambios de este partido con asignaciones confirmadas? Revisa después la resolución de la fase origen.')) return;
     try { await request(matchId ? `/api/matches/${matchId}` : '/api/matches', { method: matchId ? 'PUT' : 'POST', body: JSON.stringify(body) }); resetMatchForm(); await loadCalendarPage(selectedTournament().id, currentPhase.id); message('Partido guardado.'); }
     catch (error) { message(error.message, true); }
   });
@@ -276,7 +337,7 @@ function initCalendarPage() {
     const button = event.target.closest('[data-action]'); if (!button) return;
     const article = button.closest('[data-id]'), match = matches.find(({ id }) => id === Number(article.dataset.id));
     try {
-      if (button.dataset.action === 'edit') { for (const key of ['date', 'jornada', 'court', 'sortOrder']) document.querySelector(`#${key}`).value = match[key] ?? ''; document.querySelector('#groupId').value = match.groupId; renderMatchTeams(match); document.querySelector('#match-id').value = match.id; document.querySelector('#cancel-edit').hidden = false; return; }
+      if (button.dataset.action === 'edit') { for (const key of ['date', 'jornada', 'court', 'sortOrder']) document.querySelector(`#${key}`).value = match[key] ?? ''; document.querySelector('#groupId').value = match.groupId; renderParticipantFields(match); document.querySelector('#match-id').value = match.id; document.querySelector('#cancel-edit').hidden = false; return; }
       if (button.dataset.action === 'order') { const value = prompt('Orden oficial (vacío para dejarlo sin definir)', match.sortOrder ?? ''); if (value === null) return; await request(`/api/matches/${match.id}/order`, { method: 'PATCH', body: JSON.stringify({ sortOrder: value.trim() || null }) }); }
       else if (button.dataset.action === 'delete') { if (!confirm(`¿Eliminar ${match.teamA} vs ${match.teamB}?`)) return; await request(`/api/matches/${match.id}`, { method: 'DELETE' }); }
       else if (button.dataset.action === 'score') await request(`/api/matches/${match.id}/score`, { method: 'PATCH', body: JSON.stringify({ team: button.dataset.team, delta: Number(button.dataset.delta) }) });
