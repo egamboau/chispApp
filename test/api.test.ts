@@ -151,6 +151,122 @@ test('sirve las páginas administrativas y la pantalla pública', async () => {
   assert.match(await css.text(), /@media \(max-width: 900px\)/);
 });
 
+test('calendario entre fases: confirma tres grupos, publica y corrige sin perder referencias', async t => {
+  const post = async (url: string, body: unknown = {}, expected = 201) => {
+    const result = await json(url, { method: 'POST', body: JSON.stringify(body) });
+    assert.equal(result.response.status, expected, JSON.stringify(result.body));
+    return result.body;
+  };
+  const tournament = await post('/api/tournaments', { name: 'Calendario entre fases' });
+  t.after(() => {
+    const db = new Database(path.join(tempDir, 'test.db'));
+    try {
+      db.transaction(() => {
+        db.prepare('DELETE FROM matches WHERE phaseId IN (SELECT id FROM phases WHERE tournamentId=?)').run(tournament.id);
+        for (const name of ['phase_position_confirmations', 'phase_memberships', 'groups_table']) {
+          db.prepare(`DELETE FROM ${name} WHERE phaseId IN (SELECT id FROM phases WHERE tournamentId=?)`).run(tournament.id);
+        }
+        for (const name of ['scoring_tables', 'phases', 'teams']) db.prepare(`DELETE FROM ${name} WHERE tournamentId=?`).run(tournament.id);
+        db.prepare('DELETE FROM tournaments WHERE id=?').run(tournament.id);
+        db.prepare('DELETE FROM published_line_dates WHERE date=?').run('2026-11-15');
+      })();
+    } finally { db.close(); }
+  });
+  const tournamentType = tournament.id % 2 ? 'MALE' : 'FEMALE';
+  const phase = async (name: string, type: string, sortOrder: number) => post(`/api/tournaments/${tournament.id}/phases`, { name, type, sortOrder, tournamentType });
+  const table = await phase('Clasificación', 'TABLE', 1);
+  const knockout = await phase('Final', 'ELIMINATION', 2);
+  const destination = await post(`/api/phases/${knockout.id}/groups`, { name: 'Finalistas' });
+  const groups: { id: number }[] = [], pairs: { id: number }[][] = [];
+  for (const name of ['A', 'B', 'C']) {
+    const group = await post(`/api/phases/${table.id}/groups`, { name });
+    groups.push(group);
+    const pair = [];
+    for (const suffix of ['1', '2']) {
+      const team = await post('/api/teams', { tournamentId: tournament.id, name: `${name}${suffix}` });
+      pair.push(team);
+      await post(`/api/phases/${table.id}/memberships`, { groupId: group.id, teamId: team.id });
+      await post(`/api/phases/${knockout.id}/memberships`, { groupId: destination.id, teamId: team.id });
+    }
+    pairs.push(pair);
+  }
+  const participants = Object.fromEntries(['teamA', 'teamB', 'lineTeam'].map((role, index) => [role, {
+    kind: 'GROUP_POSITION', sourcePhaseId: table.id, sourceGroupId: groups[index]!.id, position: 1,
+  }]));
+  const date = '2026-11-15';
+  const schedule = { phaseId: knockout.id, groupId: destination.id, date, jornada: 'MORNING', court: 2, sortOrder: 1, participants };
+  const final = await post('/api/matches', schedule);
+  const publicFinal = async () => {
+    const result = await publicJson(`/api/matches?phaseId=${knockout.id}`);
+    assert.equal(result.response.status, 200);
+    return result.body.find(({ id }: { id: number }) => id === final.id);
+  };
+  const positions = `/api/phases/${table.id}/positions`;
+  assert.equal((await post(`${positions}/confirm`, {}, 409)).error.includes('incompleto'), true);
+  await post(`/api/matches/${final.id}/start`, {}, 409);
+  const invalid = { ...schedule, participants: { ...participants, teamA: { ...participants.teamA, position: 3 } } };
+  const invalidResult = await json('/api/matches', { method: 'POST', body: JSON.stringify(invalid) });
+  assert.equal(invalidResult.response.status, 409);
+
+  const sources = [];
+  for (const [index, group] of groups.entries()) {
+    const match = await post('/api/matches', {
+      phaseId: table.id, groupId: group.id, date: '2026-11-14', jornada: 'MORNING', court: index + 1,
+      teamAId: pairs[index]![0]!.id, teamBId: pairs[index]![1]!.id, lineTeamId: pairs[(index + 1) % 3]![0]!.id,
+    });
+    sources.push(match);
+    await post(`/api/matches/${match.id}/start`, {}, 200);
+    await post(`/api/matches/${match.id}/finish`, {}, 200);
+    const result = await json(`/api/matches/${match.id}/result`, { method: 'PATCH', body: JSON.stringify({ scoreA: 1, scoreB: 0 }) });
+    assert.equal(result.response.status, 200);
+  }
+  // A tied source group must fail through the routed API, without partial assignments.
+  const resultUrl = `/api/matches/${sources[0].id}/result`;
+  await json(resultUrl, { method: 'PATCH', body: JSON.stringify({ scoreA: 0, scoreB: 0 }) });
+  assert.match((await post(`${positions}/confirm`, {}, 409)).error, /empates sin resolver/);
+  assert.equal((await json(`/api/matches/${final.id}`)).body.teamAId, null);
+  await json(resultUrl, { method: 'PATCH', body: JSON.stringify({ scoreA: 1, scoreB: 0 }) });
+
+  const pending = (await publicFinal());
+  assert.equal(pending.participants.teamA.status, 'PENDING');
+  assert.equal(pending.participants.lineTeam, null);
+  assert.equal((await json(`/api/matches/${final.id}`)).body.participants.lineTeam.status, 'PENDING');
+  await json(`/api/line-visibility/${date}`, { method: 'PUT', body: JSON.stringify({ visible: true }) });
+  const publishedPending = (await publicFinal());
+  assert.deepEqual(publishedPending.participants.lineTeam.reference, participants.lineTeam);
+  assert.equal(publishedPending.participants.lineTeam.status, 'PENDING');
+  const confirmed = await post(`${positions}/confirm`, {}, 200);
+  assert.deepEqual(await post(`${positions}/confirm`, {}, 200), confirmed);
+  const resolved = (await publicFinal());
+  for (const [index, role] of ['teamA', 'teamB', 'lineTeam'].entries()) {
+    assert.equal(resolved[`${role}Id`], pairs[index]![0]!.id);
+    assert.equal(resolved.participants[role].status, 'CONFIRMED');
+    assert.deepEqual(resolved.participants[role].reference, participants[role]);
+  }
+  assert.deepEqual((await publicJson(`/api/matches?phaseId=${knockout.id}`)).body, [resolved]);
+  const persisted = new Database(path.join(tempDir, 'test.db'), { readonly: true });
+  try {
+    assert.equal((persisted.prepare('SELECT * FROM match_participant_references WHERE matchId=?').all(final.id)).length, 3);
+    assert.equal((persisted.prepare('SELECT teamAId FROM matches WHERE id=?').get(final.id) as { teamAId: number }).teamAId, pairs[0]![0]!.id);
+    assert.ok(persisted.prepare('SELECT * FROM phase_position_confirmations WHERE phaseId=?').get(table.id));
+  } finally { persisted.close(); }
+  assert.equal((await json(`/api/teams?tournamentId=${tournament.id}`)).body.length, 6);
+
+  await json(resultUrl, { method: 'PATCH', body: JSON.stringify({ scoreA: 0, scoreB: 2 }) });
+  assert.equal((await json(positions)).body.stale, true);
+  await post(`${positions}/confirm`, {}, 409);
+  assert.equal((await publicFinal()).teamAId, pairs[0]![0]!.id);
+  await post(`${positions}/reopen`, {}, 200);
+  await post(`/api/matches/${final.id}/start`, {}, 409);
+  await post(`${positions}/confirm`, {}, 200);
+  assert.equal((await publicFinal()).teamAId, pairs[0]![1]!.id);
+  await post(`/api/matches/${final.id}/start`, {}, 200);
+  await json(resultUrl, { method: 'PATCH', body: JSON.stringify({ scoreA: 3, scoreB: 0 }) });
+  await post(`${positions}/reopen`, {}, 200);
+  assert.match((await post(`${positions}/confirm`, {}, 409)).error, /iniciado o terminado/);
+  assert.equal((await json(`/api/matches/${final.id}`)).body.teamAId, pairs[0]![1]!.id);
+});
+
 test('guarda equipos separados por torneo', async () => {
   let result = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentType: 'FEMALE', name: ' Panteras ' }) });
   assert.equal(result.response.status, 201);
