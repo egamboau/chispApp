@@ -89,7 +89,7 @@ button:disabled { opacity: .35; cursor: not-allowed; }
 .empty { padding: 2rem; text-align: center; color: var(--muted); }
 footer { padding: 1rem; color: var(--muted); text-align: center; font-size: .8rem; }
 @media (max-width: 900px) {
-  main { grid-template-columns: 1fr; padding: 1rem; }
+  main, .management-layout { grid-template-columns: 1fr; padding: 1rem; }
   .form-panel { position: static; }
   header { align-items: flex-start; flex-direction: column; }
   .list-heading { display: block; }
