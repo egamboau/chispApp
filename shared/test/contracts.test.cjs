@@ -85,6 +85,11 @@ test('validates match inputs, nullable public fields and scoring', () => {
     phaseName: 'Liga',
     groupName: 'General',
     lineVisible: 0,
+    participants: {
+      teamA: { reference: { kind: 'TEAM', teamId: 4 }, resolvedTeamId: 4, resolvedTeam: { id: 4, name: 'A' }, status: 'CONFIRMED' },
+      teamB: { reference: { kind: 'TEAM', teamId: 5 }, resolvedTeamId: 5, resolvedTeam: { id: 5, name: 'B' }, status: 'CONFIRMED' },
+      lineTeam: null,
+    },
   });
   assert.equal(response.lineVisible, false);
   assert.equal(response.lineTeam, null);
@@ -94,6 +99,27 @@ test('validates match inputs, nullable public fields and scoring', () => {
   assert.equal(contracts.NewScoringSchema.safeParse({ ...scoring, scoringTable: 'Torneo Regular' }).success, false);
   assert.equal(contracts.ScoringSchema.safeParse({ directGoals: 1, horquetas: 0, pepitas: 0, scoringTableId: 2 }).success, true);
   assert.equal(contracts.ScoringSchema.safeParse({ directGoals: 0, horquetas: 0, pepitas: 0 }).success, false);
+});
+
+test('validates participant scheduling and rejects malformed references', () => {
+  const participants = {
+    teamA: { kind: 'TEAM', teamId: '4' },
+    teamB: { kind: 'GROUP_POSITION', sourcePhaseId: '2', sourceGroupId: '3', position: '1' },
+    lineTeam: { kind: 'MATCH_WINNER', sourceMatchId: '7' },
+  };
+  const input = contracts.ParticipantMatchInputSchema.parse({
+    phaseId: '8', groupId: '9', date: '2026-10-16', jornada: 'MORNING', court: '1', participants,
+  });
+  assert.equal(input.sortOrder, null);
+  assert.equal(input.participants.teamB.position, 1);
+  for (const reference of [
+    { kind: 'TEAM', teamId: 0 },
+    { kind: 'GROUP_POSITION', sourcePhaseId: 2, sourceGroupId: 3, position: 0 },
+    { kind: 'MATCH_WINNER', sourceMatchId: 7, teamId: 4 },
+    { kind: 'UNKNOWN' },
+  ]) assert.equal(contracts.MatchParticipantSchema.safeParse(reference).success, false);
+  assert.equal(contracts.MatchParticipantsSchema.safeParse({ ...participants, lineTeam: null }).success, false);
+  assert.equal(contracts.MatchParticipantResponseSchema.safeParse(participants.teamA).success, false);
 });
 
 test('transforms tournament responses and defaults phase inputs', () => {

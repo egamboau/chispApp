@@ -1,5 +1,6 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { MatchResponseSchema, ParticipantMatchInputSchema, PhasePositionsResponseSchema } from '@jupas/shared';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -70,6 +71,9 @@ test('issue 41: previsualiza y confirma ambas pentagonales con trazabilidad e id
     const f = completedTable(t, 5), match = f.service.saveParticipantMatch(f.input());
     const before = f.service.getMatchParticipants(match.id)!;
     const preview = f.details.previewPositions(f.table.id)!;
+    const { snapshot, ...publicPreview } = preview;
+    assert.deepEqual(PhasePositionsResponseSchema.parse(publicPreview), publicPreview);
+    assert.equal(PhasePositionsResponseSchema.safeParse(preview).success, false);
     assert.equal(preview.canConfirm, true);
     assert.equal(preview.confirmedAt, null);
     assert.deepEqual(Object.fromEntries(preview.assignments.map(item => [item.role, item.teamId])), {
@@ -359,8 +363,10 @@ test('issue 42: CRUD HTTP expone los tres placeholders, confirmación y bloqueos
         return { status, body: result };
     };
     const input = f.input(), teamCount = f.db.getAllTeams().length;
+    assert.deepEqual(ParticipantMatchInputSchema.parse(input), input);
     const created = await call(controller.insertMatch, input);
     assert.equal(created.status, 201);
+    MatchResponseSchema.parse(created.body);
     const id = created.body.id;
     for (const role of ['teamA', 'teamB', 'lineTeam'] as const) {
         assert.equal(created.body[`${role}Id`], null);
@@ -382,16 +388,19 @@ test('issue 42: CRUD HTTP expone los tres placeholders, confirmación y bloqueos
     assert.equal(invalidReference.status, 409);
     assert.match(invalidReference.body.error, /Referencia/);
     const hidden = await call(controller.getMatch, {}, id, false);
+    MatchResponseSchema.parse(hidden.body);
     assert.equal(hidden.body.lineTeamId, null);
     assert.equal(hidden.body.participants.lineTeam, null);
     f.details.confirmPositions(f.table.id);
     const confirmed = (await call(controller.getMatch, {}, id)).body;
+    MatchResponseSchema.parse(confirmed);
     for (const role of ['teamA', 'teamB', 'lineTeam'] as const) {
         assert.deepEqual(confirmed.participants[role].reference, input.participants[role]);
         assert.equal(confirmed.participants[role].status, 'CONFIRMED');
         assert.deepEqual(confirmed.participants[role].resolvedTeam, { id: confirmed[`${role}Id`], name: confirmed[role] });
     }
     f.details.reopenPositions(f.table.id);
+    MatchResponseSchema.parse((await call(controller.getMatch, {}, id)).body);
     assert.equal((await call(controller.getMatch, {}, id)).body.participants.teamA.status, 'RESOLVED');
     assert.equal((await call(controller.insertScoring, { playerId: 1, directGoals: 1, horquetas: 0, pepitas: 0 }, id)).status, 409);
     f.details.confirmPositions(f.table.id);
