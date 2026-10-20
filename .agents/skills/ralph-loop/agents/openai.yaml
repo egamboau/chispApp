@@ -1,0 +1,3 @@
+interface:
+  display_name: "GitHub Ralph Loop"
+  short_description: "Implement GitHub issues with progress and commits"
