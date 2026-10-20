@@ -11,6 +11,11 @@ backend and legacy UI do not yet consume these schemas. In particular, the curre
 API still accepts legacy match/team inputs and scoring-table names; adopting the
 ID-based contracts requires a separate backend and UI change.
 
+Participant scheduling is already supported by the merged backend. Use
+`ParticipantMatchInputSchema` for that request body, including `phaseId`, `groupId`,
+schedule fields and all three participant references. `MatchInputSchema` remains
+the intended ID-based fixed-team migration contract.
+
 ## Conventions
 
 - Input schemas validate request bodies; IDs already supplied in a route are omitted
@@ -70,6 +75,9 @@ The request types are named `CreateGroup` and `UpdateGroup`.
 | Contract | Purpose |
 | --- | --- |
 | `MatchStatusSchema` | `SCHEDULED`, `LIVE` or `FINISHED`. |
+| `MatchParticipantSchema`, `MatchParticipantsSchema` | Request references to a fixed team, group position or match winner; all three roles are required. |
+| `ParticipantMatchInputSchema` | Current participant scheduling request; omitted, null or blank sort order becomes null. |
+| `MatchParticipantResponseSchema`, `MatchParticipantDetailsSchema`, `MatchParticipantsResponseSchema` | Numeric response references, resolution details and all three roles; hidden line details are null. |
 | `MatchInputSchema` | Match scheduling body: `groupId`, three team IDs, date, jornada, court and optional nullable sort order. Phase, category and team names are derived from IDs. |
 | `InsertMatchSchema`, `UpdateMatchSchema` | Aliases of `MatchInputSchema` for create and full scheduling updates. |
 | `MatchFiltersSchema` | Optional phase, group, category, status and date query filters. |
@@ -82,7 +90,7 @@ The request types are named `CreateGroup` and `UpdateGroup`.
 | `NewScoringSchema` | Creates player scoring using `playerId`, required `scoringTableId` and three scoring counts; match ID comes from the route. At least one count must be positive. |
 | `ScoringSchema` | Replaces scoring counts; optional `scoringTableId` changes the table. Match/player IDs come from the route. At least one count must be positive. |
 | `MatchScoringResponseSchema` | Player's scoring for a match, including table name, total, team ID and jersey number. |
-| `MatchResponseSchema` | Match details with display names, IDs, scores, cards, timestamps and visibility. Hidden lines and undefined official order use `null`. |
+| `MatchResponseSchema` | Match details with display names, IDs, scores, cards, timestamps, visibility and participant details. Pending team IDs, hidden lines and undefined official order use `null`. |
 
 These schemas validate payload shape. Entity existence, membership, distinct teams,
 authorization and allowed match-state transitions remain server responsibilities.
@@ -120,6 +128,7 @@ than being assumed from the parent tournament.
 | Contract | Purpose |
 | --- | --- |
 | `MembershipInputSchema` | Assigns `teamId` to `groupId`; phase ID comes from the route. |
+| `PhasePositionsResponseSchema` | Preview, confirm and reopen results: phase ID, confirmation timestamp, stale/canConfirm flags, errors and proposed assignments; excludes the internal snapshot. |
 | `UpdateMembershipInputSchema` | Moves an existing membership to another group; phase/team IDs come from the route. |
 | `MembershipResponseSchema` | Phase, group and team IDs; list responses may include group/team names. |
 | `ClassificationRuleInputSchema` | Creates/updates a destination label for explicit positions or an inclusive range. Parsing deduplicates/sorts positions and computes range bounds. |
