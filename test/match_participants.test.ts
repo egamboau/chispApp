@@ -124,8 +124,14 @@ test('advierte correcciones, conserva asignaciones y exige reapertura para recon
     assert.throws(() => f.details.confirmPositions(f.table.id));
     f.details.reopenPositions(f.table.id);
     assert.equal(f.service.changeStatus(match.id, 'SCHEDULED', 'LIVE'), undefined);
+    const pending = f.service.getMatch(match.id, true)!;
+    assert.equal(pending.teamA, 'Primera fase · 1.º A');
+    assert.equal(pending.teamB, 'Primera fase · 3.º A');
+    assert.equal(pending.lineTeam, 'Primera fase · 3.º B');
+    assert.deepEqual(f.service.getMatchParticipants(match.id), before);
     f.details.confirmPositions(f.table.id);
     assert.equal(f.service.getMatch(match.id, true)?.teamAId, f.teams[1]!.id);
+    assert.equal(f.service.getMatch(match.id, true)?.teamA, f.teams[1]!.name);
     assert.equal(f.service.getMatch(match.id, true)?.teamBId, f.teams[2]!.id);
     assert.equal(f.details.previewPositions(f.table.id)!.stale, false);
 });
