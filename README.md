@@ -122,7 +122,10 @@ administrativos son `GET /api/admin/phases/:id/positions`,
 
 Las correcciones posteriores muestran una advertencia en la previsualización y no
 modifican equipos asignados. Usa **Reabrir asignaciones**, revisa y confirma otra
-vez. Reabrir conserva los equipos anteriores y bloquea el inicio de los partidos
+vez. Reabrir conserva los equipos anteriores internamente para comparar cambios,
+pero los partidos programados vuelven a mostrar sus referencias de posición como
+pendientes hasta reconfirmar. Los partidos iniciados o terminados conservan sus
+nombres. Reabrir bloquea el inicio de los partidos
 pendientes que dependen de esa fase hasta reconfirmar. Si la corrección cambiaría
 un participante de un partido iniciado o terminado, se rechaza toda la confirmación;
 esos encuentros conservan sus equipos. Las referencias `MATCH_WINNER` quedan fuera

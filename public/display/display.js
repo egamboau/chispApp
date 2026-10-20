@@ -14,7 +14,7 @@ const byJornada = (dayMatches) => ['MORNING', 'AFTERNOON'].flatMap((jornada) => 
 function participantName(match, role) {
   if (role === 'lineTeam' && !match.lineVisible) return 'Por publicar';
   const participant = match.participants?.[role];
-  if (participant?.status === 'PENDING') {
+  if (participant?.status === 'PENDING' || (match.status === 'SCHEDULED' && participant?.reference?.kind === 'GROUP_POSITION' && participant.status !== 'CONFIRMED')) {
     return `<span class="participant-pending">${escapeHtml(match[role])} <small>Por definir</small></span>`;
   }
   return escapeHtml(participant?.resolvedTeam?.name ?? match[role]);

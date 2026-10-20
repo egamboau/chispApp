@@ -65,7 +65,7 @@ test('placeholders públicos se distinguen y se reemplazan sin alterar programac
 
   vm.runInContext(`
     Object.entries(matches[0].participants).forEach(([role, participant], index) => {
-      participant.status = index ? 'CONFIRMED' : 'RESOLVED';
+      participant.status = 'CONFIRMED';
       participant.resolvedTeamId = index + 1;
       participant.resolvedTeam = { id: index + 1, name: ['Águilas', 'Tigres', 'Halcones'][index] };
     });
@@ -93,6 +93,12 @@ test('participantes escapan nombres y mantienen la línea oculta', () => {
   assert.equal(render({ teamA: '<Equipo>' }, 'teamA'), '&lt;Equipo&gt;');
   assert.match(render({ teamA: '<1.º A>', participants: { teamA: { status: 'PENDING' } } }, 'teamA'), /&lt;1\.º A&gt;.*Por definir/);
   assert.equal(render({ teamA: 'Anterior', participants: { teamA: { status: 'CONFIRMED', resolvedTeam: { name: '<Real>' } } } }, 'teamA'), '&lt;Real&gt;');
+  const reopened = { teamA: 'Primera fase · 1.º A', status: 'SCHEDULED', participants: { teamA: {
+    reference: { kind: 'GROUP_POSITION' }, status: 'RESOLVED', resolvedTeam: { name: 'Anterior' },
+  } } };
+  assert.match(render(reopened, 'teamA'), /Primera fase · 1\.º A.*Por definir/);
+  assert.doesNotMatch(render(reopened, 'teamA'), /Anterior/);
+  assert.equal(render({ ...reopened, status: 'LIVE' }, 'teamA'), 'Anterior');
   for (const status of ['PENDING', 'CONFIRMED']) {
     assert.equal(render({ lineVisible: 0, lineTeam: 'Secreto', participants: { lineTeam: { status, resolvedTeam: { name: 'Secreto' } } } }, 'lineTeam'), 'Por publicar');
   }

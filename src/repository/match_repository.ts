@@ -97,6 +97,7 @@ export class MatchRepository {
 
     private withParticipants(match: Match): Match {
         const stored = this.getMatchParticipants(match.id)!
+        const displayed = { ...match }
         const participants = {} as MatchParticipantDetails
         for (const role of ['teamA', 'teamB', 'lineTeam'] as const) {
             const { reference, resolvedTeamId } = stored[role]
@@ -107,8 +108,13 @@ export class MatchRepository {
                 resolvedTeam: resolvedTeamId === null ? null : { id: resolvedTeamId, name: match[role]! },
                 status: resolvedTeamId === null ? 'PENDING' : confirmed ? 'CONFIRMED' : 'RESOLVED',
             }
+            if (match.status === 'SCHEDULED' && reference.kind === 'GROUP_POSITION' && !confirmed) {
+                const phase = this.dbConnection.fetchOneFromQuery<Phase>('SELECT * FROM phases WHERE id=?', reference.sourcePhaseId)!
+                const group = this.dbConnection.fetchOneFromQuery<Group>('SELECT * FROM groups_table WHERE id=?', reference.sourceGroupId)!
+                displayed[role] = `${phase.name} · ${reference.position}.º ${group.name}`
+            }
         }
-        return { ...match, participants }
+        return { ...displayed, participants }
     }
 
     saveParticipantMatch(match: MatchInput, participants: MatchParticipants, id?: number): Match {
