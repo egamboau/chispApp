@@ -7,7 +7,14 @@ description: Run a Ralph implementation loop for this project using a GitHub mil
 
 Repeat select → implement → verify → commit → push → report → mark ready to merge until the queue is complete or a stopping condition applies. GitHub issues hold requirements, progress, blockers, and handoff state; their assigned Projects show readiness for merge. Never close issues in this loop: merging PRs into main owns issue closure. Do not create local PRDs, task lists, progress logs, or loop-state files. Normal source, tests, and product documentation belong in the repository.
 
-This is an agent-driven loop in the current session, not a background scheduler or a shell loop launching Codex repeatedly. Resume from GitHub and git evidence after interruption.
+This is an agent-driven loop, not a background scheduler or a shell loop launching Codex repeatedly. Resume from GitHub and git evidence after interruption.
+
+## Start each run with empty context
+
+- On every invocation, including a resumed run, the invoking agent must start a new worker with `collaboration.spawn_agent` and `fork_turns: "none"`. Never reuse a previous worker or inherit the conversation history.
+- Give the worker only the skill's absolute path, the checkout path, and the user's requested scope and explicit constraints or authorizations needed for this run. Do not pass prior reasoning, findings, or a conversation summary; the worker must read this skill, repository instructions, GitHub issues/comments, and git state itself.
+- Tell the worker that it is the fresh Ralph run worker and must execute the remaining workflow directly without spawning another run worker. This startup section applies to the invoking agent only.
+- The invoking agent relays necessary user answers and steering, waits for the worker, and reports its result. If fresh-agent tools are unavailable, stop and report that requirement instead of running in the existing context.
 
 ## Resolve the run
 
