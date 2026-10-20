@@ -1,7 +1,30 @@
 import { z } from 'zod';
-import { CoercedIdSchema, IdSchema, NameSchema, TournamentTypeSchema } from './common';
+import { CoercedIdSchema, IdSchema, NameSchema, TimestampSchema, TournamentTypeSchema } from './common';
 import { GroupResponseSchema } from './groups';
 import { PhaseResponseSchema } from './phases';
+
+/** Public result of previewing, confirming or reopening phase positions; excludes the internal snapshot. */
+export const PhasePositionsResponseSchema = z.object({
+  phaseId: IdSchema,
+  confirmedAt: TimestampSchema.nullable(),
+  stale: z.boolean(),
+  canConfirm: z.boolean(),
+  errors: z.array(z.string()),
+  assignments: z.array(z.object({
+    matchId: IdSchema,
+    role: z.enum(['teamA', 'teamB', 'lineTeam']),
+    kind: z.literal('GROUP_POSITION'),
+    sourcePhaseId: IdSchema,
+    sourceGroupId: IdSchema,
+    position: IdSchema,
+    sourceMatchId: z.null(),
+    resolvedTeamId: IdSchema.nullable(),
+    teamId: IdSchema.nullable(),
+    teamName: NameSchema.nullable(),
+  }).strict()),
+}).strict();
+
+export type PhasePositionsResponse = z.infer<typeof PhasePositionsResponseSchema>;
 
 /** Assigns a team ID to a group ID; phase ID comes from the route. */
 export const MembershipInputSchema = z.object({

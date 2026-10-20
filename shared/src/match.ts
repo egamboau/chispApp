@@ -12,6 +12,57 @@ import {
 /** Match lifecycle state: scheduled, live or finished. */
 export const MatchStatusSchema = z.enum(['SCHEDULED', 'LIVE', 'FINISHED']);
 
+/** Fixed team, source group position or source match winner. */
+export const MatchParticipantSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('TEAM'), teamId: CoercedIdSchema }).strict(),
+  z.object({ kind: z.literal('GROUP_POSITION'), sourcePhaseId: CoercedIdSchema, sourceGroupId: CoercedIdSchema, position: CoercedIdSchema }).strict(),
+  z.object({ kind: z.literal('MATCH_WINNER'), sourceMatchId: CoercedIdSchema }).strict(),
+]);
+
+/** All three scheduling roles are required. */
+export const MatchParticipantsSchema = z.object({
+  teamA: MatchParticipantSchema,
+  teamB: MatchParticipantSchema,
+  lineTeam: MatchParticipantSchema,
+}).strict();
+
+/** Scheduling with references, including teams that are not yet known. */
+export const ParticipantMatchInputSchema = z.object({
+  phaseId: CoercedIdSchema,
+  groupId: CoercedIdSchema,
+  date: DateSchema,
+  jornada: MatchTimeSchema,
+  court: CoercedIdSchema,
+  sortOrder: z.preprocess(value => value === '' || value == null ? null : value, CoercedIdSchema.nullable()),
+  participants: MatchParticipantsSchema,
+}).strict();
+
+/** Response references require numeric IDs without request coercion. */
+export const MatchParticipantResponseSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('TEAM'), teamId: IdSchema }).strict(),
+  z.object({ kind: z.literal('GROUP_POSITION'), sourcePhaseId: IdSchema, sourceGroupId: IdSchema, position: IdSchema }).strict(),
+  z.object({ kind: z.literal('MATCH_WINNER'), sourceMatchId: IdSchema }).strict(),
+]);
+
+/** Resolution state and original reference; hidden line details are null. */
+export const MatchParticipantDetailsSchema = z.object({
+  reference: MatchParticipantResponseSchema,
+  resolvedTeamId: IdSchema.nullable(),
+  resolvedTeam: z.object({ id: IdSchema, name: NameSchema }).strict().nullable(),
+  status: z.enum(['PENDING', 'RESOLVED', 'CONFIRMED']),
+}).strict();
+
+export const MatchParticipantsResponseSchema = z.object({
+  teamA: MatchParticipantDetailsSchema,
+  teamB: MatchParticipantDetailsSchema,
+  lineTeam: MatchParticipantDetailsSchema.nullable(),
+}).strict();
+
+export type MatchParticipant = z.infer<typeof MatchParticipantSchema>;
+export type MatchParticipants = z.infer<typeof MatchParticipantsSchema>;
+export type ParticipantMatchInput = z.infer<typeof ParticipantMatchInputSchema>;
+export type MatchParticipantDetails = z.infer<typeof MatchParticipantsResponseSchema>;
+
 const matchInputFields = {
   groupId: CoercedIdSchema,
   teamAId: CoercedIdSchema,
@@ -128,8 +179,8 @@ export const MatchResponseSchema = z.object({
   updatedAt: TimestampSchema,
   phaseId: IdSchema,
   groupId: IdSchema,
-  teamAId: IdSchema,
-  teamBId: IdSchema,
+  teamAId: IdSchema.nullable(),
+  teamBId: IdSchema.nullable(),
   lineTeamId: IdSchema.nullable(),
   yellowCardsA: z.number().int().nonnegative(),
   redCardsA: z.number().int().nonnegative(),
@@ -139,6 +190,7 @@ export const MatchResponseSchema = z.object({
   phaseName: NameSchema,
   groupName: NameSchema,
   lineVisible: z.union([z.boolean(), z.literal(0), z.literal(1)]).transform(Boolean),
+  participants: MatchParticipantsResponseSchema,
 }).strict();
 
 /** List of match responses. */
