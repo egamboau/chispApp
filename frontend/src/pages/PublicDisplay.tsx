@@ -3,7 +3,7 @@ import { loadDisplay, subscribeDisplay } from '../api/display'
 import type { DisplayData, DisplaySelection } from '../api/display'
 import { Layout } from '../components/Layout'
 import { MatchList } from '../components/MatchList'
-import { Calendar, calendarMatches } from './Calendar'
+import { Calendar, calendarMatches, resultMatches } from './Calendar'
 import type { CalendarFilters } from './Calendar'
 import { Scoring, Standings } from './Rankings'
 import styles from './PublicDisplay.module.css'
@@ -44,7 +44,7 @@ export function PublicDisplay() {
 
   const data = result?.selection === selection ? result.data : undefined
   const calendar = data ? calendarMatches(data.matches, filters) : []
-  const results = data?.matches.filter(match => match.status === 'FINISHED' && (!resultsDate || match.date === resultsDate)) ?? []
+  const results = data ? resultMatches(data.matches, resultsDate) : []
   const navigation = <>
     <div className={styles.selectors}>
       <label>Torneo<select aria-label="Torneo activo" value={data?.tournament?.id ?? ''} disabled={!data?.tournaments.length} onChange={event => setSelection({ tournamentId: Number(event.target.value) })}>{data?.tournaments.map(tournament => <option key={tournament.id} value={tournament.id}>{tournament.name}</option>)}</select></label>
