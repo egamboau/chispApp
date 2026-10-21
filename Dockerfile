@@ -25,6 +25,7 @@ WORKDIR /app
 ENV NODE_ENV=production PORT=3000 DATABASE_PATH=/data/tournament.db
 
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/backend/node_modules ./backend/node_modules
 COPY --from=build --chown=node:node /app/shared/package.json ./shared/package.json
 COPY --from=build --chown=node:node /app/shared/dist ./shared/dist
 COPY --from=build --chown=node:node /app/backend/dist ./backend/dist
