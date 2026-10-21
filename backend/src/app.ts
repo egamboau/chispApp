@@ -60,7 +60,7 @@ class App {
         this.initRoutes()
     }
 
-    /** Registers API routes and the React landing/display shells; errors use the shared handler. */
+    /** Registers API routes; errors use the shared handler. */
     private initRoutes() {
 
         const rootRoute = new RootRoute()
@@ -99,11 +99,6 @@ class App {
         const matchService = new MatchService(new MatchRepository(this.dbConnection), phaseService, groupService, teamService, tournamentService, new MatchPlayerScoringRepository(this.dbConnection))
         this.app.use(new MatchRoute(new MatchController(matchService, playerService)).router)
 
-        this.app.get(/^\/react(?:\/.*)?$/, (_req, res, next) => {
-            res.sendFile(path.join(this.frontendDistPath, 'index.html'), error => {
-                if (error) next(error)
-            })
-        })
         this.app.use('/api', (_req, res) => res.status(404).json({ error: 'Ruta no encontrada.' }))
         const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
             console.error(JSON.stringify({
@@ -164,7 +159,7 @@ class App {
             }
             next()
         })
-        this.app.use('/react', express.static(this.frontendDistPath, { setHeaders: (res) => res.set('Cache-Control', 'no-store') }));
+        this.app.use('/display', express.static(this.frontendDistPath, { index: false, redirect: false, setHeaders: (res) => res.set('Cache-Control', 'no-store') }));
         this.app.get(/^\/display(?:\/.*)?$/, (_req, res, next) => {
             res.set('Cache-Control', 'no-store')
             res.sendFile(path.join(this.frontendDistPath, 'index.html'), error => {

@@ -1,7 +1,7 @@
 # React frontend
 
-The public tournament display is served at `/display/`; the landing page remains at `/react/`.
-Built assets stay under `/react/`; the Vite dev server proxies `/api` to port 3000.
+The public tournament display and built assets are served at `/display/`.
+The Vite dev server uses the same path and proxies `/api` to port 3000.
 Build the shared package before development (`npm run dev:frontend` does this).
 
 ## HTTP and loading state
