@@ -41,3 +41,20 @@ and prevents stale responses from replacing the current result.
 
 Run `npm test --workspace=chispapp-frontend` for HTTP response and transformation
 tests. The root `npm test` includes these tests.
+
+## Presentation components
+
+`Layout` supplies the public display shell and skip link; pass `Navigation` as its
+`navigation` prop and page content as children. Navigation accepts `{ href, label }`
+items plus `currentHref` and uses ordinary links with `aria-current`.
+
+`MatchCard` and `Scoreboard` accept a parsed shared `MatchResponse`. `TeamLabel`
+accepts the same match plus `teamA`, `teamB`, or `lineTeam` as `role`; it preserves
+pending group assignments and hides unpublished line assignments. React escapes
+all team text. `MatchList` accepts either `loading: true` or a `matches` array;
+loading and empty states announce themselves with `role="status"`.
+
+The shared CSS Module preserves the public display palette and uses flexible grids
+with tablet (900px) and mobile (520px) breakpoints. The React landing page uses the
+shell and empty list; fetching and migrating tournament views remain separate work.
+Run the frontend tests for server-rendered component behavior and privacy checks.
