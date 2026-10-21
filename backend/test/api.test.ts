@@ -82,8 +82,7 @@ test.before(async () => {
   legacyDb.close();
   const frontendDistPath = path.join(tempDir, 'frontend');
   fs.mkdirSync(frontendDistPath);
-  fs.writeFileSync(path.join(frontendDistPath, 'index.html'), '<main>Public display</main>');
-  fs.writeFileSync(path.join(frontendDistPath, 'admin.html'), '<main>React admin</main>');
+  fs.writeFileSync(path.join(frontendDistPath, 'index.html'), '<main>React shell</main>');
   fs.mkdirSync(path.join(frontendDistPath, 'assets'));
   fs.writeFileSync(path.join(frontendDistPath, 'assets', 'display-test.js'), 'export const display = true;');
   const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'production', PORT: String(port), DATABASE_PATH: path.join(tempDir, 'test.db'), FRONTEND_DIST_PATH: frontendDistPath, CF_ACCESS_TEAM_DOMAIN: teamDomain, CF_ACCESS_AUD: audience };
@@ -152,18 +151,18 @@ test('sirve las páginas administrativas y la pantalla pública', async () => {
     const response = await fetch(`${base}${url}`, auth);
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('cache-control'), 'no-store');
-    assert.equal(await response.text(), '<main>React admin</main>');
+    assert.equal(await response.text(), '<main>React shell</main>');
   }
   assert.equal(display.status, 200);
-  assert.equal(await display.text(), '<main>Public display</main>');
+  assert.equal(await display.text(), '<main>React shell</main>');
   assert.equal(asset.status, 200);
   assert.match(asset.headers.get('content-type') ?? '', /javascript/);
   assert.equal(asset.headers.get('cache-control'), 'no-store');
   assert.match(await asset.text(), /export const display = true/);
-  for (const url of ['/display', '/display/index.html', '/display/%61dmin.html']) {
-    assert.equal(await (await fetch(`${base}${url}`)).text(), '<main>Public display</main>');
+  for (const url of ['/display', '/display/index.html', '/display/admin.html', '/display/%61dmin.html']) {
+    assert.equal(await (await fetch(`${base}${url}`)).text(), '<main>React shell</main>');
   }
-  for (const url of ['/ADMIN', '/ADMIN/teams.html', '/display/admin.html', '/react', '/react/', '/react/deep/link', '/react/display-test.js']) {
+  for (const url of ['/ADMIN', '/ADMIN/teams.html', '/admin.html', '/react', '/react/', '/react/deep/link', '/react/display-test.js']) {
     assert.equal((await fetch(`${base}${url}`)).status, 404);
   }
   assert.equal(root.headers.get('location'), '/display');

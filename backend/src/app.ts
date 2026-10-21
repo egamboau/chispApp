@@ -112,7 +112,7 @@ class App {
 
     }
 
-    /** Applies request logging, API/admin access boundaries and static assets; preserved display/admin URLs serve their React shells. */
+    /** Applies request logging, API/admin access boundaries and static assets; preserved display/admin URLs share one React shell. */
     private initMiddleware() {
         this.app.use((req, res, next) => {
             if (!req.path.startsWith('/api')){
@@ -159,7 +159,6 @@ class App {
             }
             next()
         })
-        this.app.get('/display/admin.html', (_req, res) => res.sendStatus(404));
         this.app.use('/display/assets', express.static(path.join(this.frontendDistPath, 'assets'), { index: false, redirect: false, setHeaders: (res) => res.set('Cache-Control', 'no-store') }));
         this.app.get(/^\/display(?:\/.*)?$/, (_req, res, next) => {
             res.set('Cache-Control', 'no-store')
@@ -170,7 +169,7 @@ class App {
         // Match the access middleware's case-sensitive administrative paths.
         this.app.get(/^\/admin(?:\/(?:index|teams|calendar|scoring)\.html|\/)?$/, (_req, res, next) => {
             res.set('Cache-Control', 'no-store')
-            res.sendFile(path.join(this.frontendDistPath, 'admin.html'), error => {
+            res.sendFile(path.join(this.frontendDistPath, 'index.html'), error => {
                 if (error) next(error)
             })
         });
