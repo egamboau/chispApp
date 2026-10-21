@@ -58,7 +58,7 @@ test('list announces loading and empty states and renders supplied matches', () 
 })
 
 test('layout has a skip target and navigation identifies only the current link', () => {
-  const navigation = createElement(Navigation, { currentHref: '/react/', items: [{ href: '/react/', label: 'Inicio' }, { href: '/display/', label: 'Torneo' }] })
+  const navigation = createElement(Navigation, { currentHref: '/display/', items: [{ href: '/display/', label: 'Torneo' }, { href: '/admin/', label: 'Administración' }] })
   const html = renderToStaticMarkup(createElement(Layout, { navigation, children: 'Contenido' }))
   assert.match(html, /href="#main-content"/)
   assert.match(html, /<main id="main-content" tabindex="-1"/)
