@@ -74,3 +74,22 @@ test('unassigned lines are distinct from unpublished assignments', () => {
     assert.doesNotMatch(html, /Por publicar/)
   }
 })
+
+test('one React root chooses admin only for preserved admin URLs and lazy-loads its styles', async t => {
+  const { App } = await import('../src/components/App.tsx')
+  const { Suspense } = await import('react')
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'location')
+  const location = { pathname: '/display/' }
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: location })
+  t.after(() => { if (original) Object.defineProperty(globalThis, 'location', original); else Reflect.deleteProperty(globalThis, 'location') })
+  for (const pathname of ['/admin', '/admin/', '/admin/index.html', '/admin/teams.html', '/admin/calendar.html', '/admin/scoring.html']) {
+    location.pathname = pathname
+    const app = App()
+    assert.equal(app.type, Suspense, pathname)
+    assert.match(renderToStaticMarkup(app.props.fallback), /role="status".*Cargando administración/)
+  }
+  for (const pathname of ['/display', '/display/', '/display/admin.html', '/administrator']) {
+    location.pathname = pathname
+    assert.notEqual(App().type, Suspense, pathname)
+  }
+})

@@ -65,12 +65,13 @@ Run the frontend tests for server-rendered component behavior and privacy checks
 
 ## Administration
 
-Production serves the React admin entry at `/admin/`, `/admin/teams.html`,
+The single `index.html` / `main.tsx` entry selects public or administrative React
+components from the current URL. Administration is served at `/admin/`, `/admin/teams.html`,
 `/admin/calendar.html` and `/admin/scoring.html`; existing links remain valid.
 Cloudflare Access checks run before serving these pages and `/api/admin` requests.
-The public `/display` shell remains separate; production blocks the public
-`/display/admin.html` alias. To preview administration, build both entries with
-the root build and open `/admin/` on the backend. The Vite dev server remains
+Administrative code and CSS load on demand only for `/admin` routes; `/display`
+renders the public display. To preview administration, run the root build and open
+`/admin/` on the backend. The Vite dev server remains
 the public display development entry.
 
 Admin forms parse shared input schemas and validated API responses. Mutations use
