@@ -38,6 +38,7 @@ export function Calendar({ matches, results = false, empty }: { matches: readonl
     {(results ? day : ['MORNING', 'AFTERNOON'].flatMap(jornada => day.filter(match => match.jornada === jornada))).map(match => <article key={match.id} className={`${styles.match} ${match.tournamentType === 'MALE' ? styles.male : styles.female}`}>
       <span className={styles.jornada} role="img" aria-label={match.jornada === 'MORNING' ? 'Mañana' : 'Tarde'}>{match.jornada === 'MORNING' ? '☀️' : '🌇'}</span>
       <div><span className={styles.badge}>{match.tournamentType === 'MALE' ? 'Masculino' : 'Femenino'}</span> <strong>CANCHA {match.court}</strong>
+        <p>{match.groupName}</p>
         <h3><TeamLabel match={match} role="teamA" /> {match.status === 'SCHEDULED' ? <small>vs</small> : <b aria-label={`Marcador ${match.scoreA} a ${match.scoreB}`}>{match.scoreA} – {match.scoreB}</b>} <TeamLabel match={match} role="teamB" /></h3>
         <p>Línea: <TeamLabel match={match} role="lineTeam" /></p>
       </div>

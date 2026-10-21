@@ -111,3 +111,16 @@ footer { padding: 1rem; color: var(--muted); text-align: center; font-size: .8re
 .participant-fields { display: grid; gap: .9rem; }
 .participant-fields fieldset { min-width: 0; border: 1px solid #dce3ea; border-radius: 9px; display: grid; gap: .6rem; }
 .participant-fields [hidden] { display: none; }
+
+.admin-workspace { border: 0; margin: 0; padding: 0; min-width: 0; }
+.admin-selectors, .admin-feedback { max-width: 1200px; margin: auto; padding: 1rem; }
+.admin-selectors { border: 0; display: flex; gap: 1rem; }
+.admin-selectors label { flex: 1; min-width: 0; }
+.compact-form { display: block; }
+.compact-form > fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; border: 0; margin: 0; padding: 0; min-width: 0; }
+.compact-form button, .compact-form p { grid-column: 1 / -1; }
+.config-row { flex-wrap: wrap; }
+.config-row span { flex: 1; min-width: 120px; }
+input, select { min-width: 0; }
+.unregistered { opacity: .6; }
+@media (max-width: 520px) { .compact-form > fieldset { grid-template-columns: 1fr; } .admin-selectors { flex-direction: column; } }

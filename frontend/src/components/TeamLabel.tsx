@@ -8,6 +8,7 @@ export interface TeamLabelProps {
 
 /** Displays a resolved or pending participant; unpublished line assignments never render. */
 export function TeamLabel({ match, role }: TeamLabelProps) {
+  if (role === 'lineTeam' && (match.lineAssigned === false || (match.lineVisible && !match.lineTeam && !match.participants.lineTeam))) return <>Sin asignar</>
   if (role === 'lineTeam' && !match.lineVisible) return <>Por publicar</>
   const participant = match.participants[role]
   const pending = participant?.status === 'PENDING' ||
