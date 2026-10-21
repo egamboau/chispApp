@@ -14,6 +14,7 @@ This is an agent-driven loop, not a background scheduler or a shell loop launchi
 - On every invocation, including a resumed run, the invoking agent must start a new worker with `collaboration.spawn_agent` and `fork_turns: "none"`. Never reuse a previous worker or inherit the conversation history.
 - Give the worker only the skill's absolute path, the checkout path, and the user's requested scope and explicit constraints or authorizations needed for this run. Do not pass prior reasoning, findings, or a conversation summary; the worker must read this skill, repository instructions, GitHub issues/comments, the local progress file when present, and git state itself.
 - Tell the worker that it is the fresh Ralph run worker and must execute the remaining workflow directly without spawning another run worker. This startup section applies to the invoking agent only.
+- Include this explicit run constraint in the worker's startup message: apply Ponytail (full) and Caveman when their instructions are known or their skills/plugins are available; read available skill instructions before applying them. Check each independently. If either is unknown or unavailable, continue the normal Ralph workflow without it; do not install anything or block the run.
 - The invoking agent relays necessary user answers and steering, waits for the worker, and reports its result. If fresh-agent tools are unavailable, stop and report that requirement instead of running in the existing context.
 
 ## Resolve the run
