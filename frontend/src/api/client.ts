@@ -3,6 +3,7 @@ import { ApiErrorResponseSchema } from '@jupas/shared'
 export class ApiError extends Error {
   readonly status: number
 
+  /** Records a displayable failure, HTTP status (0 without a response), and optional cause. */
   constructor(message: string, status = 0, options?: ErrorOptions) {
     super(message, options)
     this.name = 'ApiError'
@@ -13,6 +14,10 @@ export class ApiError extends Error {
 export type ResponseParser<T> = { parse(value: unknown): T }
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown }
 
+/** Sends a same-origin /api/ request, serializing a supplied body as JSON.
+ * With a schema, parses and validates the JSON response; otherwise returns void.
+ * Throws ApiError for invalid paths, network/HTTP failures, or invalid responses;
+ * cancellation errors pass through when the supplied signal is aborted. */
 export function request<T>(path: string, schema: ResponseParser<T>, options?: RequestOptions): Promise<T>
 export function request(path: string, schema?: undefined, options?: RequestOptions): Promise<void>
 export async function request<T>(
