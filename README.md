@@ -35,7 +35,7 @@ cd backend
 npm run dev
 ```
 
-El frontend React en migración se ejecuta por separado y todavía no sustituye la UI vanilla. Vite publica la vista previa en <http://localhost:5173/react/> y envía `/api` a Express en el puerto 3000:
+El frontend React sustituye la pantalla pública vanilla en `/display/`. En desarrollo, Vite lo sirve en <http://localhost:5173/display/> y envía `/api` a Express en el puerto 3000:
 
 ```bash
 cd frontend
@@ -43,7 +43,7 @@ npm ci
 npm run dev
 ```
 
-El build de producción queda disponible en `/react/`. Express devuelve la entrada React para rutas anidadas como `/react/deep/link`, mientras `/display` y `/admin` continúan sirviendo la interfaz actual.
+El build de producción y sus recursos quedan disponibles en `/display/`. La interfaz administrativa continúa en `/admin`.
 
 ## Docker Compose
 
@@ -102,7 +102,7 @@ En producción no se publica el puerto 3000. El servicio `cloudflared` debe pert
 | `PORT` | `3000` | Puerto HTTP. |
 | `DATABASE_PATH` | `./data/tournament.db` local, `/data/tournament.db` en Docker | Archivo SQLite persistente. |
 | `NODE_ENV` | — | Usa `development` con `npm run dev`. |
-| `FRONTEND_DIST_PATH` | `../frontend/dist` desde `backend/` | Build de React servido en `/react/`. |
+| `FRONTEND_DIST_PATH` | `../frontend/dist` desde `backend/` | Build de React servido en `/display/`. |
 | `CF_ACCESS_TEAM_DOMAIN` | — | Dominio completo del equipo, por ejemplo `https://equipo.cloudflareaccess.com`. Obligatorio en producción. |
 | `CF_ACCESS_AUD` | — | Application Audience Tag de Cloudflare Access. Obligatorio en producción. |
 
