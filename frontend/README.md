@@ -1,6 +1,7 @@
 # React frontend
 
-The app is served at `/react/`; the Vite dev server proxies `/api` to port 3000.
+The public tournament display is served at `/display/`; the landing page remains at `/react/`.
+Built assets stay under `/react/`; the Vite dev server proxies `/api` to port 3000.
 Build the shared package before development (`npm run dev:frontend` does this).
 
 ## HTTP and loading state
@@ -55,6 +56,9 @@ all team text. `MatchList` accepts either `loading: true` or a `matches` array;
 loading and empty states announce themselves with `role="status"`.
 
 The shared CSS Module preserves the public display palette and uses flexible grids
-with tablet (900px) and mobile (520px) breakpoints. The React landing page uses the
-shell and empty list; fetching and migrating tournament views remain separate work.
+with tablet (900px) and mobile (520px) breakpoints. The public display preserves live/calendar/results/standings/scoring tabs, active tournament
+and phase selection, date/category/status filters, and SSE updates. The backend remains the
+authority for hidden-line ordering, visibility and all standings/scoring calculations.
+SSE errors reconnect after three seconds; a 45-second heartbeat watchdog detects silent
+connections. Selection changes and unmount cancel in-flight requests and timers.
 Run the frontend tests for server-rendered component behavior and privacy checks.

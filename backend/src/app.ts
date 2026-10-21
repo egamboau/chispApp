@@ -60,6 +60,7 @@ class App {
         this.initRoutes()
     }
 
+    /** Registers API routes and the React landing/display shells; errors use the shared handler. */
     private initRoutes() {
 
         const rootRoute = new RootRoute()
@@ -116,6 +117,7 @@ class App {
 
     }
 
+    /** Applies request logging, API/admin access boundaries and static assets; /display serves the React shell. */
     private initMiddleware() {
         this.app.use((req, res, next) => {
             if (!req.path.startsWith('/api')){
@@ -163,6 +165,12 @@ class App {
             next()
         })
         this.app.use('/react', express.static(this.frontendDistPath, { setHeaders: (res) => res.set('Cache-Control', 'no-store') }));
+        this.app.get(/^\/display(?:\/.*)?$/, (_req, res, next) => {
+            res.set('Cache-Control', 'no-store')
+            res.sendFile(path.join(this.frontendDistPath, 'index.html'), error => {
+                if (error) next(error)
+            })
+        });
         this.app.use(express.static(path.join(__dirname, '..', 'public'), { setHeaders: (res) => res.set('Cache-Control', 'no-store') }));
 
     }

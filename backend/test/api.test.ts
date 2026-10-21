@@ -83,6 +83,7 @@ test.before(async () => {
   const frontendDistPath = path.join(tempDir, 'frontend');
   fs.mkdirSync(frontendDistPath);
   fs.writeFileSync(path.join(frontendDistPath, 'index.html'), '<main>React preview</main>');
+  fs.writeFileSync(path.join(frontendDistPath, 'display-test.js'), 'export const display = true;');
   const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'production', PORT: String(port), DATABASE_PATH: path.join(tempDir, 'test.db'), FRONTEND_DIST_PATH: frontendDistPath, CF_ACCESS_TEAM_DOMAIN: teamDomain, CF_ACCESS_AUD: audience };
   delete env.NODE_TEST_CONTEXT;
   server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { cwd: path.join(__dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -142,7 +143,7 @@ test('expone previsualización, confirmación y reapertura solo por la API admin
 
 test('sirve las páginas administrativas y la pantalla pública', async () => {
   const auth = { headers: { 'cf-access-jwt-assertion': accessToken } };
-  const [tournamentsAdmin, teamsAdmin, calendarAdmin, scoringAdmin, adminJs, display, css, react, reactDeepLink, root] = await Promise.all([fetch(`${base}/admin/`, auth), fetch(`${base}/admin/teams.html`, auth), fetch(`${base}/admin/calendar.html`, auth), fetch(`${base}/admin/scoring.html`, auth), fetch(`${base}/admin/admin.js`, auth), fetch(`${base}/display/`), fetch(`${base}/display/display.css`), fetch(`${base}/react/`), fetch(`${base}/react/deep/link`), fetch(base, { redirect: 'manual' })]);
+  const [tournamentsAdmin, teamsAdmin, calendarAdmin, scoringAdmin, adminJs, display, asset, react, reactDeepLink, root] = await Promise.all([fetch(`${base}/admin/`, auth), fetch(`${base}/admin/teams.html`, auth), fetch(`${base}/admin/calendar.html`, auth), fetch(`${base}/admin/scoring.html`, auth), fetch(`${base}/admin/admin.js`, auth), fetch(`${base}/display/`), fetch(`${base}/react/display-test.js`), fetch(`${base}/react/`), fetch(`${base}/react/deep/link`), fetch(base, { redirect: 'manual' })]);
   assert.equal(display.headers.get('cache-control'), 'no-store');
   assert.match(await tournamentsAdmin.text(), /href="\/admin\/scoring.html"[\s\S]*id="phase-tournament-type"[\s\S]*id="rule-form"/);
   assert.match(await teamsAdmin.text(), /id="membership-form"[\s\S]*id="player-form"/);
@@ -150,8 +151,12 @@ test('sirve las páginas administrativas y la pantalla pública', async () => {
   assert.match(await scoringAdmin.text(), /id="scoring-match"[\s\S]*id="scoring-form"[\s\S]*id="scoring-list"/);
   assert.match(await (await fetch(`${base}/admin/scoring.html`, auth)).text(), /id="scoring-table-form"[\s\S]*id="create-scoring-table"[\s\S]*id="scoringTable"/);
   assert.match(await adminJs.text(), /EDITAR ORDEN[\s\S]*ADMINISTRAR GOLEO/);
-  assert.match(await display.text(), /data-view="standings"[\s\S]*data-view="scoring"/);
-  assert.match(await css.text(), /@media \(max-width: 900px\)/);
+  assert.equal(display.status, 200);
+  assert.equal(await display.text(), '<main>React preview</main>');
+  assert.match(await asset.text(), /export const display = true/);
+  for (const url of ['/display', '/display/index.html']) {
+    assert.equal(await (await fetch(`${base}${url}`)).text(), '<main>React preview</main>');
+  }
   const reactHtml = await react.text();
   assert.equal(react.status, 200);
   assert.equal(react.headers.get('cache-control'), 'no-store');
