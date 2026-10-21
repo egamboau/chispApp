@@ -12,6 +12,10 @@ Permite administrar varios torneos activos, fases, grupos, membresías, sancione
 ## Ejecución local
 
 ```bash
+cd frontend
+npm ci
+npm run build
+cd ../backend
 npm ci
 npm start
 ```
@@ -27,8 +31,19 @@ La base de datos local se crea en `./data/tournament.db`. Abre:
 Para desarrollo con reinicio automático:
 
 ```bash
+cd backend
 npm run dev
 ```
+
+El frontend React sustituye la pantalla pública vanilla en `/display/`. En desarrollo, Vite lo sirve en <http://localhost:5173/display/> y envía `/api` a Express en el puerto 3000:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+El build de producción y sus recursos quedan disponibles en `/display/`. La interfaz administrativa continúa en `/admin`.
 
 ## Docker Compose
 
@@ -67,6 +82,17 @@ TOURNAMENT_IMAGE=nas-server.local:5000/jupas-app:sha-COMMIT \
 
 El servicio usa una sola réplica porque SQLite no admite escritores simultáneos desde varios nodos. El volumen `tournament-data` monta el mismo export NFSv4 desde cualquier nodo. Sin `TOURNAMENT_IMAGE`, `stack.yml` y `docker-compose.yml` conservan `tournament-display:latest` para builds locales.
 
+Para revertir el último despliegue sin modificar la base de datos:
+
+```bash
+docker service rollback tournament_tournament
+docker service ps tournament_tournament
+curl --fail https://HOST/api/tournaments
+curl --fail https://HOST/display/
+```
+
+Comprueba también `/admin/` con una sesión de Cloudflare Access. Las pruebas HTTP verifican que las rutas vanilla y React coexisten, por lo que retirar la imagen nueva restaura únicamente los assets y el servidor anteriores.
+
 En producción no se publica el puerto 3000. El servicio `cloudflared` debe pertenecer a la red overlay `public-ingress` y dirigir el hostname público a `http://tournament:3000`.
 
 ## Variables de entorno
@@ -76,6 +102,7 @@ En producción no se publica el puerto 3000. El servicio `cloudflared` debe pert
 | `PORT` | `3000` | Puerto HTTP. |
 | `DATABASE_PATH` | `./data/tournament.db` local, `/data/tournament.db` en Docker | Archivo SQLite persistente. |
 | `NODE_ENV` | — | Usa `development` con `npm run dev`. |
+| `FRONTEND_DIST_PATH` | `../frontend/dist` desde `backend/` | Build de React servido en `/display/`. |
 | `CF_ACCESS_TEAM_DOMAIN` | — | Dominio completo del equipo, por ejemplo `https://equipo.cloudflareaccess.com`. Obligatorio en producción. |
 | `CF_ACCESS_AUD` | — | Application Audience Tag de Cloudflare Access. Obligatorio en producción. |
 
@@ -214,5 +241,6 @@ El contenedor copia el secreto a un archivo temporal escribible para que rclone 
 ## Pruebas
 
 ```bash
+cd backend
 npm test
 ```

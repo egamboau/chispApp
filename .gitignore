@@ -8,3 +8,6 @@ rclone.conf
 npm-debug.log*
 .vscode/*
 
+
+# Local Ralph task checkpoints
+/.ralph-loop-progress.md

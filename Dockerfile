@@ -2,13 +2,22 @@ FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY package.json package-lock.json ./
+COPY shared/package.json ./shared/
+COPY frontend/package.json ./frontend/
+COPY backend/package.json ./backend/
+
 RUN npm ci
-COPY tsconfig*.json ./
-COPY src ./src
-COPY public ./public
-COPY test ./test
-RUN npm run typecheck && npm test && npm run build && npm prune --omit=dev
+
+COPY shared/ ./shared/
+COPY frontend/ ./frontend/
+COPY backend/ ./backend/
+
+RUN npm run lint
+RUN npm run typecheck
+RUN npm test
+RUN npm run build
+RUN npm prune --omit=dev
 
 FROM node:22-bookworm-slim
 
@@ -16,10 +25,19 @@ WORKDIR /app
 ENV NODE_ENV=production PORT=3000 DATABASE_PATH=/data/tournament.db
 
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/dist ./dist
-COPY --from=build --chown=node:node /app/public ./public
+COPY --from=build --chown=node:node /app/backend/node_modules ./backend/node_modules
+COPY --from=build --chown=node:node /app/shared/package.json ./shared/package.json
+COPY --from=build --chown=node:node /app/shared/dist ./shared/dist
+COPY --from=build --chown=node:node /app/backend/dist ./backend/dist
+COPY --from=build --chown=node:node /app/backend/public ./backend/public
+COPY --from=build --chown=node:node /app/frontend/dist ./frontend/dist
+
 RUN mkdir -p /data && chown -R node:node /app /data
+
 USER node
+WORKDIR /app/backend
+
 EXPOSE 3000
 VOLUME ["/data"]
+
 CMD ["node", "dist/index.js"]
