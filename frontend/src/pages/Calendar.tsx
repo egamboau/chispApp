@@ -4,6 +4,11 @@ import styles from './PublicDisplay.module.css'
 
 export interface CalendarFilters { category: 'ALL' | 'MALE' | 'FEMALE'; date: string; status: '' | MatchStatus }
 
+/** Selects finished results for an optional exact date, retaining the server's match order. */
+export function resultMatches(matches: readonly MatchResponse[], date: string): MatchResponse[] {
+  return matches.filter(match => match.status === 'FINISHED' && (!date || match.date === date))
+}
+
 /** Filters unfinished calendar matches without reordering the server's randomized/official order. */
 export function calendarMatches(matches: readonly MatchResponse[], filters: CalendarFilters): MatchResponse[] {
   return matches.filter(match => match.status !== 'FINISHED' &&
