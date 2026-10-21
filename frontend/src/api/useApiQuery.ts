@@ -7,6 +7,9 @@ export type QueryState<T> =
   | { status: 'success'; data: T }
   | { status: 'error'; error: ApiError }
 
+/** Fetches validated API data and exposes loading, success, or error state.
+ * A path or schema identity change restarts the request; keep schema references stable.
+ * Aborts on cleanup and hides stale results while the next request is loading. */
 export function useApiQuery<T>(path: string, schema: ResponseParser<T>): QueryState<T> {
   const [result, setResult] = useState<{
     path: string
