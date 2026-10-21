@@ -10,7 +10,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run build --workspace=@jupas/shared && npm run typecheck --workspace=chispapp-frontend && npm run typecheck --workspace=chispapp",
-    "test": "npm test --workspace=@jupas/shared && npm test --workspace=chispapp",
+    "test": "npm test --workspace=@jupas/shared && npm test --workspace=chispapp-frontend && npm test --workspace=chispapp",
     "lint": "npm run build --workspace=@jupas/shared && npm run lint --workspace=chispapp-frontend",
     "dev:backend": "npm run build --workspace=@jupas/shared && npm run dev --workspace=chispapp",
     "dev:frontend": "npm run build --workspace=@jupas/shared && npm run dev --workspace=chispapp-frontend"
