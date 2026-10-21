@@ -12,6 +12,6 @@ export function Layout({ navigation, children }: LayoutProps) {
       {navigation}
     </header>
     <main id="main-content" tabIndex={-1} className={styles.main}>{children}</main>
-    <footer className={styles.footer}>La información mostrada es de carácter informativo. Los datos oficiales son los publicados por la Asociación Deportiva de Jupas.</footer>
+    <footer className={styles.footer}>La información mostrada es de carácter informativo. Los datos oficiales son los publicados por la Asociación Deportiva de Jupas.<p>© 2026 Eduardo Gamboa.</p></footer>
   </div>
 }
