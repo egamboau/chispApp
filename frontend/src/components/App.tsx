@@ -1,6 +1,7 @@
 import { HomePage } from '../pages/HomePage'
+import { PublicDisplay } from '../pages/PublicDisplay'
 
-/** Renders the application root with the current home page. */
+/** Routes public display URLs to the tournament view, retaining the React landing page. */
 export function App() {
-  return <HomePage />
+  return /^\/display(?:\/|$)/.test(window.location.pathname) ? <PublicDisplay /> : <HomePage />
 }
