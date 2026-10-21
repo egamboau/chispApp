@@ -62,3 +62,26 @@ authority for hidden-line ordering, visibility and all standings/scoring calcula
 SSE errors reconnect after three seconds; a 45-second heartbeat watchdog detects silent
 connections. Selection changes and unmount cancel in-flight requests and timers.
 Run the frontend tests for server-rendered component behavior and privacy checks.
+
+## Administration
+
+Production serves the React admin entry at `/admin/`, `/admin/teams.html`,
+`/admin/calendar.html` and `/admin/scoring.html`; existing links remain valid.
+Cloudflare Access checks run before serving these pages and `/api/admin` requests.
+The public `/display` shell remains separate; production blocks the public
+`/display/admin.html` alias. To preview administration, build both entries with
+the root build and open `/admin/` on the backend. The Vite dev server remains
+the public display development entry.
+
+Admin forms parse shared input schemas and validated API responses. Mutations use
+same-origin `/api/admin`, display server errors without retrying writes, and block
+duplicate submissions. Failed reads disable stale editing; selection changes abort
+old requests. Calendar SSE refreshes retain filters and drafts. Confirmed group
+positions and API-created match-winner references survive schedule edits; the server
+owns all transition and assignment checks. Scoring deep links resolve tournament and
+phase before loading a finished match, including inactive tournaments. Create scoring
+tables in the table form, then select one by ID for new or existing player totals.
+
+Frontend regressions cover participant preservation, lifecycle controls, position
+blockers, protected writes, cancellation and scoring links. Backend HTTP tests cover
+Access, CRUD conflicts, score transitions and every preserved admin URL.
