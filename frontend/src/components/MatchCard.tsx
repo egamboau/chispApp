@@ -16,6 +16,7 @@ export function MatchCard({ match }: MatchCardProps) {
       <span>{statusLabels[match.status]}</span>
     </div>
     <p>{match.date} · {match.jornada === 'MORNING' ? 'Mañana' : 'Tarde'}</p>
+    <p>{match.groupName}</p>
     <Scoreboard match={match} />
     <p>Línea: <TeamLabel match={match} role="lineTeam" /></p>
   </article>

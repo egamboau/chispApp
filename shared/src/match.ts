@@ -19,11 +19,11 @@ export const MatchParticipantSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('MATCH_WINNER'), sourceMatchId: CoercedIdSchema }).strict(),
 ]);
 
-/** All three scheduling roles are required. */
+/** Local and visitor are required; line assignment is optional. */
 export const MatchParticipantsSchema = z.object({
   teamA: MatchParticipantSchema,
   teamB: MatchParticipantSchema,
-  lineTeam: MatchParticipantSchema,
+  lineTeam: MatchParticipantSchema.nullable().optional(),
 }).strict();
 
 /** Scheduling with references, including teams that are not yet known. */
@@ -67,7 +67,7 @@ const matchInputFields = {
   groupId: CoercedIdSchema,
   teamAId: CoercedIdSchema,
   teamBId: CoercedIdSchema,
-  lineTeamId: CoercedIdSchema,
+  lineTeamId: CoercedIdSchema.nullable().optional(),
   date: DateSchema,
   jornada: MatchTimeSchema,
   court: z.coerce.number().int().positive(),
@@ -190,6 +190,7 @@ export const MatchResponseSchema = z.object({
   phaseName: NameSchema,
   groupName: NameSchema,
   lineVisible: z.union([z.boolean(), z.literal(0), z.literal(1)]).transform(Boolean),
+  lineAssigned: z.boolean().optional(),
   participants: MatchParticipantsResponseSchema,
 }).strict();
 

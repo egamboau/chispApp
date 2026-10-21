@@ -33,6 +33,7 @@ test('match cards display resolved teams and accessible scores, never hidden lin
   const html = renderToStaticMarkup(createElement(MatchCard, { match }))
   assert.match(html, /Equipo resuelto/)
   assert.match(html, /Marcador 2 a 0/)
+  assert.ok(html.includes(match.groupName))
   assert.match(html, /EN JUEGO/)
   assert.match(html, /Mañana/)
   assert.match(html, /Por publicar/)
@@ -64,4 +65,12 @@ test('layout has a skip target and navigation identifies only the current link',
   assert.match(html, /<main id="main-content" tabindex="-1"/)
   assert.equal((html.match(/aria-current="page"/g) ?? []).length, 1)
   assert.match(html, /href="\/display\/"/)
+})
+
+test('unassigned lines are distinct from unpublished assignments', () => {
+  for (const lineVisible of [true, false]) {
+    const html = renderToStaticMarkup(createElement(MatchCard, { match: { ...match, lineAssigned: false, lineVisible, lineTeam: null, lineTeamId: null, participants: { ...match.participants, lineTeam: null } } }))
+    assert.match(html, /Sin asignar/)
+    assert.doesNotMatch(html, /Por publicar/)
+  }
 })

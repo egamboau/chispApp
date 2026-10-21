@@ -50,11 +50,13 @@ test('validates match inputs, nullable public fields and scoring', () => {
   for (const field of ['phaseId', 'tournamentType', 'teamA', 'teamB', 'lineTeam']) {
     assert.equal(contracts.MatchInputSchema.safeParse({ ...input, [field]: 'redundante' }).success, false);
   }
-  for (const field of ['groupId', 'teamAId', 'teamBId', 'lineTeamId']) {
+  for (const field of ['groupId', 'teamAId', 'teamBId']) {
     const missingId = { ...input };
     delete missingId[field];
     assert.equal(contracts.InsertMatchSchema.safeParse(missingId).success, false);
   }
+  for (const lineTeamId of [null, undefined]) assert.equal(contracts.MatchInputSchema.safeParse({ ...input, lineTeamId }).success, true);
+  assert.equal(contracts.MatchInputSchema.safeParse({ ...input, lineTeamId: 0 }).success, false);
   assert.equal(contracts.MatchInputSchema.safeParse({ date: '2026-10-16', jornada: 'MORNING', court: 1 }).success, false);
 
   const response = contracts.MatchResponseSchema.parse({
@@ -118,7 +120,7 @@ test('validates participant scheduling and rejects malformed references', () => 
     { kind: 'MATCH_WINNER', sourceMatchId: 7, teamId: 4 },
     { kind: 'UNKNOWN' },
   ]) assert.equal(contracts.MatchParticipantSchema.safeParse(reference).success, false);
-  assert.equal(contracts.MatchParticipantsSchema.safeParse({ ...participants, lineTeam: null }).success, false);
+  assert.equal(contracts.MatchParticipantsSchema.safeParse({ ...participants, lineTeam: null }).success, true);
   assert.equal(contracts.MatchParticipantResponseSchema.safeParse(participants.teamA).success, false);
 });
 
