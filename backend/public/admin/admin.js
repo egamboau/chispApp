@@ -1,37 +1,48 @@
 const page = document.body.dataset.page;
 const jornadaLabels = { MORNING: 'Mañana', AFTERNOON: 'Tarde' };
 const statusLabels = { SCHEDULED: 'Programado', LIVE: 'En juego', FINISHED: 'Final' };
+/** Escapes nullable text for insertion into HTML content or quoted attributes. */
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
+/** Builds option markup from item IDs and a label property or formatter. */
 const options = (items, label = 'name') => items.map((item) => `<option value="${item.id}">${escapeHtml(typeof label === 'function' ? label(item) : item[label])}</option>`).join('');
+/** Formats a phase name with its tournament category for selectors. */
 const phaseLabel = (phase) => `${phase.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'} · ${phase.name}`;
 let tournaments = [], phases = [], groups = [], teams = [], players = [], memberships = [], rules = [], sanctions = [], teamCards = [], matches = [], scoring = [], scoringTables = [];
 
+/** Routes /api paths through /api/admin; returns parsed JSON (null for 204) and throws on HTTP or network failures. Callers serialize request bodies. */
 async function request(url, init = {}) {
   const response = await fetch(url.replace(/^\/api(?=\/|$)/, '/api/admin'), { headers: { 'Content-Type': 'application/json' }, ...init });
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'No se pudo completar la operación.');
   return response.status === 204 ? null : response.json();
 }
+/** Shows page feedback; success messages clear after 2.5 seconds, while errors remain visible. */
 function message(text, error = false) {
   const target = document.querySelector('#message');
   if (!target) return;
   target.textContent = text; target.className = error ? 'error' : 'success';
   if (!error) setTimeout(() => { target.textContent = ''; }, 2500);
 }
+/** Rebuilds a selector, chooses the preferred ID or first item, and returns that item (undefined when empty). */
 function choose(select, items, preferred, label) {
   select.innerHTML = options(items, label);
   const selected = items.find(({ id }) => id === Number(preferred)) || items[0];
   select.value = selected?.id || '';
   return selected;
 }
+/** Sets the disabled state of all inputs, selects, and buttons within a form. */
 function disable(form, value) { form.querySelectorAll('input,select,button').forEach((control) => { control.disabled = value; }); }
+/** Returns the cached tournament selected in the admin selector, or undefined. */
 const selectedTournament = () => tournaments.find(({ id }) => id === Number(document.querySelector('#admin-tournament').value));
+/** Returns the cached phase selected in the admin selector, or undefined. */
 const selectedPhase = () => phases.find(({ id }) => id === Number(document.querySelector('#admin-phase')?.value));
 
+/** Reloads tournaments and returns the preferred selection, falling back to the first tournament. */
 async function loadTournaments(preferred) {
   tournaments = await request('/api/tournaments');
   return choose(document.querySelector('#admin-tournament'), tournaments, preferred);
 }
 
+/** Loads the selected tournament, phase, groups, and rules, then renders configuration and position previews. */
 async function loadTournamentPage(tournamentId, phaseId) {
   const tournament = await loadTournaments(tournamentId);
   phases = tournament ? await request(`/api/tournaments/${tournament.id}/phases`) : [];
@@ -40,6 +51,7 @@ async function loadTournamentPage(tournamentId, phaseId) {
   renderTournamentPage();
   await renderPhasePositions(phase);
 }
+/** Fetches and displays assignment previews and confirmation controls for table phases; clears other phase types. */
 async function renderPhasePositions(phase, sourceGroups = groups) {
   const target = document.querySelector('#phase-positions');
   target.innerHTML = '';
@@ -48,6 +60,7 @@ async function renderPhasePositions(phase, sourceGroups = groups) {
   const roles = { teamA: 'Local', teamB: 'Visitante', lineTeam: 'Línea' };
   target.innerHTML = `<h3>Cierre y asignación de posiciones</h3><p>${preview.confirmedAt ? `Confirmado: ${escapeHtml(preview.confirmedAt)}` : 'Posiciones sin confirmar.'} Las correcciones no cambian automáticamente los equipos asignados.</p>${preview.errors.map(error => `<p class="error">${escapeHtml(error)}</p>`).join('')}${preview.assignments.map(item => `<div class="config-row"><span>Partido ${item.matchId} · ${roles[item.role]} · ${item.position}.º ${escapeHtml(sourceGroups.find(group => group.id === item.sourceGroupId)?.name)} → <strong>${escapeHtml(item.teamName || 'Sin resolver')}</strong>${item.resolvedTeamId !== null && item.resolvedTeamId !== item.teamId ? ' (cambiaría el equipo asignado)' : ''}</span></div>`).join('')}<button class="primary" data-action="confirm-positions" ${preview.canConfirm ? '' : 'disabled'}>CONFIRMAR Y CONGELAR</button>${preview.confirmedAt ? '<button data-action="reopen-positions">REABRIR ASIGNACIONES</button>' : ''}`;
 }
+/** Renders cached tournament configuration and enables forms only when their required selections exist. */
 function renderTournamentPage() {
   const tournament = selectedTournament(), phase = selectedPhase();
   document.querySelector('#tournament-detail').innerHTML = tournament ? `<div class="config-row"><strong>${escapeHtml(tournament.name)}</strong><span>${tournament.active ? 'Activo' : 'Inactivo'}</span><button data-action="edit-tournament">EDITAR</button><button data-action="toggle-tournament">${tournament.active ? 'DESACTIVAR' : 'ACTIVAR'}</button><button class="danger" data-action="delete-tournament">ELIMINAR</button></div>` : '<p class="empty">Crea un torneo para comenzar.</p>';
@@ -58,6 +71,7 @@ function renderTournamentPage() {
   disable(document.querySelector('#group-form'), !phase);
   disable(document.querySelector('#rule-form'), !phase || phase.type !== 'TABLE');
 }
+/** Binds tournament, phase, group, rule, and position-assignment actions, then loads the configuration page. */
 function initTournamentPage() {
   document.querySelector('#tournament-form').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -115,6 +129,7 @@ function initTournamentPage() {
   loadTournamentPage().catch((error) => message(error.message, true));
 }
 
+/** Loads tournament teams, phase memberships, sanctions, cards, and the selected team roster before rendering. */
 async function loadTeamPage(tournamentId, phaseId, playerTeamId) {
   const tournament = await loadTournaments(tournamentId);
   phases = tournament ? await request(`/api/tournaments/${tournament.id}/phases`) : [];
@@ -125,10 +140,12 @@ async function loadTeamPage(tournamentId, phaseId, playerTeamId) {
   players = playerTeam ? await request(`/api/teams/${playerTeam.id}/players`) : [];
   renderTeamPage();
 }
+/** Renders the cached roster, including registration status, and disables entry when no team is selected. */
 function renderPlayers() {
   document.querySelector('#players').innerHTML = players.map((player) => `<div class="config-row player-row ${player.status === 'UNREGISTERED' ? 'unregistered' : ''}"><span><strong>${escapeHtml(player.displayName)}</strong><small>Número ${escapeHtml(player.number)} · ${player.status === 'REGISTERED' ? 'Inscrito' : 'Desinscrito'}</small></span><button data-action="edit-player" data-id="${player.id}">EDITAR</button><button data-action="toggle-player" data-id="${player.id}">${player.status === 'REGISTERED' ? 'DESINSCRIBIR' : 'REINSCRIBIR'}</button></div>`).join('') || '<p class="empty">Este equipo no tiene jugadores.</p>';
   disable(document.querySelector('#player-form'), !document.querySelector('#player-team').value);
 }
+/** Renders teams and phase assignments, sanctions, cards, and players, updating available form choices. */
 function renderTeamPage() {
   const tournament = selectedTournament(), phase = selectedPhase(), memberIds = new Set(memberships.map(({ teamId }) => teamId));
   document.querySelector('#phase-help').textContent = !phase ? 'El torneo no tiene fases.' : groups.length ? `Asignando equipos a ${phase.name}.` : `${phase.name} no tiene grupos; crea uno en la página Torneos para asignar equipos.`;
@@ -150,6 +167,7 @@ function renderTeamPage() {
   disable(document.querySelector('#sanction-form'), !memberships.length);
   disable(document.querySelector('#team-cards-form'), !memberships.length);
 }
+/** Binds team, membership, player, sanction, and card actions, then loads the team page. */
 function initTeamPage() {
   document.querySelector('#team-form').addEventListener('submit', async (event) => {
     event.preventDefault(); const tournament = selectedTournament(), phase = selectedPhase(), groupId = Number(document.querySelector('#new-team-group').value);
@@ -229,7 +247,9 @@ function initTeamPage() {
 
 let currentPhase, sourceGroups = {};
 const participantRoles = { teamA: 'Local', teamB: 'Visitante', lineTeam: 'Línea' };
+/** Returns earlier table phases in the current category that can supply group-position references. */
 const sourcePhases = () => phases.filter(phase => phase.type === 'TABLE' && phase.sortOrder < currentPhase?.sortOrder && phase.tournamentType === currentPhase?.tournamentType);
+/** Loads calendar data and source groups, resets the match form, and refreshes matches and assignment previews. */
 async function loadCalendarPage(tournamentId, phaseId) {
   const tournament = await loadTournaments(tournamentId);
   phases = tournament ? await request(`/api/tournaments/${tournament.id}/phases`) : [];
@@ -243,6 +263,7 @@ async function loadCalendarPage(tournamentId, phaseId) {
   await previewCalendarPositions();
   disable(document.querySelector('#match-form'), !currentPhase || !groups.length);
 }
+/** Populates team choices: home teams belong to the selected group, visitors to the phase, and line teams to the tournament. */
 function renderMatchTeams(values = {}) {
   const groupId = Number(document.querySelector('#groupId').value), memberIds = memberships.map(item => item.teamId);
   for (const role of Object.keys(participantRoles)) {
@@ -252,10 +273,12 @@ function renderMatchTeams(values = {}) {
     select.value = selected ?? '';
   }
 }
+/** Populates a participant reference group selector from its source phase, preferring the supplied group ID. */
 function renderParticipantGroups(role, preferred) {
   const phaseId = document.querySelector(`#${role}-phase`).value;
   choose(document.querySelector(`#${role}-group`), sourceGroups[phaseId] || [], preferred);
 }
+/** Shows the fields for a participant reference kind and updates their required state. */
 function toggleParticipant(role) {
   const kind = document.querySelector(`#${role}-kind`).value, position = kind === 'GROUP_POSITION';
   document.querySelector(`#${role}-fixed`).hidden = kind !== 'TEAM';
@@ -263,6 +286,7 @@ function toggleParticipant(role) {
   document.querySelector(`#${role}Id`).required = kind === 'TEAM';
   for (const field of ['phase', 'group', 'position']) document.querySelector(`#${role}-${field}`).required = position;
 }
+/** Builds participant editors from a match, preserves existing winner references, and warns about confirmed assignments. */
 function renderParticipantFields(match = {}) {
   document.querySelector('#match-participants').innerHTML = Object.entries(participantRoles).map(([role, label]) => `<fieldset><legend>${label}</legend><label>Asignación<select id="${role}-kind"><option value="TEAM">Equipo fijo</option><option value="GROUP_POSITION">Posición de grupo/fase</option></select></label><label id="${role}-fixed">Equipo<select id="${role}Id"></select></label><div id="${role}-position-fields"><label>Fase origen<select id="${role}-phase">${options(sourcePhases(), phaseLabel)}</select></label><label>Grupo origen<select id="${role}-group"></select></label><label>Posición<input id="${role}-position" type="number" min="1" step="1" value="1"></label></div></fieldset>`).join('');
   renderMatchTeams(match);
@@ -284,6 +308,7 @@ function renderParticipantFields(match = {}) {
   warning.hidden = !Object.values(match.participants || {}).some(item => item?.reference.kind !== 'TEAM' && item?.status === 'CONFIRMED');
   warning.textContent = 'Asignaciones confirmadas: cambiar una referencia requiere revisar y confirmar otra vez la fase origen.';
 }
+/** Reads participant references from the form, retaining the original reference for existing match-winner assignments. */
 function matchParticipants() {
   const editing = matches.find(match => match.id === Number(document.querySelector('#match-id').value));
   return Object.fromEntries(Object.keys(participantRoles).map(role => {
@@ -291,18 +316,22 @@ function matchParticipants() {
     return [role, kind === 'GROUP_POSITION' ? { kind, sourcePhaseId: Number(document.querySelector(`#${role}-phase`).value), sourceGroupId: Number(document.querySelector(`#${role}-group`).value), position: Number(document.querySelector(`#${role}-position`).value) } : kind === 'MATCH_WINNER' ? editing.participants[role].reference : { kind, teamId: Number(document.querySelector(`#${role}Id`).value) }];
   }));
 }
+/** Renders position assignments for the selected source phase using its cached groups. */
 async function previewCalendarPositions() {
   const phase = phases.find(phase => phase.id === Number(document.querySelector('#positions-phase').value));
   await renderPhasePositions(phase, sourceGroups[phase?.id] || []);
 }
+/** Clears match editing state and rebuilds group and participant fields for a new match. */
 function resetMatchForm() {
   document.querySelector('#match-form').reset(); document.querySelector('#match-id').value = ''; document.querySelector('#cancel-edit').hidden = true;
   document.querySelector('#groupId').innerHTML = options(groups); renderParticipantFields();
 }
+/** Builds an admin match card with score controls and actions appropriate to its status. */
 function matchCard(match) {
   const score = match.status === 'LIVE' ? `<div class="score-controls">${['A', 'B'].map((side) => `<div><strong>${escapeHtml(match[`team${side}`])}</strong><span><button data-action="score" data-team="${side}" data-delta="-1" ${match[`score${side}`] === 0 ? 'disabled' : ''}>−</button><b>${match[`score${side}`]}</b><button data-action="score" data-team="${side}" data-delta="1">+</button></span></div>`).join('')}</div>` : match.status === 'FINISHED' ? `<div class="score-controls final-score">${['A', 'B'].map((side) => `<label><strong>${escapeHtml(match[`team${side}`])}</strong><input data-result="score${side}" type="number" min="0" step="1" value="${match[`score${side}`]}"></label>`).join('')}</div>` : `<h3>${escapeHtml(match.teamA)} <small>vs</small> ${escapeHtml(match.teamB)}</h3>`;
   return `<article class="match-card ${match.tournamentType.toLowerCase()}" data-id="${match.id}"><div class="meta"><span class="badge">${match.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'}</span><strong>${escapeHtml(match.phaseName)} · ${escapeHtml(match.groupName)} · Cancha ${match.court}</strong><span>${match.date} · ${jornadaLabels[match.jornada]} · Orden ${match.sortOrder ?? 'sin definir'}</span><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span></div>${score}${match.status !== 'SCHEDULED' ? '<p>Partido iniciado o terminado: las asignaciones de participantes están bloqueadas.</p>' : ''}<p>Línea: <strong>${escapeHtml(match.lineTeam)}</strong></p><div class="cards"><label>${escapeHtml(match.teamA)} 🟨<input data-card="yellowCardsA" type="number" min="0" value="${match.yellowCardsA}"></label><label>🟥<input data-card="redCardsA" type="number" min="0" value="${match.redCardsA}"></label><label>${escapeHtml(match.teamB)} 🟨<input data-card="yellowCardsB" type="number" min="0" value="${match.yellowCardsB}"></label><label>🟥<input data-card="redCardsB" type="number" min="0" value="${match.redCardsB}"></label><button data-action="cards">GUARDAR TARJETAS</button></div><div class="actions"><button data-action="order">EDITAR ORDEN</button>${match.status === 'SCHEDULED' ? '<button data-action="edit">EDITAR</button><button class="danger" data-action="delete">ELIMINAR</button><button class="primary" data-action="start">INICIAR</button>' : ''}${match.status === 'LIVE' ? '<button class="danger" data-action="reset">REINICIAR MARCADOR</button><button class="finish" data-action="finish">FINALIZAR PARTIDO</button>' : ''}${match.status === 'FINISHED' ? `<button data-action="result">GUARDAR RESULTADO</button><button class="primary" data-action="reopen">REABRIR PARTIDO</button><a class="primary" href="/admin/scoring.html?matchId=${match.id}">ADMINISTRAR GOLEO</a>` : ''}</div></article>`;
 }
+/** Renders cached matches filtered by date and court, and updates the selected date’s line-publication control. */
 function renderMatches() {
   const date = document.querySelector('#filter-date').value, court = Number(document.querySelector('#filter-court').value);
   const filtered = matches.filter((match) => (!date || match.date === date) && (!court || match.court === court));
@@ -310,6 +339,7 @@ function renderMatches() {
   const dateMatches = matches.filter((match) => match.date === date), visibility = document.querySelector('#line-visibility'), visible = dateMatches.some((match) => match.lineVisible);
   visibility.disabled = !date || !dateMatches.length; visibility.textContent = !date ? 'SELECCIONA FECHA' : visible ? 'OCULTAR LÍNEAS' : 'PUBLICAR LÍNEAS'; visibility.className = visible ? 'danger' : 'primary';
 }
+/** Binds scheduling, assignment, scoring, card, and match lifecycle actions, subscribes to updates, and loads the calendar. */
 function initCalendarPage() {
   document.querySelector('#admin-tournament').addEventListener('change', () => loadCalendarPage(selectedTournament()?.id).catch((error) => message(error.message, true)));
   document.querySelector('#preview-positions').addEventListener('click', () => previewCalendarPositions().catch(error => message(error.message, true)));
@@ -353,9 +383,12 @@ function initCalendarPage() {
   loadCalendarPage().catch((error) => message(error.message, true));
 }
 
+/** Returns the cached match selected for scoring, or undefined. */
 const selectedScoringMatch = () => matches.find(({ id }) => id === Number(document.querySelector('#scoring-match').value));
+/** Formats a finished match with its date, jornada, court, teams, and result for the scoring selector. */
 const scoringMatchLabel = (match) => `${match.date} · ${jornadaLabels[match.jornada]} · Cancha ${match.court} · ${match.teamA} ${match.scoreA}–${match.scoreB} ${match.teamB}`;
 
+/** Loads finished matches and scoring tables for the selected phase, then loads the preferred match’s scoring details. */
 async function loadScoringPage(tournamentId, phaseId, matchId) {
   const tournament = await loadTournaments(tournamentId);
   phases = tournament ? await request(`/api/tournaments/${tournament.id}/phases`) : [];
@@ -368,6 +401,7 @@ async function loadScoringPage(tournamentId, phaseId, matchId) {
   await loadScoringDetails(match?.id);
 }
 
+/** Loads both rosters and scoring for a match, updates its URL, and renders; clears details when no match is found. */
 async function loadScoringDetails(matchId) {
   const match = matches.find(({ id }) => id === Number(matchId));
   if (match) {
@@ -383,6 +417,7 @@ async function loadScoringDetails(matchId) {
   renderScoringPage();
 }
 
+/** Offers registered players plus players with existing scoring on the selected team; disables submission when empty. */
 function renderScoringPlayerOptions(preferred) {
   const teamId = Number(document.querySelector('#scoring-team').value);
   const available = players.filter((player) => player.teamId === teamId && (player.status === 'REGISTERED' || scoring.some((item) => item.playerId === player.id)));
@@ -390,6 +425,7 @@ function renderScoringPlayerOptions(preferred) {
   document.querySelector('#scoring-form button[type="submit"]').disabled = !available.length;
 }
 
+/** Loads the selected player’s existing scoring or new-entry defaults and refreshes the weighted total. */
 function populateScoringForm() {
   const item = scoring.find(({ playerId }) => playerId === Number(document.querySelector('#scoring-player').value));
   document.querySelector('#scoring-player-id').value = item?.playerId || '';
@@ -399,11 +435,13 @@ function populateScoringForm() {
   document.querySelector('#cancel-scoring-edit').hidden = !item; updateScoringTotal();
 }
 
+/** Displays direct goals plus twice the pepitas and three times the horquetas entered in the form. */
 function updateScoringTotal() {
   const value = Number(document.querySelector('#directGoals').value) + Number(document.querySelector('#pepitas').value) * 2 + Number(document.querySelector('#horquetas').value) * 3;
   document.querySelector('#scoring-total').textContent = value;
 }
 
+/** Resets scoring controls, selects the preferred entry’s team/player when available, and populates that player’s values. */
 function resetScoringForm(preferred = scoring[0]) {
   const form = document.querySelector('#scoring-form');
   form.reset(); document.querySelector('#scoring-player-id').value = '';
@@ -413,6 +451,7 @@ function resetScoringForm(preferred = scoring[0]) {
   renderScoringPlayerOptions(preferred?.playerId); populateScoringForm();
 }
 
+/** Renders match details, scoring table controls, and per-team entries, then resets the scoring form. */
 function renderScoringPage() {
   const match = selectedScoringMatch(), detail = document.querySelector('#scoring-match-detail'), list = document.querySelector('#scoring-list'), teamSelect = document.querySelector('#scoring-team');
   detail.innerHTML = match ? `<article class="match-summary"><p>${escapeHtml(match.date)} · ${jornadaLabels[match.jornada]} · Cancha ${match.court}</p><h3>${escapeHtml(match.teamA)} <strong>${match.scoreA}–${match.scoreB}</strong> ${escapeHtml(match.teamB)}</h3></article>` : '<p class="empty">No hay partidos finalizados en esta fase.</p>';
@@ -434,6 +473,7 @@ function renderScoringPage() {
   }).join('') : '';
 }
 
+/** Resolves a matchId deep link to its tournament and phase; falls back to the default selection with feedback if unavailable. */
 async function loadInitialScoringPage() {
   const matchId = Number(new URLSearchParams(location.search).get('matchId'));
   if (!matchId) return loadScoringPage();
@@ -448,6 +488,7 @@ async function loadInitialScoringPage() {
   }
 }
 
+/** Binds scoring selection, table management, entry editing, and deletion actions, then loads the scoring page. */
 function initScoringPage() {
   document.querySelector('#admin-tournament').addEventListener('change', () => loadScoringPage(selectedTournament()?.id).catch((error) => message(error.message, true)));
   document.querySelector('#admin-phase').addEventListener('change', () => loadScoringPage(selectedTournament()?.id, selectedPhase()?.id).catch((error) => message(error.message, true)));

@@ -6,11 +6,16 @@ let filter = 'ALL';
 let tournaments = [];
 let selectedScoringTable = 'Torneo Regular';
 
+/** Escapes text for insertion into HTML content or quoted attributes. */
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
+/** Returns the category badge markup for a match. */
 const badge = (match) => `<span class="badge ${match.tournamentType.toLowerCase()}">${labels[match.tournamentType]}</span>`;
+/** Formats a calendar date in Spanish using local noon to preserve its day. */
 const shortDate = (date) => new Intl.DateTimeFormat('es-GT', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${date}T12:00:00`));
+/** Returns morning matches followed by afternoon matches, preserving order within each. */
 const byJornada = (dayMatches) => ['MORNING', 'AFTERNOON'].flatMap((jornada) => dayMatches.filter((match) => match.jornada === jornada));
 
+/** Returns participant markup, hiding unpublished line teams and marking unresolved assignments. */
 function participantName(match, role) {
   if (role === 'lineTeam' && !match.lineVisible) return 'Por publicar';
   const participant = match.participants?.[role];
@@ -20,6 +25,7 @@ function participantName(match, role) {
   return escapeHtml(participant?.resolvedTeam?.name ?? match[role]);
 }
 
+/** Builds the public live-score card markup for one match. */
 function liveCard(match) {
   return `<article class="live-card ${match.tournamentType.toLowerCase()}">
     <div class="card-top">${badge(match)}<strong>CANCHA ${match.court}</strong></div>
@@ -28,6 +34,7 @@ function liveCard(match) {
   </article>`;
 }
 
+/** Refreshes live scores, the calendar, and results from the cached matches. */
 function render() {
   const live = matches.filter((match) => match.status === 'LIVE');
   document.querySelector('#live').innerHTML = live.length
@@ -37,6 +44,7 @@ function render() {
   renderResults();
 }
 
+/** Renders finished matches grouped by date, applying the results date filter. */
 function renderResults() {
   const date = document.querySelector('#results-date').value;
   const days = matches.filter((match) => match.status === 'FINISHED' && (!date || match.date === date)).reduce((grouped, match) => {
@@ -49,6 +57,7 @@ function renderResults() {
     </article>`).join('')}</section>`).join('') || `<div class="empty"><h2>${date ? 'No hay resultados para la fecha seleccionada' : 'No hay resultados anteriores'}</h2></div>`;
 }
 
+/** Renders unfinished matches by date and jornada using the active category, date, and status filters. */
 function renderCalendar() {
   const date = document.querySelector('#calendar-date').value;
   const status = document.querySelector('#calendar-status').value;
@@ -63,6 +72,7 @@ function renderCalendar() {
     </article>`).join('')}</section>`).join('') || `<div class="empty"><h2>${filter !== 'ALL' || date || status ? 'No hay partidos para los filtros seleccionados' : 'No hay partidos'}</h2></div>`;
 }
 
+/** Renders server-calculated standings, destinations, sanctions, and tiebreaker notices. */
 function renderStandings(data) {
   const target = document.querySelector('#standings');
   if (!data.hasStandings) { target.innerHTML = `<div class="empty"><h2>${escapeHtml(data.message)}</h2></div>`; return; }
@@ -74,10 +84,12 @@ function renderStandings(data) {
   }).join('')}</tbody></table></div>${group.standings.some((row) => row.requiresTiebreaker) ? '<p class="tiebreaker">* Partido extra: dos tiempos de 5 minutos y penales si persiste el empate.</p>' : ''}</section>`).join('')}`;
 }
 
+/** Builds a player ranking table for the supplied scoring metric, or its empty state. */
 function scoringTable(title, rows, metric, metricLabel) {
   return `<section class="scoring-table"><h2>${title}</h2>${rows.length ? `<div class="table-scroll"><table><thead><tr><th>Pos.</th><th>Jugador</th><th>Equipo</th><th>${metricLabel}</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${row.position}.º</td><td><strong>#${escapeHtml(row.playerNumber)}</strong> ${escapeHtml(row.playerName || 'Sin nombre')}</td><td>${escapeHtml(row.teamName)}</td><td><strong>${row[metric]}</strong></td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-ranking">Sin anotaciones</p>'}</section>`;
 }
 
+/** Builds scoring controls and rankings, retaining the selected table when available. */
 function renderScoring(data) {
   const selected = data.tables.find(({ name }) => name === selectedScoringTable) || data.tables.find(({ name }) => name === 'Torneo Regular') || data.tables[0];
   selectedScoringTable = selected.name;
@@ -92,6 +104,7 @@ function renderScoring(data) {
   select.value = selectedScoringTable; select.addEventListener('change', show); show();
 }
 
+/** Fetches standings for the selected phase and renders them only on a successful response. */
 async function loadStandings() {
   const phaseId = document.querySelector('#phase-select').value;
   if (!phaseId) return;
@@ -99,6 +112,7 @@ async function loadStandings() {
   if (response.ok) renderStandings(await response.json());
 }
 
+/** Fetches scoring for the selected phase and renders it only on a successful response. */
 async function loadScoring() {
   const phaseId = document.querySelector('#phase-select').value;
   if (!phaseId) return;
@@ -106,6 +120,7 @@ async function loadScoring() {
   if (response.ok) renderScoring(await response.json());
 }
 
+/** Reloads active tournaments, preserving the selection when possible, then loads their phases. */
 async function loadSelectors() {
   tournaments = await (await fetch('/api/tournaments?active=true')).json();
   const tournamentSelect = document.querySelector('#tournament-select');
@@ -115,6 +130,7 @@ async function loadSelectors() {
   await loadPhases();
 }
 
+/** Reloads tournament phases, retaining the selection or preferring the current phase, then refreshes all views. */
 async function loadPhases() {
   const tournament = tournaments.find((item) => item.id === Number(document.querySelector('#tournament-select').value));
   if (!tournament) return;
@@ -127,6 +143,7 @@ async function loadPhases() {
   await Promise.all([loadStandings(), loadScoring(), loadMatches()]);
 }
 
+/** Reloads matches for the selected phase (or all matches) and reports connection failures in the page. */
 async function loadMatches() {
   try {
     const phaseId = document.querySelector('#phase-select').value;
@@ -173,6 +190,7 @@ document.querySelector('#tournament-select').addEventListener('change', loadPhas
 document.querySelector('#phase-select').addEventListener('change', () => { loadStandings(); loadScoring(); loadMatches(); });
 
 let reconnectTimer, heartbeatTimer;
+/** Opens the live event stream, refreshes data on updates, and reconnects after errors or 45 seconds without a heartbeat. */
 function connectEvents() {
   console.info('[display] SSE conectando');
   const events = new EventSource('/api/events');
@@ -200,6 +218,7 @@ function connectEvents() {
     reconnectEvents(events, `error de conexión (readyState ${events.readyState})`);
   };
 }
+/** Closes the event stream, clears its watchdog, and schedules a replacement connection in three seconds. */
 function reconnectEvents(events, reason) {
   console.warn(`[display] SSE desconectado: ${reason}; nuevo intento en 3 s`);
   events.close();
