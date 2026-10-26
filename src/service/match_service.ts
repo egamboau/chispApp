@@ -60,7 +60,7 @@ export class MatchService {
             groupId: group?.id || 0,
             teamAId: a?.id || 0,
             teamBId: b?.id || 0,
-            lineTeamId: line?.id || 0,
+            lineTeamId: line?.id ?? null,
             tournamentType: phase?.tournamentType || '',
             teamA: a?.name || '',
             teamB: b?.name || '',
@@ -73,7 +73,8 @@ export class MatchService {
         const errors: string[] = []
         if (!phase || !group || group.phaseId !== phase.id) errors.push('Fase o grupo inválido.')
         errors.push(...this.scheduleErrors(match))
-        if (!a || !b || !line || new Set([a?.id, b?.id, line?.id]).size !== 3) errors.push('Los tres equipos deben existir y ser diferentes.')
+        if (!a || !b || a.id === b.id || (line && [a.id, b.id].includes(line.id))) errors.push('Local y visitante deben existir y todos los equipos asignados deben ser diferentes.')
+        if (!line && ((body.lineTeamId != null && body.lineTeamId !== '') || (body.lineTeam != null && (typeof body.lineTeam !== 'string' || this.clean(body.lineTeam))))) errors.push('Equipo de línea inválido.')
         if (phase && group && a && !this.repository.hasMembership(phase.id, a.id, group.id)) errors.push('El equipo A debe pertenecer al grupo seleccionado.')
         if (phase && b && !this.repository.hasMembership(phase.id, b.id)) errors.push('El equipo B debe pertenecer a la fase.')
         return { match, errors }
@@ -109,13 +110,14 @@ export class MatchService {
                 case 'MATCH_WINNER': return `MATCH_WINNER:${participant.sourceMatchId}`
             }
         }
-        const keys = Object.values(input.participants).map(key)
-        if (new Set(keys).size !== 3) return fail('Los tres participantes deben ser diferentes.')
+        const keys = Object.values(input.participants).filter((item): item is MatchParticipant => item != null).map(key)
+        if (new Set(keys).size !== keys.length) return fail('Los participantes asignados deben ser diferentes.')
         const existing = id === undefined ? undefined : this.repository.getMatchParticipants(id)
         const match: MatchInput = { ...input, tournamentType: phase.tournamentType,
             teamA: '', teamB: '', lineTeam: '', teamAId: null, teamBId: null, lineTeamId: null }
         for (const role of ['teamA', 'teamB', 'lineTeam'] as const) {
             const participant = input.participants[role]
+            if (!participant) continue
             if (participant.kind === 'TEAM') {
                 const team = Number.isInteger(participant.teamId) && participant.teamId > 0 ? this.teamService.getTeam(participant.teamId) : undefined
                 if (!team || team.tournamentId !== phase.tournamentId || team.tournamentType !== phase.tournamentType) return fail('El equipo debe pertenecer al torneo y categoría del partido.')
@@ -198,7 +200,7 @@ export class MatchService {
 
     participantsConfirmed(id: number): boolean {
         const match = this.repository.getMatch(id)
-        return Boolean(match?.participants && Object.values(match.participants).every(item => item?.status === 'CONFIRMED'))
+        return Boolean(match?.participants && Object.entries(match.participants).every(([role, item]) => (role === 'lineTeam' && item === null) || item?.status === 'CONFIRMED'))
     }
 
     validDate(value: string): boolean {
@@ -219,7 +221,7 @@ export class MatchService {
     }
 
     private publicMatch(match: Match, isAdmin: boolean): Match {
-        return isAdmin || match.lineVisible ? match : { ...match, lineTeam: null, lineTeamId: null,
+        return isAdmin || match.lineVisible ? match : { ...match, lineAssigned: Boolean(match.participants?.lineTeam || match.lineTeamId || match.lineTeam), lineTeam: null, lineTeamId: null,
             ...(match.participants && { participants: { ...match.participants, lineTeam: null } }) }
     }
 

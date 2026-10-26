@@ -79,8 +79,8 @@ test('issue 41: previsualiza y confirma ambas pentagonales con trazabilidad e id
     assert.equal(f.service.changeStatus(match.id, 'SCHEDULED', 'LIVE'), undefined);
     f.details.confirmPositions(f.table.id);
     const confirmed = f.service.getMatchParticipants(match.id)!;
-    for (const role of ['teamA', 'teamB', 'lineTeam'] as const) assert.deepEqual(confirmed[role].reference, before[role].reference);
-    assert.deepEqual([confirmed.teamA.resolvedTeamId, confirmed.teamB.resolvedTeamId, confirmed.lineTeam.resolvedTeamId], [f.teams[0]!.id, f.teams[2]!.id, f.teams[7]!.id]);
+    for (const role of ['teamA', 'teamB', 'lineTeam'] as const) assert.deepEqual(confirmed[role]!.reference, before[role]!.reference);
+    assert.deepEqual([confirmed.teamA.resolvedTeamId, confirmed.teamB.resolvedTeamId, confirmed.lineTeam!.resolvedTeamId], [f.teams[0]!.id, f.teams[2]!.id, f.teams[7]!.id]);
     assert.equal(f.service.getMatch(match.id, true)?.lineTeam, f.teams[7]!.name);
     const saved = f.service.getMatch(match.id, true);
     const confirmation = f.details.confirmPositions(f.table.id);
@@ -209,7 +209,7 @@ test('admite ganadores dentro de la misma fase y de fases anteriores en cualquie
     const group = f.db.insertGroup(later.id, 'General')!;
     const next = f.service.saveParticipantMatch({ ...input, phaseId: later.id, groupId: group.id,
         participants: { teamA: f.winner(semi1.id), teamB: f.position(1), lineTeam: f.winner(semi2.id) } });
-    assert.deepEqual(f.service.getMatchParticipants(next.id)?.lineTeam.reference, f.winner(semi2.id));
+    assert.deepEqual(f.service.getMatchParticipants(next.id)?.lineTeam?.reference, f.winner(semi2.id));
 });
 
 test('rechaza referencias inválidas y revierte la creación completa', t => {
@@ -400,4 +400,18 @@ test('issue 42: CRUD HTTP expone los tres placeholders, confirmación y bloqueos
     assert.equal(f.db.getAllTeams().length, teamCount);
     assert.equal((await call(controller.deleteMatch, {}, id)).status, 204);
     assert.equal((await call(controller.getMatch, {}, id)).status, 404);
+});
+
+test('quitar línea de referencia persiste y permite resultados con solo los rivales confirmados', (t) => {
+    const f = fixture(t);
+    const input = f.input({ teamA: f.fixed(0), teamB: f.fixed(1), lineTeam: f.position(3, f.groupB.id) });
+    const match = f.service.saveParticipantMatch(input);
+    assert.equal(f.service.participantsConfirmed(match.id), false);
+    const cleared = f.service.saveParticipantMatch({ ...input, participants: { ...input.participants, lineTeam: null } }, match.id);
+    assert.equal(cleared.lineTeam, null);
+    assert.equal(cleared.participants?.lineTeam, null);
+    assert.equal(f.service.hasParticipantReferences(match.id), false);
+    assert.equal(serviceFor(new DBConnection(f.databasePath)).getMatch(match.id, true)?.lineTeam, null);
+    assert.equal(f.service.participantsConfirmed(match.id), true);
+    assert.ok(f.service.changeStatus(match.id, 'SCHEDULED', 'LIVE'));
 });

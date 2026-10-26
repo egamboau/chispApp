@@ -176,3 +176,16 @@ test('botones de confirmar y reabrir actualizan previsualización y calendario',
   assert.match(elements['#phase-positions']!.innerHTML, /Posiciones sin confirmar/);
   assert.match(elements['#matches']!.innerHTML, /Equipo A/);
 });
+
+test('admin permite guardar y quitar línea sin relajar local y visitante', () => {
+  const { elements, run } = calendar();
+  assert.equal(elements['#lineTeamId']!.required, false);
+  assert.equal(elements['#teamAId']!.required, true);
+  assert.equal(elements['#teamBId']!.required, true);
+  run("document.querySelector('#teamAId').value = '31'; document.querySelector('#teamBId').value = '32';");
+  elements['#lineTeamId']!.value = '';
+  assert.equal(JSON.parse(run('JSON.stringify(matchParticipants())')).lineTeam, null);
+  run("renderParticipantFields({lineTeamId: 33}); document.querySelector('#lineTeamId').value = '';");
+  assert.equal(JSON.parse(run('JSON.stringify(matchParticipants())')).lineTeam, null);
+  assert.match(run("matchCard({tournamentType: 'MALE', status: 'SCHEDULED', lineTeam: null})"), /Sin asignar/);
+});

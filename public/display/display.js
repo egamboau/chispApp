@@ -12,6 +12,7 @@ const shortDate = (date) => new Intl.DateTimeFormat('es-GT', { weekday: 'long', 
 const byJornada = (dayMatches) => ['MORNING', 'AFTERNOON'].flatMap((jornada) => dayMatches.filter((match) => match.jornada === jornada));
 
 function participantName(match, role) {
+  if (role === 'lineTeam' && (match.lineAssigned === false || (match.lineVisible && !match.lineTeam && !match.participants?.lineTeam))) return 'Sin asignar';
   if (role === 'lineTeam' && !match.lineVisible) return 'Por publicar';
   const participant = match.participants?.[role];
   if (participant?.status === 'PENDING' || (match.status === 'SCHEDULED' && participant?.reference?.kind === 'GROUP_POSITION' && participant.status !== 'CONFIRMED')) {
