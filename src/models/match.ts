@@ -26,6 +26,7 @@ export interface Match {
     phaseName?: string;
     groupName?: string;
     lineVisible?: number;
+    lineAssigned?: boolean;
     participants?: MatchParticipantDetails;
 }
 
@@ -34,16 +35,16 @@ export type MatchParticipant =
     | { kind: 'GROUP_POSITION'; sourcePhaseId: number; sourceGroupId: number; position: number }
     | { kind: 'MATCH_WINNER'; sourceMatchId: number };
 
-export type MatchParticipants = Record<'teamA' | 'teamB' | 'lineTeam', MatchParticipant>;
+export type MatchParticipants = Record<'teamA' | 'teamB', MatchParticipant> & { lineTeam?: MatchParticipant | null };
 
 export type ParticipantMatchInput = Pick<MatchInput, 'phaseId' | 'groupId' | 'date' | 'jornada' | 'court' | 'sortOrder'> & {
     participants: MatchParticipants;
 };
 
-export type StoredMatchParticipants = Record<keyof MatchParticipants, {
+export type StoredMatchParticipants = { [Role in keyof MatchParticipants]-?: {
     reference: MatchParticipant;
     resolvedTeamId: number | null;
-}>;
+} | (Role extends 'lineTeam' ? null : never) };
 
 export type ParticipantResolutionStatus = 'PENDING' | 'RESOLVED' | 'CONFIRMED';
 

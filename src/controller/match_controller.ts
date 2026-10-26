@@ -15,7 +15,7 @@ const participantSchema = z.discriminatedUnion('kind', [
 const participantMatchSchema = z.object({
     phaseId: idSchema, groupId: idSchema, date: z.string(), jornada: z.enum(['MORNING', 'AFTERNOON']),
     court: idSchema, sortOrder: z.preprocess(value => value === '' || value == null ? null : value, idSchema.nullable()),
-    participants: z.object({ teamA: participantSchema, teamB: participantSchema, lineTeam: participantSchema }).strict(),
+    participants: z.object({ teamA: participantSchema, teamB: participantSchema, lineTeam: participantSchema.nullish() }).strict(),
 });
 const scoreSchema = z.object({ team: z.enum(['A', 'B']), delta: z.union([z.literal(-1), z.literal(1)]) });
 const resultSchema = z.object({ scoreA: z.coerce.number().int().nonnegative(), scoreB: z.coerce.number().int().nonnegative() });

@@ -645,3 +645,47 @@ test('administra fases, rangos, grupos y sanciones con destinos compartidos', as
   result = await json('/api/tournaments');
   assert.equal(result.body.find(({ id }: { id: number }) => id === tournamentId).currentPhaseId, null);
 });
+
+test('línea opcional: crear, asignar, quitar y leer en ambos contratos', async () => {
+  const date = '2026-12-03';
+  const schedule = { tournamentType: 'MALE', date, jornada: 'MORNING', court: 1, teamA: 'Sin línea A', teamB: 'Sin línea B' };
+  const created = await json('/api/matches', { method: 'POST', body: JSON.stringify(schedule) });
+  assert.equal(created.response.status, 201);
+  const id = created.body.id;
+  const absent = (match: any) => {
+    assert.equal(match.lineTeam, null);
+    assert.equal(match.lineTeamId, null);
+    assert.equal(match.participants.lineTeam, null);
+  };
+  absent(created.body);
+  absent((await json('/api/matches/' + id)).body);
+  const publicMatch = async () => (await publicJson('/api/matches?date=' + date)).body.find((match: any) => match.id === id);
+  const publicAbsent = await publicMatch();
+  absent(publicAbsent);
+  assert.equal(publicAbsent.lineAssigned, false);
+  const assigned = await json('/api/matches/' + id, { method: 'PUT', body: JSON.stringify({ ...schedule, lineTeam: 'Línea posterior' }) });
+  assert.equal(assigned.response.status, 200);
+  assert.ok(assigned.body.lineTeamId);
+  assert.equal((await publicMatch()).lineAssigned, true);
+  absent((await json('/api/matches/' + id, { method: 'PUT', body: JSON.stringify({ ...schedule, lineTeam: null, lineTeamId: null }) })).body);
+  const participants = { teamA: { kind: 'TEAM', teamId: created.body.teamAId }, teamB: { kind: 'TEAM', teamId: created.body.teamBId } };
+  const input = { phaseId: created.body.phaseId, groupId: created.body.groupId, date, jornada: 'MORNING', court: 2, participants };
+  const referenced = await json('/api/matches', { method: 'POST', body: JSON.stringify(input) });
+  assert.equal(referenced.response.status, 201);
+  absent(referenced.body);
+  for (const lineTeam of [{ kind: 'TEAM', teamId: assigned.body.lineTeamId }, null]) {
+    const result = await json('/api/matches/' + referenced.body.id, { method: 'PUT', body: JSON.stringify({ ...input, participants: { ...participants, lineTeam } }) });
+    assert.equal(result.response.status, 200);
+    if (lineTeam === null) absent(result.body);
+  }
+  for (const lineTeam of [{ kind: 'TEAM', teamId: created.body.teamAId }, { kind: 'TEAM', teamId: 999999 }]) {
+    assert.equal((await json('/api/matches', { method: 'POST', body: JSON.stringify({ ...input, participants: { ...participants, lineTeam } }) })).response.status, 400);
+  }
+  assert.equal((await json('/api/matches', { method: 'POST', body: JSON.stringify({ ...schedule, teamB: '' }) })).response.status, 400);
+  assert.equal((await json('/api/matches', { method: 'POST', body: JSON.stringify({ ...schedule, lineTeamId: 999999 }) })).response.status, 400);
+  assert.equal((await json('/api/matches', { method: 'POST', body: JSON.stringify({ ...schedule, lineTeam: 123 }) })).response.status, 400);
+  await json('/api/line-visibility/' + date, { method: 'PUT', body: JSON.stringify({ visible: true }) });
+  absent(await publicMatch());
+  absent((await publicJson('/api/matches?date=' + date)).body.find((match: any) => match.id === id));
+  assert.equal((await json('/api/matches/' + id + '/start', { method: 'POST' })).response.status, 200);
+});

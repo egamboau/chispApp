@@ -14,12 +14,12 @@ test('calendario omite finalizados y resultados conserva el histórico', () => {
   const source = fs.readFileSync('public/display/display.js', 'utf8');
   const renderers = source.slice(0, source.indexOf('function renderStandings'));
   const matches = [
-    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'AFTERNOON', teamA: 'Tarde 1', teamB: 'B', lineVisible: 0, court: 1, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
-    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'MORNING', teamA: 'Mañana 1', teamB: 'B', lineVisible: 0, court: 2, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
-    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'AFTERNOON', teamA: 'Tarde 2', teamB: 'B', lineVisible: 0, court: 3, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
-    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'MORNING', teamA: 'Mañana 2', teamB: 'B', lineVisible: 0, court: 4, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
-    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'MORNING', teamA: 'En juego', teamB: 'B', lineVisible: 0, court: 1, scoreA: 1, scoreB: 0, status: 'LIVE' },
-    { tournamentType: 'FEMALE', date: '2026-10-02', jornada: 'AFTERNOON', teamA: 'Resultado', teamB: 'B', lineVisible: 0, court: 2, scoreA: 2, scoreB: 1, status: 'FINISHED' },
+    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'AFTERNOON', teamA: 'Tarde 1', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 1, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
+    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'MORNING', teamA: 'Mañana 1', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 2, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
+    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'AFTERNOON', teamA: 'Tarde 2', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 3, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
+    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'MORNING', teamA: 'Mañana 2', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 4, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
+    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'MORNING', teamA: 'En juego', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 1, scoreA: 1, scoreB: 0, status: 'LIVE' },
+    { tournamentType: 'FEMALE', date: '2026-10-02', jornada: 'AFTERNOON', teamA: 'Resultado', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 2, scoreA: 2, scoreB: 1, status: 'FINISHED' },
   ];
 
   vm.runInNewContext(`${renderers}\nmatches = ${JSON.stringify(matches)}; renderCalendar(); renderResults();`, {
@@ -33,6 +33,10 @@ test('calendario omite finalizados y resultados conserva el histórico', () => {
   assert.doesNotMatch(calendarHtml, /Resultado/);
   assert.match(resultsHtml, /Resultado/);
   assert.doesNotMatch(resultsHtml, /Programado|En juego/);
+  for (const html of [calendarHtml, resultsHtml]) {
+    assert.match(html, /Sin asignar/);
+    assert.doesNotMatch(html, /undefined|Línea: null/);
+  }
 });
 
 test('placeholders públicos se distinguen y se reemplazan sin alterar programación', () => {
@@ -103,4 +107,16 @@ test('participantes escapan nombres y mantienen la línea oculta', () => {
     assert.equal(render({ lineVisible: 0, lineTeam: 'Secreto', participants: { lineTeam: { status, resolvedTeam: { name: 'Secreto' } } } }, 'lineTeam'), 'Por publicar');
   }
   assert.equal(render({ lineVisible: 0, lineTeam: null, participants: { lineTeam: null } }, 'lineTeam'), 'Por publicar');
+});
+
+test('línea sin asignar se distingue de línea por publicar en calendario y resultados', () => {
+  const source = fs.readFileSync('public/display/display.js', 'utf8');
+  const context = vm.createContext({});
+  vm.runInContext(source.slice(0, source.indexOf('function liveCard')), context);
+  for (const match of [
+    { lineVisible: 0, lineAssigned: false, lineTeam: null },
+    { lineVisible: 1, lineTeam: null, participants: { lineTeam: null } },
+  ]) {
+    assert.equal(vm.runInContext('participantName(' + JSON.stringify(match) + ', "lineTeam")', context), 'Sin asignar');
+  }
 });

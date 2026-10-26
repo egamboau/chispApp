@@ -80,27 +80,30 @@ export class MatchRepository {
         if (!match) return undefined
         type ReferenceRow = Exclude<MatchParticipant, { kind: 'TEAM' }> & { role: keyof MatchParticipants }
         const references = this.dbConnection.fetchAllFromParameterizedQuery<ReferenceRow>('SELECT * FROM match_participant_references WHERE matchId=?', id)
-        const participant = (role: keyof MatchParticipants): StoredMatchParticipants['teamA'] => {
+        const participant = (role: keyof MatchParticipants): StoredMatchParticipants[keyof StoredMatchParticipants] => {
             const row = references.find(reference => reference.role === role)
             const resolvedTeamId = match[`${role}Id`]
             let reference: MatchParticipant
             if (row?.kind === 'GROUP_POSITION') reference = { kind: row.kind, sourcePhaseId: row.sourcePhaseId, sourceGroupId: row.sourceGroupId, position: row.position }
             else if (row?.kind === 'MATCH_WINNER') reference = { kind: row.kind, sourceMatchId: row.sourceMatchId }
             else {
+                if (role === 'lineTeam' && resolvedTeamId === null) return null
                 if (resolvedTeamId === null) throw new DatabaseConnectionError('ParticipantReferenceError', 'El equipo fijo no tiene un ID válido.', undefined)
                 reference = { kind: 'TEAM', teamId: resolvedTeamId }
             }
             return { reference, resolvedTeamId }
         }
-        return { teamA: participant('teamA'), teamB: participant('teamB'), lineTeam: participant('lineTeam') }
+        return { teamA: participant('teamA')!, teamB: participant('teamB')!, lineTeam: participant('lineTeam') }
     }
 
     private withParticipants(match: Match): Match {
         const stored = this.getMatchParticipants(match.id)!
-        const displayed = { ...match }
+        const displayed = { ...match, lineTeam: match.lineTeam || null }
         const participants = {} as MatchParticipantDetails
         for (const role of ['teamA', 'teamB', 'lineTeam'] as const) {
-            const { reference, resolvedTeamId } = stored[role]
+            const item = stored[role]
+            if (!item) { participants[role] = null; continue }
+            const { reference, resolvedTeamId } = item
             const confirmed = reference.kind === 'TEAM' || (reference.kind === 'GROUP_POSITION' && Boolean(
                 this.dbConnection.fetchOneFromQuery('SELECT 1 FROM phase_position_confirmations WHERE phaseId=?', reference.sourcePhaseId)))
             participants[role] = {
@@ -127,7 +130,7 @@ export class MatchRepository {
             const saved = id === undefined ? this.insertMatch(match, false) : this.updateMatch(id, match, false)
             for (const role of ['teamA', 'teamB', 'lineTeam'] as const) {
                 const reference = participants[role]
-                if (reference.kind === 'TEAM') continue
+                if (!reference || reference.kind === 'TEAM') continue
                 this.dbConnection.executeQuery(`INSERT INTO match_participant_references(matchId,role,kind,sourcePhaseId,sourceGroupId,position,sourceMatchId)
                     VALUES(?,?,?,?,?,?,?)`, saved.id, role, reference.kind,
                     reference.kind === 'GROUP_POSITION' ? reference.sourcePhaseId : null,
@@ -155,7 +158,7 @@ export class MatchRepository {
     changeStatus(id: number, from: string, to: string): boolean {
         if (to === 'LIVE' && from === 'SCHEDULED') {
             const match = this.getMatch(id)
-            if (!match || [match.teamAId, match.teamBId, match.lineTeamId].some(teamId => teamId === null)) return false
+            if (!match || Object.values(match.participants!).some(item => item !== null && item.resolvedTeamId === null)) return false
             if (this.dbConnection.fetchOneFromQuery(`SELECT 1 FROM match_participant_references r
                 LEFT JOIN phase_position_confirmations c ON c.phaseId=r.sourcePhaseId
                 WHERE r.matchId=? AND r.kind='GROUP_POSITION' AND c.phaseId IS NULL`, id)) return false

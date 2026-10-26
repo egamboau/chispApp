@@ -248,7 +248,7 @@ function renderMatchTeams(values = {}) {
   for (const role of Object.keys(participantRoles)) {
     const select = document.querySelector(`#${role}Id`), selected = values[`${role}Id`] ?? select.value;
     const allowed = role === 'teamA' ? memberships.filter(item => item.groupId === groupId).map(item => item.teamId) : memberIds;
-    select.innerHTML = `<option value="">Seleccione</option>${options(teams.filter(team => role === 'lineTeam' || allowed.includes(team.id)))}`;
+    select.innerHTML = `<option value="">${role === 'lineTeam' ? 'Sin asignar' : 'Seleccione'}</option>${options(teams.filter(team => role === 'lineTeam' || allowed.includes(team.id)))}`;
     select.value = selected ?? '';
   }
 }
@@ -260,7 +260,7 @@ function toggleParticipant(role) {
   const kind = document.querySelector(`#${role}-kind`).value, position = kind === 'GROUP_POSITION';
   document.querySelector(`#${role}-fixed`).hidden = kind !== 'TEAM';
   document.querySelector(`#${role}-position-fields`).hidden = !position;
-  document.querySelector(`#${role}Id`).required = kind === 'TEAM';
+  document.querySelector(`#${role}Id`).required = kind === 'TEAM' && role !== 'lineTeam';
   for (const field of ['phase', 'group', 'position']) document.querySelector(`#${role}-${field}`).required = position;
 }
 function renderParticipantFields(match = {}) {
@@ -281,13 +281,14 @@ function renderParticipantFields(match = {}) {
     document.querySelector(`#${role}-phase`).addEventListener('change', () => renderParticipantGroups(role));
   }
   const warning = document.querySelector('#assignment-warning');
-  warning.hidden = !Object.values(match.participants || {}).some(item => item?.reference.kind !== 'TEAM' && item?.status === 'CONFIRMED');
+  warning.hidden = !Object.values(match.participants || {}).some(item => item?.reference?.kind !== 'TEAM' && item?.status === 'CONFIRMED');
   warning.textContent = 'Asignaciones confirmadas: cambiar una referencia requiere revisar y confirmar otra vez la fase origen.';
 }
 function matchParticipants() {
   const editing = matches.find(match => match.id === Number(document.querySelector('#match-id').value));
   return Object.fromEntries(Object.keys(participantRoles).map(role => {
     const kind = document.querySelector(`#${role}-kind`).value;
+    if (role === 'lineTeam' && kind === 'TEAM' && !document.querySelector('#lineTeamId').value) return [role, null];
     return [role, kind === 'GROUP_POSITION' ? { kind, sourcePhaseId: Number(document.querySelector(`#${role}-phase`).value), sourceGroupId: Number(document.querySelector(`#${role}-group`).value), position: Number(document.querySelector(`#${role}-position`).value) } : kind === 'MATCH_WINNER' ? editing.participants[role].reference : { kind, teamId: Number(document.querySelector(`#${role}Id`).value) }];
   }));
 }
@@ -301,7 +302,7 @@ function resetMatchForm() {
 }
 function matchCard(match) {
   const score = match.status === 'LIVE' ? `<div class="score-controls">${['A', 'B'].map((side) => `<div><strong>${escapeHtml(match[`team${side}`])}</strong><span><button data-action="score" data-team="${side}" data-delta="-1" ${match[`score${side}`] === 0 ? 'disabled' : ''}>−</button><b>${match[`score${side}`]}</b><button data-action="score" data-team="${side}" data-delta="1">+</button></span></div>`).join('')}</div>` : match.status === 'FINISHED' ? `<div class="score-controls final-score">${['A', 'B'].map((side) => `<label><strong>${escapeHtml(match[`team${side}`])}</strong><input data-result="score${side}" type="number" min="0" step="1" value="${match[`score${side}`]}"></label>`).join('')}</div>` : `<h3>${escapeHtml(match.teamA)} <small>vs</small> ${escapeHtml(match.teamB)}</h3>`;
-  return `<article class="match-card ${match.tournamentType.toLowerCase()}" data-id="${match.id}"><div class="meta"><span class="badge">${match.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'}</span><strong>${escapeHtml(match.phaseName)} · ${escapeHtml(match.groupName)} · Cancha ${match.court}</strong><span>${match.date} · ${jornadaLabels[match.jornada]} · Orden ${match.sortOrder ?? 'sin definir'}</span><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span></div>${score}${match.status !== 'SCHEDULED' ? '<p>Partido iniciado o terminado: las asignaciones de participantes están bloqueadas.</p>' : ''}<p>Línea: <strong>${escapeHtml(match.lineTeam)}</strong></p><div class="cards"><label>${escapeHtml(match.teamA)} 🟨<input data-card="yellowCardsA" type="number" min="0" value="${match.yellowCardsA}"></label><label>🟥<input data-card="redCardsA" type="number" min="0" value="${match.redCardsA}"></label><label>${escapeHtml(match.teamB)} 🟨<input data-card="yellowCardsB" type="number" min="0" value="${match.yellowCardsB}"></label><label>🟥<input data-card="redCardsB" type="number" min="0" value="${match.redCardsB}"></label><button data-action="cards">GUARDAR TARJETAS</button></div><div class="actions"><button data-action="order">EDITAR ORDEN</button>${match.status === 'SCHEDULED' ? '<button data-action="edit">EDITAR</button><button class="danger" data-action="delete">ELIMINAR</button><button class="primary" data-action="start">INICIAR</button>' : ''}${match.status === 'LIVE' ? '<button class="danger" data-action="reset">REINICIAR MARCADOR</button><button class="finish" data-action="finish">FINALIZAR PARTIDO</button>' : ''}${match.status === 'FINISHED' ? `<button data-action="result">GUARDAR RESULTADO</button><button class="primary" data-action="reopen">REABRIR PARTIDO</button><a class="primary" href="/admin/scoring.html?matchId=${match.id}">ADMINISTRAR GOLEO</a>` : ''}</div></article>`;
+  return `<article class="match-card ${match.tournamentType.toLowerCase()}" data-id="${match.id}"><div class="meta"><span class="badge">${match.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'}</span><strong>${escapeHtml(match.phaseName)} · ${escapeHtml(match.groupName)} · Cancha ${match.court}</strong><span>${match.date} · ${jornadaLabels[match.jornada]} · Orden ${match.sortOrder ?? 'sin definir'}</span><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span></div>${score}${match.status !== 'SCHEDULED' ? '<p>Partido iniciado o terminado: las asignaciones de participantes están bloqueadas.</p>' : ''}<p>Línea: <strong>${escapeHtml(match.lineTeam || 'Sin asignar')}</strong></p><div class="cards"><label>${escapeHtml(match.teamA)} 🟨<input data-card="yellowCardsA" type="number" min="0" value="${match.yellowCardsA}"></label><label>🟥<input data-card="redCardsA" type="number" min="0" value="${match.redCardsA}"></label><label>${escapeHtml(match.teamB)} 🟨<input data-card="yellowCardsB" type="number" min="0" value="${match.yellowCardsB}"></label><label>🟥<input data-card="redCardsB" type="number" min="0" value="${match.redCardsB}"></label><button data-action="cards">GUARDAR TARJETAS</button></div><div class="actions"><button data-action="order">EDITAR ORDEN</button>${match.status === 'SCHEDULED' ? '<button data-action="edit">EDITAR</button><button class="danger" data-action="delete">ELIMINAR</button><button class="primary" data-action="start">INICIAR</button>' : ''}${match.status === 'LIVE' ? '<button class="danger" data-action="reset">REINICIAR MARCADOR</button><button class="finish" data-action="finish">FINALIZAR PARTIDO</button>' : ''}${match.status === 'FINISHED' ? `<button data-action="result">GUARDAR RESULTADO</button><button class="primary" data-action="reopen">REABRIR PARTIDO</button><a class="primary" href="/admin/scoring.html?matchId=${match.id}">ADMINISTRAR GOLEO</a>` : ''}</div></article>`;
 }
 function renderMatches() {
   const date = document.querySelector('#filter-date').value, court = Number(document.querySelector('#filter-court').value);
