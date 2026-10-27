@@ -7,6 +7,7 @@ let tournaments = [];
 let selectedScoringTable = 'Torneo Regular';
 
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
+const matchTitle = (match) => `Partido ${escapeHtml(match.sortOrder ?? match.id)}${match.groupName ? ` · ${escapeHtml(match.groupName)}` : ''}`;
 const badge = (match) => `<span class="badge ${match.tournamentType.toLowerCase()}">${labels[match.tournamentType]}</span>`;
 const shortDate = (date) => new Intl.DateTimeFormat('es-GT', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${date}T12:00:00`));
 const byJornada = (dayMatches) => ['MORNING', 'AFTERNOON'].flatMap((jornada) => dayMatches.filter((match) => match.jornada === jornada));
@@ -24,6 +25,7 @@ function participantName(match, role) {
 function liveCard(match) {
   return `<article class="live-card ${match.tournamentType.toLowerCase()}">
     <div class="card-top">${badge(match)}<strong>CANCHA ${match.court}</strong></div>
+    <div class="match-title">${matchTitle(match)}</div>
     <div class="score"><span>${participantName(match, 'teamA')}</span><b>${match.scoreA}</b><i>–</i><b>${match.scoreB}</b><span>${participantName(match, 'teamB')}</span></div>
     <p>Línea: <strong>${participantName(match, 'lineTeam')}</strong></p>
   </article>`;
@@ -46,7 +48,7 @@ function renderResults() {
   }, {});
   document.querySelector('#results-list').innerHTML = Object.entries(days).reverse().map(([date, dayMatches]) => `
     <section class="day"><h2>${shortDate(date)}</h2>${dayMatches.map((match) => `<article class="calendar-match ${match.tournamentType.toLowerCase()}">
-      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${participantName(match, 'teamA')} <b>${match.scoreA} – ${match.scoreB}</b> ${participantName(match, 'teamB')}</h3><p>Línea: ${participantName(match, 'lineTeam')}</p></div><span class="status finished">FINAL</span>
+      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><div class="match-title">${matchTitle(match)}</div><h3>${participantName(match, 'teamA')} <b>${match.scoreA} – ${match.scoreB}</b> ${participantName(match, 'teamB')}</h3><p>Línea: ${participantName(match, 'lineTeam')}</p></div><span class="status finished">FINAL</span>
     </article>`).join('')}</section>`).join('') || `<div class="empty"><h2>${date ? 'No hay resultados para la fecha seleccionada' : 'No hay resultados anteriores'}</h2></div>`;
 }
 
@@ -60,7 +62,7 @@ function renderCalendar() {
   }, {});
   document.querySelector('#calendar-list').innerHTML = Object.entries(days).map(([date, dayMatches]) => `
     <section class="day"><h2>${shortDate(date)}</h2>${byJornada(dayMatches).map((match) => `<article class="calendar-match ${match.tournamentType.toLowerCase()}">
-      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><h3>${participantName(match, 'teamA')} ${match.status === 'SCHEDULED' ? '<small>vs</small>' : `<b>${match.scoreA} – ${match.scoreB}</b>`} ${participantName(match, 'teamB')}</h3><p>Línea: ${participantName(match, 'lineTeam')}</p></div><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span>
+      <span class="jornada">${jornadaLabels[match.jornada]}</span><div>${badge(match)} <strong>CANCHA ${match.court}</strong><div class="match-title">${matchTitle(match)}</div><h3>${participantName(match, 'teamA')} ${match.status === 'SCHEDULED' ? '<small>vs</small>' : `<b>${match.scoreA} – ${match.scoreB}</b>`} ${participantName(match, 'teamB')}</h3><p>Línea: ${participantName(match, 'lineTeam')}</p></div><span class="status ${match.status.toLowerCase()}">${statusLabels[match.status]}</span>
     </article>`).join('')}</section>`).join('') || `<div class="empty"><h2>${filter !== 'ALL' || date || status ? 'No hay partidos para los filtros seleccionados' : 'No hay partidos'}</h2></div>`;
 }
 
@@ -120,9 +122,10 @@ async function loadPhases() {
   const tournament = tournaments.find((item) => item.id === Number(document.querySelector('#tournament-select').value));
   if (!tournament) return;
   const phases = await (await fetch(`/api/tournaments/${tournament.id}/phases`)).json();
+  phases.sort((a, b) => (a.tournamentType === b.tournamentType ? 0 : a.tournamentType === 'MALE' ? -1 : 1) || a.sortOrder - b.sortOrder || a.id - b.id);
   const select = document.querySelector('#phase-select');
   const previous = Number(select.value);
-  select.innerHTML = phases.map((phase) => `<option value="${phase.id}">${escapeHtml(phase.name)}</option>`).join('');
+  select.innerHTML = phases.map((phase) => `<option value="${phase.id}">${labels[phase.tournamentType]} · ${escapeHtml(phase.name)}</option>`).join('');
   if (phases.some((phase) => phase.id === previous)) select.value = previous;
   else if (phases.some((phase) => phase.id === tournament.currentPhaseId)) select.value = tournament.currentPhaseId;
   await Promise.all([loadStandings(), loadScoring(), loadMatches()]);
