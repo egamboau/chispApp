@@ -14,12 +14,12 @@ test('calendario omite finalizados y resultados conserva el histórico', () => {
   const source = fs.readFileSync('public/display/display.js', 'utf8');
   const renderers = source.slice(0, source.indexOf('function renderStandings'));
   const matches = [
-    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'AFTERNOON', teamA: 'Tarde 1', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 1, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
-    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'MORNING', teamA: 'Mañana 1', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 2, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
-    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'AFTERNOON', teamA: 'Tarde 2', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 3, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
-    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'MORNING', teamA: 'Mañana 2', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 4, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
-    { tournamentType: 'MALE', date: '2026-10-01', jornada: 'MORNING', teamA: 'En juego', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 1, scoreA: 1, scoreB: 0, status: 'LIVE' },
-    { tournamentType: 'FEMALE', date: '2026-10-02', jornada: 'AFTERNOON', teamA: 'Resultado', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 2, scoreA: 2, scoreB: 1, status: 'FINISHED' },
+    { id: 1, tournamentType: 'MALE', date: '2026-10-01', jornada: 'AFTERNOON', teamA: 'Tarde 1', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 1, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
+    { id: 2, tournamentType: 'MALE', date: '2026-10-01', jornada: 'MORNING', teamA: 'Mañana 1', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 2, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
+    { id: 3, tournamentType: 'MALE', date: '2026-10-01', jornada: 'AFTERNOON', teamA: 'Tarde 2', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 3, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
+    { id: 4, tournamentType: 'MALE', date: '2026-10-01', jornada: 'MORNING', teamA: 'Mañana 2', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 4, scoreA: 0, scoreB: 0, status: 'SCHEDULED' },
+    { id: 5, tournamentType: 'MALE', date: '2026-10-01', jornada: 'MORNING', teamA: 'En juego', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 1, scoreA: 1, scoreB: 0, status: 'LIVE' },
+    { id: 6, tournamentType: 'FEMALE', date: '2026-10-02', jornada: 'AFTERNOON', teamA: 'Resultado', teamB: 'B', lineVisible: 0, lineAssigned: false, lineTeam: null, court: 2, scoreA: 2, scoreB: 1, status: 'FINISHED' },
   ];
 
   vm.runInNewContext(`${renderers}\nmatches = ${JSON.stringify(matches)}; renderCalendar(); renderResults();`, {
@@ -51,7 +51,7 @@ test('placeholders públicos se distinguen y se reemplazan sin alterar programac
     resolvedTeamId: null, resolvedTeam: null, status: 'PENDING',
   });
   const match = {
-    tournamentType: 'MALE', date: '2026-10-20', jornada: 'MORNING', court: 4, sortOrder: 2,
+    id: 7, tournamentType: 'MALE', date: '2026-10-20', jornada: 'MORNING', court: 4, sortOrder: 2,
     teamA: 'Pentagonales · 1.º A', teamB: 'Pentagonales · 3.º A', lineTeam: 'Pentagonales · 3.º B',
     lineVisible: 1, scoreA: 0, scoreB: 0, status: 'SCHEDULED',
     participants: { teamA: position(1, 1), teamB: position(3, 1), lineTeam: position(3, 2) },
@@ -119,4 +119,34 @@ test('línea sin asignar se distingue de línea por publicar en calendario y res
   ]) {
     assert.equal(vm.runInContext('participantName(' + JSON.stringify(match) + ', "lineTeam")', context), 'Sin asignar');
   }
+});
+
+test('tarjetas muestran el número y grupo en calendario, resultados y marcador', () => {
+  const elements: Record<string, { value: string; innerHTML: string }> = Object.fromEntries(
+    ['#calendar-date', '#calendar-status', '#calendar-list', '#results-date', '#results-list', '#live']
+      .map(selector => [selector, { value: '', innerHTML: '' }]),
+  );
+  const source = fs.readFileSync('public/display/display.js', 'utf8');
+  const context = vm.createContext({ document: { querySelector: (selector: string) => elements[selector] }, Intl });
+  const match = {
+    id: 42, sortOrder: 1, groupName: 'Pentagonal A', tournamentType: 'MALE',
+    date: '2026-10-20', jornada: 'MORNING', court: 1, status: 'SCHEDULED',
+    teamA: 'Águilas', teamB: 'Tigres', lineVisible: 0, lineAssigned: false, scoreA: 0, scoreB: 0,
+  };
+  vm.runInContext(`${source.slice(0, source.indexOf('function renderStandings'))}\nmatches = ${JSON.stringify([match])};`, context);
+  for (const [status, selector] of [
+    ['SCHEDULED', '#calendar-list'], ['LIVE', '#calendar-list'], ['LIVE', '#live'], ['FINISHED', '#results-list'],
+  ] as const) {
+    for (const [group, title] of [
+      ['Pentagonal A', 'Partido 1 · Pentagonal A'], ['Grupo <A> & B', 'Partido 1 · Grupo &lt;A&gt; &amp; B'],
+      [null, 'Partido 1'], ['', 'Partido 1'],
+    ]) {
+      vm.runInContext(`matches[0].status = ${JSON.stringify(status)}; matches[0].groupName = ${JSON.stringify(group)}; render();`, context);
+      const html = elements[selector]!.innerHTML;
+      assert.ok(html.includes(`<div class="match-title">${title}</div>`));
+      assert.doesNotMatch(html, /undefined|<A>|Partido 1 · <\/div>/);
+    }
+  }
+  vm.runInContext("matches[0].sortOrder = null; matches[0].groupName = 'Pentagonal B'; render();", context);
+  assert.match(elements['#results-list']!.innerHTML, /Partido 42 · Pentagonal B/);
 });

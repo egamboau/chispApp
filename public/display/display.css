@@ -7,7 +7,7 @@ h1 { margin: 0; font-size: clamp(2rem, 4vw, 4.5rem); letter-spacing: .12em; }
 nav, .filters, .filter-buttons { display: flex; gap: .8rem; }
 .selectors { display: flex; gap: .6rem; }
 .selectors label { display: grid; gap: .2rem; color: var(--muted); font-size: .75rem; font-weight: 800; text-transform: uppercase; }
-.selectors select { min-height: 42px; max-width: 180px; padding: .4rem; border: 1px solid #67809c; border-radius: 8px; background: #172b45; color: white; font-weight: 700; }
+.selectors select { min-height: 42px; max-width: 320px; padding: .4rem; border: 1px solid #67809c; border-radius: 8px; background: #172b45; color: white; font-weight: 700; }
 button { min-height: 58px; padding: .75rem 1.3rem; border: 2px solid #67809c; border-radius: 12px; background: #172b45; color: white; font: 800 clamp(.85rem, 1.3vw, 1.25rem) system-ui; cursor: pointer; }
 button.active { background: var(--accent); border-color: var(--accent); color: #172033; }
 main { min-height: 0; padding: 2.5vh 3vw; }
@@ -19,6 +19,7 @@ main { min-height: 0; padding: 2.5vh 3vw; }
 .female { border-left-color: var(--female); }
 .live-card { padding: 3vh 2.5vw; max-height: 66vh; }
 .card-top { display: flex; justify-content: space-between; align-items: center; font-size: clamp(1.2rem, 2vw, 2rem); }
+.match-title { margin: .6rem 0; color: var(--muted); font-size: clamp(1rem, 1.6vw, 1.5rem); overflow-wrap: anywhere; }
 .badge { display: inline-block; padding: .35em .7em; border: 2px solid currentColor; border-radius: 999px; text-transform: uppercase; font-weight: 900; letter-spacing: .08em; }
 .badge.male { color: #70d5ff; }
 .badge.female { color: #ff86b9; }
@@ -74,8 +75,8 @@ footer p { margin: 0; }
 @media (max-width: 900px) {
   header { height: auto; min-height: 0; flex-direction: column; gap: .7rem; padding: .7rem; }
   body { display: block; height: auto; min-height: 100dvh; }
-  .selectors { width: 100%; }
-  .selectors label { flex: 1; }
+  .selectors { width: 100%; flex-wrap: wrap; }
+  .selectors label { flex: 1 1 240px; min-width: 0; }
   .selectors select { max-width: none; width: 100%; }
   h1 { font-size: 1.5rem; }
   nav { width: 100%; }
