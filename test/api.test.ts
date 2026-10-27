@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
 import Database from 'better-sqlite3';
+import { waitForServer } from './wait_for_server';
 
 const port = 43127;
 const jwksPort = 43128;
@@ -20,14 +21,6 @@ let serverLogs = '';
 type JsonResult = { response: Response; body: any };
 type ApiRow = { teamId: number; teamName: string; destination: string | null; possibleDestinations: string[]; requiresTiebreaker: boolean; points: number; played: number; yellowCards: number; redCards: number };
 type ApiGroup = { id: number; name: string; standings: ApiRow[] };
-
-async function waitForServer() {
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try { if ((await fetch(`${base}/api/matches`)).ok) return; } catch (error) { serverLogs += `\nprobe: ${error instanceof Error ? error.message : String(error)}`; }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error(`Server did not start: ${serverLogs}`);
-}
 
 async function waitForLog(text: string) {
   for (let attempt = 0; attempt < 40; attempt++) {
@@ -85,7 +78,7 @@ test.before(async () => {
   server = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], { cwd: path.join(__dirname, '..'), env, stdio: ['ignore', 'pipe', 'pipe'] });
   server.stdout.on('data', (chunk: Buffer) => { serverLogs += chunk; });
   server.stderr.on('data', (chunk: Buffer) => { serverLogs += chunk; });
-  await waitForServer();
+  await waitForServer(server, `${base}/api/matches`);
 });
 
 test('protege el panel y separa la API pública de la administrativa', async () => {
