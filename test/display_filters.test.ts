@@ -121,7 +121,7 @@ test('línea sin asignar se distingue de línea por publicar en calendario y res
   }
 });
 
-test('tarjetas muestran el número y grupo en calendario, resultados y marcador', () => {
+test('tarjetas muestran solo el grupo en calendario, resultados y marcador', () => {
   const elements: Record<string, { value: string; innerHTML: string }> = Object.fromEntries(
     ['#calendar-date', '#calendar-status', '#calendar-list', '#results-date', '#results-list', '#live']
       .map(selector => [selector, { value: '', innerHTML: '' }]),
@@ -138,15 +138,15 @@ test('tarjetas muestran el número y grupo en calendario, resultados y marcador'
     ['SCHEDULED', '#calendar-list'], ['LIVE', '#calendar-list'], ['LIVE', '#live'], ['FINISHED', '#results-list'],
   ] as const) {
     for (const [group, title] of [
-      ['Pentagonal A', 'Partido 1 · Pentagonal A'], ['Grupo <A> & B', 'Partido 1 · Grupo &lt;A&gt; &amp; B'],
-      [null, 'Partido 1'], ['', 'Partido 1'],
+      ['Pentagonal A', 'Pentagonal A'], ['Grupo <A> & B', 'Grupo &lt;A&gt; &amp; B'],
+      [null, ''], ['', ''],
     ]) {
       vm.runInContext(`matches[0].status = ${JSON.stringify(status)}; matches[0].groupName = ${JSON.stringify(group)}; render();`, context);
       const html = elements[selector]!.innerHTML;
       assert.ok(html.includes(`<div class="match-title">${title}</div>`));
-      assert.doesNotMatch(html, /undefined|<A>|Partido 1 · <\/div>/);
+      assert.doesNotMatch(html, /undefined|<A>|Partido/);
     }
   }
   vm.runInContext("matches[0].sortOrder = null; matches[0].groupName = 'Pentagonal B'; render();", context);
-  assert.match(elements['#results-list']!.innerHTML, /Partido 42 · Pentagonal B/);
+  assert.match(elements['#results-list']!.innerHTML, /<div class="match-title">Pentagonal B<\/div>/);
 });
