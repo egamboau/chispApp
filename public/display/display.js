@@ -7,7 +7,7 @@ let tournaments = [];
 let selectedScoringTable = 'Torneo Regular';
 
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
-const matchTitle = (match) => `Partido ${escapeHtml(match.sortOrder ?? match.id)}${match.groupName ? ` · ${escapeHtml(match.groupName)}` : ''}`;
+const matchTitle = (match) => escapeHtml(match.groupName ?? '');
 const badge = (match) => `<span class="badge ${match.tournamentType.toLowerCase()}">${labels[match.tournamentType]}</span>`;
 const shortDate = (date) => new Intl.DateTimeFormat('es-GT', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${date}T12:00:00`));
 const byJornada = (dayMatches) => ['MORNING', 'AFTERNOON'].flatMap((jornada) => dayMatches.filter((match) => match.jornada === jornada));
