@@ -81,7 +81,10 @@ old requests. Calendar SSE refreshes retain filters and drafts. Confirmed group
 positions and API-created match-winner references survive schedule edits; the server
 owns all transition and assignment checks. Scoring deep links resolve tournament and
 phase before loading a finished match, including inactive tournaments. Create scoring
-tables in the table form, then select one by ID for new or existing player totals.
+tables in Tablas, then select one for new or existing player totals. The UI validates
+the selected table ID and sends its name to the existing scoring API. Registro
+retains valid match/team/table selections for consecutive entries; Goleadores opens
+existing entries in Registro for editing. Task panels remain mounted to preserve drafts.
 
 Frontend regressions cover participant preservation, lifecycle controls, position
 blockers, protected writes, cancellation and scoring links. Backend HTTP tests cover
