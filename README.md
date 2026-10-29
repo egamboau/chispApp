@@ -12,15 +12,12 @@ Permite administrar varios torneos activos, fases, grupos, membresías, sancione
 ## Ejecución local
 
 ```bash
-cd frontend
 npm ci
 npm run build
-cd ../backend
-npm ci
-npm start
+NODE_ENV=development node backend/dist/index.js
 ```
 
-La base de datos local se crea en `./data/tournament.db`. Abre:
+La base de datos local se crea en `backend/dist/data/tournament.db`; define `DATABASE_PATH` para usar otra ubicación. Abre:
 
 - Pantalla pública: <http://localhost:3000/display>
 - Torneos, fases y grupos: <http://localhost:3000/admin>
@@ -31,19 +28,16 @@ La base de datos local se crea en `./data/tournament.db`. Abre:
 Para desarrollo con reinicio automático:
 
 ```bash
-cd backend
-npm run dev
+npm run dev:backend
 ```
 
-El frontend React sustituye la pantalla pública vanilla en `/display/`. En desarrollo, Vite lo sirve en <http://localhost:5173/display/> y envía `/api` a Express en el puerto 3000:
+React sirve la pantalla pública y las cuatro vistas administrativas. En desarrollo, Vite lo sirve en <http://localhost:5173/display/> y envía `/api` a Express en el puerto 3000:
 
 ```bash
-cd frontend
-npm ci
-npm run dev
+npm run dev:frontend
 ```
 
-El build de producción y sus recursos quedan disponibles en `/display/`. La interfaz administrativa continúa en `/admin`.
+El build de producción y sus recursos quedan disponibles en `/display/`. La administración React conserva las rutas `/admin` existentes.
 
 ## Docker Compose
 
@@ -104,7 +98,7 @@ En producción no se publica el puerto 3000. El servicio `cloudflared` debe pert
 | `PORT` | `3000` | Puerto HTTP. |
 | `DATABASE_PATH` | `./data/tournament.db` local, `/data/tournament.db` en Docker | Archivo SQLite persistente. |
 | `NODE_ENV` | — | Usa `development` con `npm run dev`. |
-| `FRONTEND_DIST_PATH` | `../frontend/dist` desde `backend/` | Build de React servido en `/display/`. |
+| `FRONTEND_DIST_PATH` | `../frontend/dist` desde `backend/` | Build React compartido por `/display/` y `/admin/`. |
 | `CF_ACCESS_TEAM_DOMAIN` | — | Dominio completo del equipo, por ejemplo `https://equipo.cloudflareaccess.com`. Obligatorio en producción. |
 | `CF_ACCESS_AUD` | — | Application Audience Tag de Cloudflare Access. Obligatorio en producción. |
 
@@ -243,6 +237,10 @@ El contenedor copia el secreto a un archivo temporal escribible para que rclone 
 ## Pruebas
 
 ```bash
-cd backend
+npm run lint
+npm run typecheck
 npm test
+npm run build
 ```
+
+La matriz de regresión de la migración está en [frontend/REGRESSION.md](frontend/REGRESSION.md). Los archivos vanilla de `backend/public/display` ya no forman parte del runtime.

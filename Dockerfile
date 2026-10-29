@@ -29,7 +29,6 @@ COPY --from=build --chown=node:node /app/backend/node_modules ./backend/node_mod
 COPY --from=build --chown=node:node /app/shared/package.json ./shared/package.json
 COPY --from=build --chown=node:node /app/shared/dist ./shared/dist
 COPY --from=build --chown=node:node /app/backend/dist ./backend/dist
-COPY --from=build --chown=node:node /app/backend/public ./backend/public
 COPY --from=build --chown=node:node /app/frontend/dist ./frontend/dist
 
 RUN mkdir -p /data && chown -R node:node /app /data
