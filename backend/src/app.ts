@@ -173,7 +173,6 @@ class App {
                 if (error) next(error)
             })
         });
-        this.app.use(express.static(path.join(__dirname, '..', 'public'), { setHeaders: (res) => res.set('Cache-Control', 'no-store') }));
 
     }
 

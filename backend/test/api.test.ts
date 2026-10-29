@@ -155,7 +155,7 @@ test('sirve las páginas administrativas y la pantalla pública', async () => {
   for (const url of ['/display', '/display/index.html', '/display/admin.html', '/display/%61dmin.html']) {
     assert.equal(await (await fetch(`${base}${url}`)).text(), '<main>React shell</main>');
   }
-  for (const url of ['/ADMIN', '/ADMIN/teams.html', '/admin.html', '/react', '/react/', '/react/deep/link', '/react/display-test.js']) {
+  for (const url of ['/ADMIN', '/ADMIN/teams.html', '/admin.html', '/react', '/react/', '/react/deep/link', '/react/display-test.js', '/display.js', '/display.css']) {
     assert.equal((await fetch(`${base}${url}`)).status, 404);
   }
   assert.equal(root.headers.get('location'), '/display');
