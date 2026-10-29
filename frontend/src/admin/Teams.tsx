@@ -20,14 +20,14 @@ export function Teams({ data: d, run, revision }: { data: AdminData; run: Run; r
     return () => controller.abort()
   }, [team?.id, revision])
   return <><section className="panel"><h2>Inscribir equipos</h2><p>{p ? `Asignando equipos a ${p.name}.` : 'El torneo no tiene fases.'}</p>
-    <Form title="Crear equipo" disabled={!t} submit={v => run(async () => {
+    <Form disclosure title="Crear equipo" disabled={!t} submit={v => run(async () => {
       const created = await adminRequest('/teams', S.TeamResponseSchema, { method: 'POST', body: S.CreateTeamInputSchema.parse({ name: v.name, tournamentId: t!.id }) })
       if (p && v.groupId) {
         try { await adminMutation(`/phases/${p.id}/memberships`, 'POST', S.MembershipInputSchema.parse({ teamId: created.id, groupId: v.groupId })) }
         catch (failure) { throw new Error(`Equipo creado; no se pudo asignar al grupo. Usa «Asignar equipo existente». ${failure instanceof Error ? failure.message : ''}`, { cause: failure }) }
       }
     })}><Field label="Nombre" name="name" maxLength={100} /><Select label="Grupo opcional" name="groupId" items={d.groups} optional /></Form>
-    <Form title="Asignar equipo existente" disabled={!p || !d.groups.length} submit={v => run(() => adminMutation(`/phases/${p!.id}/memberships`, 'POST', S.MembershipInputSchema.parse(v)))}><Select label="Equipo" name="teamId" items={d.teams.filter(item => !memberTeams.includes(item))} /><Select label="Grupo" name="groupId" items={d.groups} /></Form>
+    <Form disclosure title="Asignar equipo existente" disabled={!p || !d.groups.length} submit={v => run(() => adminMutation(`/phases/${p!.id}/memberships`, 'POST', S.MembershipInputSchema.parse(v)))}><Select label="Equipo" name="teamId" items={d.teams.filter(item => !memberTeams.includes(item))} /><Select label="Grupo" name="groupId" items={d.groups} /></Form>
     {d.teams.map(item => <section key={item.id}><Form title={`Editar ${item.name}`} submit={v => run(() => adminMutation(`/teams/${item.id}`, 'PUT', S.UpdateTeamInputSchema.parse(v)))}><Field label="Nombre" name="name" defaultValue={item.name} maxLength={100} /></Form><Row><span>{d.memberships.find(member => member.teamId === item.id)?.groupName ?? 'Sin grupo en esta fase'}</span>
       {memberTeams.includes(item) && <button onClick={() => { if (confirm(`¿Quitar a ${item.name} de esta fase?`)) void run(() => adminMutation(`/phases/${p!.id}/memberships/${item.id}`, 'DELETE')) }}>QUITAR DE FASE</button>}
       <button className="danger" onClick={() => { if (confirm(`¿Eliminar a ${item.name} del torneo?`)) void run(() => adminMutation(`/teams/${item.id}`, 'DELETE')) }}>ELIMINAR</button></Row></section>)}

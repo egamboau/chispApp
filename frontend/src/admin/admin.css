@@ -124,3 +124,14 @@ footer { padding: 1rem; color: var(--muted); text-align: center; font-size: .8re
 input, select { min-width: 0; }
 .unregistered { opacity: .6; }
 @media (max-width: 520px) { .compact-form > fieldset { grid-template-columns: 1fr; } .admin-selectors { flex-direction: column; } }
+
+/* Page scrolling and in-flow actions remain usable above a mobile keyboard. */
+#teams, #players, #configuration { max-height: none; overflow: visible; }
+main > *, .panel, section { min-width: 0; }
+:focus-visible { outline: 3px solid #b65c00; outline-offset: 3px; }
+.config-row button, .team-row button, .scoring-row button, .cards button, .cards input { min-height: 44px; }
+header .public-link { border: 0; font-size: .85rem; font-weight: 400; }
+.form-disclosure { margin: 1rem 0; border: 1px solid #bac7d5; border-radius: 9px; padding: .7rem; }
+summary { min-height: 44px; padding: .6rem; cursor: pointer; font-weight: 700; }
+[aria-invalid=true] { border-color: var(--danger); }
+@media (max-width: 520px) { header nav { gap: .3rem; } header nav a { padding: .5rem; } header .public-link { grid-column: 1 / -1; justify-self: start; } }
