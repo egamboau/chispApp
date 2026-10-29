@@ -140,3 +140,11 @@ test('line assignment can be omitted or cleared without relaxing required rivals
   const html = renderToStaticMarkup(createElement(AdminMatch, { match: { ...match, lineTeam: null, lineTeamId: null, participants: { ...match.participants, lineTeam: null } }, run: async () => false, edit() {} }))
   assert.match(html, /Sin asignar/)
 })
+
+test('shared creation forms stay mounted behind native disclosures with labelled required controls', async () => {
+  const { Form, Field } = await import('../src/admin/Forms.tsx')
+  const html = renderToStaticMarkup(createElement(Form, { title: 'Nuevo torneo', disclosure: true, submit: async () => false }, createElement(Field, { label: 'Nombre', name: 'name' })))
+  assert.match(html, /<details class="form-disclosure"><summary>Agregar/)
+  assert.doesNotMatch(html, /<details[^>]* open/)
+  assert.match(html, /<label>Nombre<input required="" aria-label="Nombre" name="name"/)
+})

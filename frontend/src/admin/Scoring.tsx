@@ -26,7 +26,7 @@ export function Scoring({ data: d, run, revision }: { data: AdminData; run: Run;
   const player = available.find(item => item.id === Number(playerId)) ?? available[0]
   const entry = details?.scoring.find(item => item.playerId === player?.id)
   return <><section className="panel"><h2>Informe de goleo</h2>
-    <Form title="Crear tabla de goleo" disabled={!d.phase} submit={v => run(() => adminMutation(`/phases/${d.phase!.id}/scoring-tables`, 'POST', S.ScoringTableInputSchema.parse(v)))}><Field label="Nombre" name="name" maxLength={100} /></Form>
+    <Form disclosure title="Crear tabla de goleo" disabled={!d.phase} submit={v => run(() => adminMutation(`/phases/${d.phase!.id}/scoring-tables`, 'POST', S.ScoringTableInputSchema.parse(v)))}><Field label="Nombre" name="name" maxLength={100} /></Form>
     {d.tables.map(table => <Form key={`${table.id}-${revision}`} title={`Renombrar ${table.name}`} submit={v => run(() => adminMutation(`/phases/${d.phase!.id}/scoring-tables/${table.id}`, 'PUT', S.ScoringTableInputSchema.parse(v)))}><Field label="Nombre" name="name" maxLength={100} defaultValue={table.name} /></Form>)}
     <Select label="Partido finalizado" value={match?.id ?? ''} onChange={setMatchId} items={d.matches.map(item => ({ id: item.id, name: `${item.date} · ${item.jornada === 'MORNING' ? 'Mañana' : 'Tarde'} · Cancha ${item.court} · ${item.teamA} ${item.scoreA}–${item.scoreB} ${item.teamB}` }))} />
     {match ? <h3>{match.teamA} {match.scoreA}–{match.scoreB} {match.teamB}</h3> : <p>No hay partidos finalizados en esta fase.</p>}{error && <p className="error" role="alert">{error}</p>}
