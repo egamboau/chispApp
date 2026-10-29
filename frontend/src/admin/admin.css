@@ -135,3 +135,9 @@ header .public-link { border: 0; font-size: .85rem; font-weight: 400; }
 summary { min-height: 44px; padding: .6rem; cursor: pointer; font-weight: 700; }
 [aria-invalid=true] { border-color: var(--danger); }
 @media (max-width: 520px) { header nav { gap: .3rem; } header nav a { padding: .5rem; } header .public-link { grid-column: 1 / -1; justify-self: start; } }
+
+.task-workspace { grid-column: 1 / -1; width: 100%; }
+.task-tabs { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+.task-tabs button { flex: 1; }
+.task-tabs [aria-selected=true] { background: var(--primary); border-color: var(--primary); color: white; }
+[hidden] { display: none !important; }

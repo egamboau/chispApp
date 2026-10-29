@@ -148,3 +148,11 @@ test('shared creation forms stay mounted behind native disclosures with labelled
   assert.doesNotMatch(html, /<details[^>]* open/)
   assert.match(html, /<label>Nombre<input required="" aria-label="Nombre" name="name"/)
 })
+
+test('task tabs expose selected state, roving focus and associated panels', async () => {
+  const { Tabs } = await import('../src/admin/Forms.tsx')
+  const html = renderToStaticMarkup(createElement(Tabs, { labels: ['General', 'Fases'], value: 'General', onChange() {} }))
+  assert.match(html, /role="tablist"/)
+  assert.match(html, /id="tab-General" role="tab" aria-selected="true" aria-controls="panel-General" tabindex="0"/)
+  assert.match(html, /id="tab-Fases" role="tab" aria-selected="false" aria-controls="panel-Fases" tabindex="-1"/)
+})
