@@ -7,12 +7,14 @@ export const CreateTournamentInputSchema = z.object({
   active: z.boolean().default(true),
 }).strict();
 
-/** Updates a tournament's name, current phase and active flag (default true). */
+/** Updates both category selections; accepts the legacy single-phase payload for older callers. */
 export const UpdateTournamentInputSchema = z.object({
   name: NameSchema,
-  currentPhaseId: IdSchema,
+  currentPhaseId: IdSchema.optional(),
+  currentMalePhaseId: IdSchema.nullable().optional(),
+  currentFemalePhaseId: IdSchema.nullable().optional(),
   active: z.boolean().default(true),
-}).strict();
+}).strict().refine(value => value.currentPhaseId !== undefined ? value.currentMalePhaseId === undefined && value.currentFemalePhaseId === undefined : value.currentMalePhaseId !== undefined && value.currentFemalePhaseId !== undefined, { message: 'Indica las fases actuales por categoría.' });
 
 /** Tournament details; parses active to boolean and permits null current phase/legacy category. */
 export const TournamentResponseSchema = z.object({
@@ -20,6 +22,8 @@ export const TournamentResponseSchema = z.object({
   name: NameSchema,
   active: BooleanFromIntegerSchema,
   currentPhaseId: IdSchema.nullable(),
+  currentMalePhaseId: IdSchema.nullable(),
+  currentFemalePhaseId: IdSchema.nullable(),
   legacyType: TournamentTypeSchema.nullable(),
 }).strict();
 

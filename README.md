@@ -37,6 +37,10 @@ React sirve la pantalla pública y las cuatro vistas administrativas. En desarro
 npm run dev:frontend
 ```
 
+En desarrollo, abre <http://localhost:5173/admin/> para administrar o
+<http://localhost:5173/display/> para la pantalla pública. Ambas vistas permiten
+depurar React en el navegador; las llamadas `/api` se envían al backend.
+
 El build de producción y sus recursos quedan disponibles en `/display/`. La administración React conserva las rutas `/admin` existentes.
 
 ## Docker Compose
@@ -233,6 +237,12 @@ docker secret create chispapp-rclone-config /ruta/protegida/rclone.conf
 ```
 
 El contenedor copia el secreto a un archivo temporal escribible para que rclone pueda renovar el token durante cada ejecución; esa copia se elimina al terminar.
+
+## Fases vigentes por categoría
+
+Cada torneo admite una fase vigente masculina y otra femenina, configurables en **Torneos → Fases**. Al iniciar con una base anterior, el backend crea un snapshot SQLite junto a la base (`DATABASE_PATH.before-category-phases-TIMESTAMP.bak`) y agrega `currentMalePhaseId` y `currentFemalePhaseId` en una transacción. Copia `currentPhaseId` solo a su categoría y deja la otra sin asignar; conserva los datos y el campo anterior por compatibilidad. Los reinicios no sobrescriben las selecciones nuevas. Una referencia anterior inválida detiene la migración.
+
+Despliega backend y frontend juntos. Para volver al estado anterior, detén la aplicación y restaura el snapshot con la versión anterior; se perderán los cambios posteriores al snapshot.
 
 ## Pruebas
 

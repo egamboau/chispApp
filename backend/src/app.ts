@@ -160,7 +160,7 @@ class App {
             next()
         })
         this.app.use('/display/assets', express.static(path.join(this.frontendDistPath, 'assets'), { index: false, redirect: false, setHeaders: (res) => res.set('Cache-Control', 'no-store') }));
-        this.app.get(/^\/display(?:\/.*)?$/, (_req, res, next) => {
+        this.app.get(/^\/display(?:\/index\.html|\/)?$/, (_req, res, next) => {
             res.set('Cache-Control', 'no-store')
             res.sendFile(path.join(this.frontendDistPath, 'index.html'), error => {
                 if (error) next(error)

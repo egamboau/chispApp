@@ -1,4 +1,5 @@
 import path from "path";
+import { migrateCurrentPhases } from './current_phases';
 import fs from "fs"
 import Database from "better-sqlite3";
 import {Phase} from "../models/phases"
@@ -49,6 +50,10 @@ class DBConnection {
         this.database = new Database(dbPath);
         this.database.pragma('foreign_keys = ON');
 
+        const tournamentColumns = this.database.prepare<[], { name: string }>('PRAGMA table_info(tournaments)').all();
+        if (dbPath !== ':memory:' && tournamentColumns.length && !tournamentColumns.some(column => column.name === 'currentMalePhaseId')) {
+            this.database.prepare('VACUUM INTO ?').run(`${dbPath}.before-category-phases-${Date.now()}.bak`);
+        }
         this.initializeDatabaseSchema()
     }
 
@@ -140,6 +145,7 @@ class DBConnection {
           }
           this.database.exec('UPDATE matches SET tournamentType=(SELECT tournamentType FROM phases WHERE phases.id=matches.phaseId) WHERE phaseId IS NOT NULL AND tournamentType<>(SELECT tournamentType FROM phases WHERE phases.id=matches.phaseId)');
         })();
+        migrateCurrentPhases(this.database);
         const legacyScoringTables = Boolean(this.database.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='scoring_tables_by_type'").get())
         const needsScoringTableMigration = !this.database.prepare('SELECT 1 FROM scoring_tables LIMIT 1').get()
             && !(legacyScoringTables && this.database.prepare('SELECT 1 FROM scoring_tables_by_type LIMIT 1').get())
@@ -230,8 +236,8 @@ class DBConnection {
         return this.database.prepare<[number, number], Phase>('SELECT * FROM phases WHERE id=? AND tournamentId=?').get(currentPhaseId, tournamentId)
     }
 
-    updateTournament(tournamentId: number, name: string, active: boolean, currentPhaseId: number): Tournament|undefined{
-        this.database.prepare('UPDATE tournaments SET name=?,active=?,currentPhaseId=? WHERE id=?').run(name, active === false ? 0 : 1, currentPhaseId, tournamentId);
+    updateTournament(tournamentId: number, name: string, active: boolean, currentMalePhaseId: number | null, currentFemalePhaseId: number | null, currentPhaseId: number | null): Tournament|undefined{
+        this.database.prepare('UPDATE tournaments SET name=?,active=?,currentMalePhaseId=?,currentFemalePhaseId=?,currentPhaseId=? WHERE id=?').run(name, active === false ? 0 : 1, currentMalePhaseId, currentFemalePhaseId, currentPhaseId, tournamentId);
         return this.fetchOneElementFromTable('tournaments', tournamentId);
     }
 
@@ -274,6 +280,8 @@ class DBConnection {
 
     updatePhase(id: number, phase: Pick<Phase, 'name' | 'type' | 'tournamentType' | 'sortOrder'>): Phase | undefined {
         this.database.transaction(() => {
+            this.database.prepare("UPDATE tournaments SET currentMalePhaseId=NULL WHERE currentMalePhaseId=? AND ?<>'MALE'").run(id, phase.tournamentType)
+            this.database.prepare("UPDATE tournaments SET currentFemalePhaseId=NULL WHERE currentFemalePhaseId=? AND ?<>'FEMALE'").run(id, phase.tournamentType)
             this.database.prepare('UPDATE phases SET name=@name,type=@type,tournamentType=@tournamentType,sortOrder=@sortOrder WHERE id=@id').run({ id, ...phase })
             this.database.prepare('UPDATE matches SET tournamentType=? WHERE phaseId=?').run(phase.tournamentType, id)
         })()
@@ -286,6 +294,8 @@ class DBConnection {
             throw new DatabaseConnectionError('ConstrainError', 'No se puede eliminar: la fase tiene partidos asociados.', undefined)
         }
         this.database.transaction(() => {
+            this.database.prepare('UPDATE tournaments SET currentMalePhaseId=NULL WHERE currentMalePhaseId=?').run(id)
+            this.database.prepare('UPDATE tournaments SET currentFemalePhaseId=NULL WHERE currentFemalePhaseId=?').run(id)
             this.database.prepare('UPDATE tournaments SET currentPhaseId=NULL WHERE currentPhaseId=?').run(id)
             this.database.prepare('DELETE FROM phase_memberships WHERE phaseId=?').run(id)
             this.database.prepare('DELETE FROM sanctions WHERE phaseId=?').run(id)

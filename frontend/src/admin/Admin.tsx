@@ -3,7 +3,7 @@ import { loadAdmin, scoringSelection } from '../api/admin'
 import type { AdminData, AdminPage, AdminSelection } from '../api/admin'
 import { subscribeDisplay } from '../api/display'
 import { confirmDiscard, Select } from './Forms'
-import { Tournaments } from './Tournaments'
+import { Tournaments, TournamentMenu, tournamentSections } from './Tournaments'
 import { Teams } from './Teams'
 import { Calendar } from './Calendar'
 import { Scoring } from './Scoring'
@@ -21,6 +21,7 @@ export function adminPage(path: string): AdminPage {
 export function Admin() {
   const page = adminPage(location.pathname)
   const [selection, setSelection] = useState<AdminSelection>(() => { const query = new URLSearchParams(location.search); return { tournamentId: Number(query.get('tournamentId')) || undefined, phaseId: Number(query.get('phaseId')) || undefined } })
+  const [tournamentTab, setTournamentTab] = useState<string>(() => tournamentSections.find(section => section === new URLSearchParams(location.search).get('section')) ?? 'General')
   const [refresh, setRefresh] = useState(0), [revision, setRevision] = useState(0)
   const [result, setResult] = useState<{ selection: AdminSelection; data: AdminData }>()
   const previous = useRef<AdminData>(undefined)
@@ -64,10 +65,11 @@ export function Admin() {
       return false
     } finally { mutation.current = false; setBusy(false); setRefresh(value => value + 1) }
   }
-  return <><header><div className="brand"><h1>ChispApp</h1><p>Administración · Datos proporcionados por Chisperos</p></div><nav aria-label="Administración">{(Object.keys(pages) as AdminPage[]).map(key => <a key={key} href={`${pages[key][1]}${data?.tournament ? `?tournamentId=${data.tournament.id}${data.phase ? `&phaseId=${data.phase.id}` : ''}` : ''}`} aria-current={page === key ? 'page' : undefined} className={page === key ? 'active' : undefined}>{pages[key][0]}</a>)}<a className="public-link" href="/display" target="_blank" rel="noreferrer">Pantalla pública</a></nav></header>
+  const contextQuery = data?.tournament ? `tournamentId=${data.tournament.id}${data.phase ? `&phaseId=${data.phase.id}` : ''}` : ''
+  return <><header><div className="brand"><h1>ChispApp</h1><p>Administración · Datos proporcionados por Chisperos</p></div><nav aria-label="Administración">{(Object.keys(pages) as AdminPage[]).map(key => key === 'tournaments' ? <TournamentMenu key={key} current={page === 'tournaments' ? tournamentTab : undefined} query={contextQuery} onSelect={setTournamentTab} /> : <a key={key} href={`${pages[key][1]}${data?.tournament ? `?tournamentId=${data.tournament.id}${data.phase ? `&phaseId=${data.phase.id}` : ''}` : ''}`} aria-current={page === key ? 'page' : undefined} className={page === key ? 'active' : undefined}>{pages[key][0]}</a>)}<a className="public-link" href="/display" target="_blank" rel="noreferrer">Pantalla pública</a></nav></header>
     <div className="admin-feedback"><p role="alert">{message}</p>{error && <p role="alert" className="error">{error} <button onClick={() => setRefresh(value => value + 1)}>REINTENTAR</button></p>}{connection && <p role="status">{connection}</p>}</div>
-    {data ? <><fieldset className="admin-selectors" disabled={busy}><Select label="Torneo" items={data.tournaments} value={data.tournament?.id ?? ''} onChange={value => { if (!confirmDiscard()) return; setSelection({ tournamentId: Number(value) }); setMessage('') }} /><Select label="Fase" items={data.phases.map(item => ({ ...item, name: `${item.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'} · ${item.name}` }))} value={data.phase?.id ?? ''} onChange={value => { if (!confirmDiscard()) return; setSelection({ tournamentId: data.tournament?.id, phaseId: Number(value) }); setMessage('') }} /></fieldset>
-      <fieldset className="admin-workspace" disabled={busy || !!error}><main key={`${data.tournament?.id}-${data.phase?.id}`} className={page === 'calendar' ? undefined : 'management-layout'}>{page === 'tournaments' ? <Tournaments data={data} run={run} /> : page === 'teams' ? <Teams data={data} run={run} revision={revision} /> : page === 'calendar' ? <Calendar data={data} run={run} /> : <Scoring data={data} run={run} revision={revision} />}</main></fieldset>
+    {data ? <><fieldset className="admin-selectors" hidden={page === 'tournaments' && (tournamentTab === 'General' || tournamentTab === 'Fases')} disabled={busy}>{page !== 'tournaments' && <Select label="Torneo" items={data.tournaments} value={data.tournament?.id ?? ''} onChange={value => { if (!confirmDiscard()) return; setSelection({ tournamentId: Number(value) }); setMessage('') }} />}<Select label="Fase" items={data.phases.map(item => ({ ...item, name: `${item.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'} · ${item.name}` }))} value={data.phase?.id ?? ''} onChange={value => { if (!confirmDiscard()) return; setSelection({ tournamentId: data.tournament?.id, phaseId: Number(value) }); setMessage('') }} /></fieldset>
+      <fieldset className="admin-workspace" disabled={busy || !!error}><main key={`${data.tournament?.id}-${data.phase?.id}`} className={page === 'calendar' ? undefined : 'management-layout'}>{page === 'tournaments' ? <Tournaments data={data} run={run} tab={tournamentTab} setTab={setTournamentTab} selectPhase={phaseId => { if (!confirmDiscard()) return; setSelection({ tournamentId: data.tournament?.id, phaseId }); setMessage('') }} selectTournament={tournamentId => { if (!confirmDiscard()) return; setSelection({ tournamentId }); setMessage('') }} /> : page === 'teams' ? <Teams data={data} run={run} revision={revision} /> : page === 'calendar' ? <Calendar data={data} run={run} /> : <Scoring data={data} run={run} revision={revision} />}</main></fieldset>
     </> : !error && <p role="status">Cargando administración…</p>}
     <footer>© 2026 Eduardo Gamboa.</footer>
   </>

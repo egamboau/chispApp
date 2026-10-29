@@ -4,13 +4,13 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { MatchResponse } from '@jupas/shared'
 import { adminMutation, loadAdmin, scoringSelection } from '../src/api/admin.ts'
-import { AdminMatch, Calendar, MatchForm, participantValues } from '../src/admin/Calendar.tsx'
+import { adminCalendarMatches, AdminMatch, Calendar, MatchForm, participantValues } from '../src/admin/Calendar.tsx'
 import type { AdminData } from '../src/api/admin.ts'
 import { Positions } from '../src/admin/Tournaments.tsx'
 
 const phase = { id: 2, tournamentId: 1, name: 'Final', type: 'ELIMINATION', sortOrder: 2, tournamentType: 'MALE' } as const
 const source = { ...phase, id: 1, name: 'Tabla', type: 'TABLE', sortOrder: 1 } as const
-const tournament = { id: 1, name: 'Copa', active: false, currentPhaseId: 2, legacyType: null }
+const tournament = { id: 1, name: 'Copa', active: false, currentPhaseId: 2, currentMalePhaseId: 2, currentFemalePhaseId: null, legacyType: null }
 const reference = { kind: 'TEAM', teamId: 1 } as const
 const participant = { reference, resolvedTeamId: 1, resolvedTeam: { id: 1, name: 'A' }, status: 'CONFIRMED' } as const
 const match: MatchResponse = {
@@ -109,6 +109,7 @@ test('fixed-team editors restrict local group, visitor phase and line tournament
   }
   const list = renderToStaticMarkup(createElement(Calendar, { data, run: async () => false }))
   assert.match(list, /\+ Partido/)
+  assert.match(list, /aria-label="Estado"[\s\S]*<option value="" selected="">Todos<\/option><option value="SCHEDULED">Programados<\/option><option value="LIVE">En juego<\/option><option value="FINISHED">Finalizados<\/option>/)
   assert.doesNotMatch(list, /Programar partido|name="teamA-kind"/)
   const html = renderToStaticMarkup(createElement(MatchForm, { data, run: async () => false, cancel() {} }))
   const role = (name: string) => html.split(`<legend>${name}</legend>`)[1]!.split('</fieldset>')[0]!
@@ -196,4 +197,86 @@ test('scoring payload translates validated table IDs to the existing API name fo
   assert.deepEqual(scoringPayload(values, tables, 7), { playerId: 7, directGoals: 1, pepitas: 2, horquetas: 0, scoringTable: 'Copa' })
   assert.deepEqual(scoringPayload(values, tables), { directGoals: 1, pepitas: 2, horquetas: 0, scoringTable: 'Copa' })
   assert.throws(() => scoringPayload({ ...values, scoringTableId: '99' }, tables), /tabla de goleo válida/)
+})
+
+test('tournament General lists every tournament and opens editing in the chosen context', async () => {
+  const { Tournaments } = await import('../src/admin/Tournaments.tsx')
+  const data: AdminData = {
+    tournaments: [tournament, { ...tournament, id: 9, name: 'Otra copa', active: true }], tournament, phases: [phase], phase,
+    teams: [], groups: [], memberships: [], rules: [], sanctions: [], teamCards: [], matches: [], tables: [], positions: undefined, sourcePhases: [], sourceGroups: {},
+  }
+  let selected: number | undefined
+  const props = { data, run: async () => false, tab: 'General', setTab() {}, selectPhase() {}, selectTournament(id: number) { selected = id } }
+  const element = Tournaments(props)
+  const html = renderToStaticMarkup(element)
+  assert.match(html, /Copa · Inactivo/)
+  assert.match(html, /Otra copa · Activo/)
+  assert.match(html, /aria-pressed="true">Editar Copa/)
+  assert.match(html, /aria-pressed="false">Editar Otra copa/)
+  assert.match(html, /Editar torneo Copa/)
+  assert.match(html, /<p hidden="">Copa → Final/)
+  const general = element.props.children.find((child: { props?: { id?: string } }) => child?.props?.id === 'panel-General')
+  general.props.children[1][1].props.children[1].props.onClick()
+  assert.equal(selected, 9)
+  const other = data.tournaments[1]!
+  const updated = renderToStaticMarkup(createElement(Tournaments, { ...props, data: { ...data, tournament: other }, tab: 'Fases' }))
+  assert.match(updated, /Editar torneo Otra copa/)
+  assert.match(updated, /id="panel-General"[^>]*hidden=""/)
+  assert.doesNotMatch(updated, /id="panel-Fases"[^>]*hidden/)
+})
+
+
+test('tournament navigation groups sections in a disclosure and preserves tournament context', async () => {
+  const { TournamentMenu } = await import('../src/admin/Tournaments.tsx')
+  let selected = ''
+  const element = TournamentMenu({ current: 'Grupos', query: 'tournamentId=9&phaseId=2', onSelect(section) { selected = section } })
+  const html = renderToStaticMarkup(element)
+  assert.match(html, /<details class="tournament-menu"><summary class="active">Torneos/)
+  assert.match(html, /href="\/admin\/\?tournamentId=9&amp;phaseId=2&amp;section=Grupos" aria-current="page"/)
+  for (const name of ['General', 'Fases', 'Grupos', 'Clasificación']) assert.ok(html.includes(`>${name}</a>`))
+  let prevented = false, closed = false
+  element.props.children[1].props.children[0].props.onClick({ preventDefault() { prevented = true }, currentTarget: { closest() { return { removeAttribute() { closed = true } } } } })
+  assert.equal(selected, 'General'); assert.equal(prevented, true); assert.equal(closed, true)
+})
+
+test('current phase form separates categories and saves both selections including unassigned', async t => {
+  const { Tournaments } = await import('../src/admin/Tournaments.tsx')
+  const female = { ...phase, id: 8, name: 'Grupos femeninos', tournamentType: 'FEMALE' as const }
+  const data: AdminData = {
+    tournaments: [tournament], tournament: { ...tournament, currentFemalePhaseId: 8 }, phases: [phase, female], phase,
+    teams: [], groups: [], memberships: [], rules: [], sanctions: [], teamCards: [], matches: [], tables: [], positions: undefined, sourcePhases: [], sourceGroups: {},
+  }
+  let payload: unknown
+  t.mock.method(globalThis, 'fetch', async (_url: string, init: RequestInit) => { payload = JSON.parse(init.body as string); return new Response(null, { status: 204 }) })
+  const element = Tournaments({ data, run: async operation => { await operation(); return true }, tab: 'Fases', setTab() {}, selectPhase() {}, selectTournament() {} })
+  const panel = element.props.children.find((child: { props?: { id?: string } }) => child?.props?.id === 'panel-Fases')
+  const panelHtml = renderToStaticMarkup(panel)
+  assert.match(panelHtml, /Editar fase<\/h3>[\s\S]*aria-label="Fase a editar"/)
+  const form = panel.props.children[0]
+  const html = renderToStaticMarkup(form)
+  assert.doesNotMatch(html, /Fase a editar/)
+  const maleSelect = html.split('aria-label="Fase vigente masculina"')[1]!.split('</select>')[0]!
+  const femaleSelect = html.split('aria-label="Fase vigente femenina"')[1]!.split('</select>')[0]!
+  assert.match(maleSelect, /Final/); assert.doesNotMatch(maleSelect, /Grupos femeninos/)
+  assert.match(femaleSelect, /Grupos femeninos/); assert.doesNotMatch(femaleSelect, /Final/)
+  await form.props.submit({ currentMalePhaseId: '', currentFemalePhaseId: '8' })
+  assert.deepEqual(payload, { name: tournament.name, active: tournament.active, currentMalePhaseId: null, currentFemalePhaseId: 8 })
+})
+
+
+test('admin calendar combines status, date and court filters while preserving match order', () => {
+  const matches: MatchResponse[] = [
+    match,
+    { ...match, id: 6, status: 'LIVE' },
+    { ...match, id: 7, status: 'FINISHED' },
+    { ...match, id: 8, status: 'FINISHED', date: '2026-10-21' },
+    { ...match, id: 9, status: 'FINISHED', court: 2 },
+  ]
+  assert.deepEqual(adminCalendarMatches(matches, '', '', ''), matches)
+  for (const status of ['SCHEDULED', 'LIVE', 'FINISHED']) {
+    assert.deepEqual(adminCalendarMatches(matches, '', '', status), matches.filter(item => item.status === status))
+  }
+  assert.deepEqual(adminCalendarMatches(matches, match.date, '1', 'FINISHED').map(item => item.id), [7])
+  assert.deepEqual(adminCalendarMatches(matches, match.date, '2', 'LIVE'), [])
+  assert.deepEqual(adminCalendarMatches([], '', '', 'FINISHED'), [])
 })

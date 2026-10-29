@@ -5,7 +5,7 @@ import {
 import type { MatchResponse, PhaseResponse, PhaseScoringResponse, PhaseStandingsResponse, TournamentResponse } from '@jupas/shared'
 import { request } from './client'
 
-export interface DisplaySelection { tournamentId?: number; phaseId?: number }
+export interface DisplaySelection { tournamentId?: number; phaseId?: number; category?: PhaseResponse['tournamentType'] }
 export interface DisplayData {
   tournaments: TournamentResponse[]
   tournament?: TournamentResponse
@@ -24,9 +24,13 @@ export interface DisplayData {
 export async function loadDisplay(selection: DisplaySelection, signal: AbortSignal): Promise<DisplayData> {
   const tournaments = await request('/api/tournaments?active=true', TournamentListResponseSchema, { signal })
   const tournament = tournaments.find(item => item.id === selection.tournamentId) ?? tournaments[0]
-  const phases = tournament ? await request(`/api/tournaments/${tournament.id}/phases`, PhaseListResponseSchema, { signal }) : []
-  const phase = phases.find(item => item.id === selection.phaseId) ?? phases.find(item => item.id === tournament?.currentPhaseId) ?? phases[0]
-  const matchesRequest = request(`/api/matches${phase ? `?phaseId=${phase.id}` : ''}`, MatchListResponseSchema, { signal })
+  const allPhases = tournament ? await request(`/api/tournaments/${tournament.id}/phases`, PhaseListResponseSchema, { signal }) : []
+  const preferredPhase = allPhases.find(item => item.id === selection.phaseId) ?? allPhases.find(item => item.id === (tournament?.currentMalePhaseId ?? tournament?.currentFemalePhaseId)) ?? allPhases[0]
+  const category = selection.category ?? preferredPhase?.tournamentType
+  const phases = allPhases.filter(item => item.tournamentType === category)
+  const currentPhaseId = category === 'FEMALE' ? tournament?.currentFemalePhaseId : tournament?.currentMalePhaseId
+  const phase = phases.find(item => item.id === selection.phaseId) ?? phases.find(item => item.id === currentPhaseId) ?? phases[0]
+  const matchesRequest = phase ? request(`/api/matches?phaseId=${phase.id}`, MatchListResponseSchema, { signal }) : Promise.resolve([])
   const [matches, standings, scoring] = await Promise.all([
     matchesRequest,
     phase ? request(`/api/phases/${phase.id}/standings`, PhaseStandingsResponseSchema, { signal }).then(data => ({ data }), error => ({ error: String(error.message) })) : undefined,

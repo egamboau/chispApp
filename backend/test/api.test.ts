@@ -152,10 +152,10 @@ test('sirve las páginas administrativas y la pantalla pública', async () => {
   assert.match(asset.headers.get('content-type') ?? '', /javascript/);
   assert.equal(asset.headers.get('cache-control'), 'no-store');
   assert.match(await asset.text(), /export const display = true/);
-  for (const url of ['/display', '/display/index.html', '/display/admin.html', '/display/%61dmin.html']) {
+  for (const url of ['/display', '/display/index.html']) {
     assert.equal(await (await fetch(`${base}${url}`)).text(), '<main>React shell</main>');
   }
-  for (const url of ['/ADMIN', '/ADMIN/teams.html', '/admin.html', '/react', '/react/', '/react/deep/link', '/react/display-test.js', '/display.js', '/display.css']) {
+  for (const url of ['/display/admin', '/display/admin.html', '/display/%61dmin.html', '/public/admin', '/ADMIN', '/ADMIN/teams.html', '/admin.html', '/react', '/react/', '/react/deep/link', '/react/display-test.js', '/display.js', '/display.css']) {
     assert.equal((await fetch(`${base}${url}`)).status, 404);
   }
   assert.equal(root.headers.get('location'), '/display');
@@ -698,4 +698,32 @@ test('línea opcional: crear, asignar, quitar y leer en ambos contratos', async 
   absent(await publicMatch());
   absent((await publicJson('/api/matches?date=' + date)).body.find((match: any) => match.id === id));
   assert.equal((await json('/api/matches/' + id + '/start', { method: 'POST' })).response.status, 200);
+});
+
+test('un torneo mantiene fases vigentes independientes por categoría y valida pertenencia', async () => {
+  const created = await json('/api/tournaments', { method: 'POST', body: JSON.stringify({ name: 'Categorías paralelas' }) });
+  const id = created.body.id;
+  assert.equal(created.body.currentMalePhaseId, null);
+  assert.equal(created.body.currentFemalePhaseId, null);
+  const createPhase = async (name: string, tournamentType: string) => (await json(`/api/tournaments/${id}/phases`, { method: 'POST', body: JSON.stringify({ name, tournamentType }) })).body.id;
+  const male = await createPhase('Semifinal masculina', 'MALE');
+  const female = await createPhase('Grupos femeninos', 'FEMALE');
+  const update = (currentMalePhaseId: number | null, currentFemalePhaseId: number | null) => json(`/api/tournaments/${id}`, { method: 'PUT', body: JSON.stringify({ name: 'Categorías paralelas', active: true, currentMalePhaseId, currentFemalePhaseId }) });
+  let result = await update(male, female);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.currentMalePhaseId, male);
+  assert.equal(result.body.currentFemalePhaseId, female);
+  assert.equal((await update(female, male)).response.status, 400);
+  assert.equal((await update(1, female)).response.status, 400);
+  result = await publicJson('/api/tournaments');
+  const tournament = result.body.find((item: { id: number }) => item.id === id);
+  assert.equal(tournament.currentMalePhaseId, male);
+  assert.equal(tournament.currentFemalePhaseId, female);
+  result = await update(null, female);
+  assert.equal(result.body.currentMalePhaseId, null);
+  assert.equal(result.body.currentFemalePhaseId, female);
+  await json(`/api/phases/${female}`, { method: 'DELETE' });
+  result = await json('/api/tournaments');
+  assert.equal(result.body.find((item: { id: number }) => item.id === id).currentFemalePhaseId, null);
+  assert.ok(fs.readdirSync(tempDir).some(name => name.startsWith('test.db.before-category-phases-')));
 });

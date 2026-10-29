@@ -1,9 +1,18 @@
-import { useState } from 'react'
 import * as S from '@jupas/shared'
 import type { AdminData } from '../api/admin'
 import { adminMutation } from '../api/admin'
-import { Field, Form, Row, Select, Tabs } from './Forms'
+import { Field, Form, Row, Select } from './Forms'
 import type { Run } from './Forms'
+
+export const tournamentSections = ['General', 'Fases', 'Grupos', 'Clasificación'] as const
+
+/** Native disclosure keeps the less frequent tournament tasks under one navigation item. */
+export function TournamentMenu({ current, query, onSelect }: { current?: string; query: string; onSelect: (section: string) => void }) {
+  return <details className="tournament-menu"><summary className={current ? 'active' : undefined}>Torneos</summary><div className="tournament-submenu">{tournamentSections.map(section => <a key={section} href={`/admin/?${query}${query ? '&' : ''}section=${encodeURIComponent(section)}`} aria-current={current === section ? 'page' : undefined} className={current === section ? 'active' : undefined} onClick={event => {
+    if (current) { event.preventDefault(); onSelect(section) }
+    event.currentTarget.closest('details')?.removeAttribute('open')
+  }}>{section}</a>)}</div></details>
+}
 
 /** Shows authoritative assignment previews and requires confirmation before freezing or reopening positions. */
 export function Positions({ preview, groups, run }: { preview: S.PhasePositionsResponse; groups: S.GroupResponse[]; run: Run }) {
@@ -16,27 +25,30 @@ export function Positions({ preview, groups, run }: { preview: S.PhasePositionsR
 }
 
 /** Keeps tournament tasks in mounted panels so tab changes preserve drafts and selected context. */
-export function Tournaments({ data: d, run }: { data: AdminData; run: Run }) {
-  const [tab, setTab] = useState('General')
+export function Tournaments({ data: d, run, tab, setTab, selectTournament, selectPhase }: { data: AdminData; run: Run; tab: string; setTab: (tab: string) => void; selectTournament: (id: number) => void; selectPhase: (id: number) => void }) {
   const t = d.tournament, p = d.phase
-  return <section className="panel task-workspace"><h2>Torneos</h2><p>{t?.name ?? 'Sin torneo'}{p ? ` · ${p.name}` : ''}</p>
-    <Tabs labels={['General', 'Fases', 'Grupos', 'Clasificación']} value={tab} onChange={setTab} />
-    <section id="panel-General" role="tabpanel" aria-labelledby="tab-General" hidden={tab !== 'General'}>
+  return <section className="panel task-workspace"><h2>Torneos · {tab}</h2><p hidden={tab === 'General'}>{t?.name ?? 'Sin torneo'}{p ? ` → ${p.name}` : ''} <button onClick={() => setTab('General')}>Cambiar torneo</button></p>
+    <section id="panel-General" aria-label="General" hidden={tab !== 'General'}>
       <Form disclosure title="Nuevo torneo" save="CREAR TORNEO" submit={v => run(() => adminMutation('/tournaments', 'POST', S.CreateTournamentInputSchema.parse(v)))}><Field label="Nombre" name="name" maxLength={100} /></Form>
-      {t ? <><Form key={`${t.id}-${t.currentPhaseId}-${d.phases.length}`} title="Editar torneo" disabled={!d.phases.length} submit={v => run(() => adminMutation(`/tournaments/${t.id}`, 'PUT', S.UpdateTournamentInputSchema.parse({ ...v, currentPhaseId: Number(v.currentPhaseId), active: v.active === 'true' })))}>
-        <Field label="Nombre" name="name" defaultValue={t.name} maxLength={100} /><Select label="Estado" name="active" value={String(t.active)} items={[{ id: 'true', name: 'Activo' }, { id: 'false', name: 'Inactivo' }]} /><Select label="Fase actual" name="currentPhaseId" value={t.currentPhaseId ?? p?.id ?? ''} items={d.phases} />
-      </Form>{!d.phases.length && <p>Crea una fase antes de editar o activar el torneo.</p>}<details><summary>Más · Torneo</summary><button className="danger" onClick={() => { if (confirm('¿Eliminar este torneo?')) void run(() => adminMutation(`/tournaments/${t.id}`, 'DELETE')) }}>ELIMINAR TORNEO</button></details></> : <p>Crea un torneo para comenzar.</p>}
+      {d.tournaments.map(tournament => <Row key={tournament.id}><span>{tournament.name} · {tournament.active ? 'Activo' : 'Inactivo'}</span><button aria-pressed={tournament.id === t?.id} onClick={() => selectTournament(tournament.id)}>Editar {tournament.name}</button></Row>)}
+      {t ? <><Form key={`${t.id}-${t.currentMalePhaseId}-${t.currentFemalePhaseId}`} title={`Editar torneo ${t.name}`} submit={v => run(() => adminMutation(`/tournaments/${t.id}`, 'PUT', S.UpdateTournamentInputSchema.parse({ ...v, currentMalePhaseId: t.currentMalePhaseId, currentFemalePhaseId: t.currentFemalePhaseId, active: v.active === 'true' })))}>
+        <Field label="Nombre" name="name" defaultValue={t.name} maxLength={100} /><Select label="Estado" name="active" value={String(t.active)} items={[{ id: 'true', name: 'Activo' }, { id: 'false', name: 'Inactivo' }]} />
+      </Form><details><summary>Más · Torneo</summary><button className="danger" onClick={() => { if (confirm('¿Eliminar este torneo?')) void run(() => adminMutation(`/tournaments/${t.id}`, 'DELETE')) }}>ELIMINAR TORNEO</button></details></> : <p>Crea un torneo para comenzar.</p>}
     </section>
-    <section id="panel-Fases" role="tabpanel" aria-labelledby="tab-Fases" hidden={tab !== 'Fases'}>
+    <section id="panel-Fases" aria-label="Fases" hidden={tab !== 'Fases'}>
+      {t && <Form key={`${t.id}-${t.currentMalePhaseId}-${t.currentFemalePhaseId}`} title="Fases vigentes por categoría" submit={v => run(() => adminMutation(`/tournaments/${t.id}`, 'PUT', S.UpdateTournamentInputSchema.parse({ name: t.name, active: t.active, currentMalePhaseId: v.currentMalePhaseId ? Number(v.currentMalePhaseId) : null, currentFemalePhaseId: v.currentFemalePhaseId ? Number(v.currentFemalePhaseId) : null })))}>
+        <Select optional label="Fase vigente masculina" name="currentMalePhaseId" value={t.currentMalePhaseId ?? ''} items={d.phases.filter(phase => phase.tournamentType === 'MALE')} />
+        <Select optional label="Fase vigente femenina" name="currentFemalePhaseId" value={t.currentFemalePhaseId ?? ''} items={d.phases.filter(phase => phase.tournamentType === 'FEMALE')} />
+      </Form>}
       <Form disclosure title="Nueva fase" save="CREAR FASE" disabled={!t} submit={v => run(() => adminMutation(`/tournaments/${t!.id}/phases`, 'POST', S.CreatePhaseInputSchema.parse(v)))}><PhaseFields order={d.phases.length + 1} /></Form>
-      {p && <><Form key={p.id} title="Editar fase" submit={v => run(() => adminMutation(`/phases/${p.id}`, 'PUT', S.UpdatePhaseInputSchema.parse(v)))}><PhaseFields phase={p} order={p.sortOrder} /></Form><details><summary>Más · Fase</summary><button className="danger" onClick={() => { if (confirm('¿Eliminar esta fase?')) void run(() => adminMutation(`/phases/${p.id}`, 'DELETE')) }}>ELIMINAR FASE</button></details></>}
+      {p && <><Form key={p.id} title="Editar fase" submit={v => run(() => adminMutation(`/phases/${p.id}`, 'PUT', S.UpdatePhaseInputSchema.parse(v)))}><Select label="Fase a editar" items={d.phases.map(phase => ({ ...phase, name: `${phase.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'} · ${phase.name}` }))} value={p.id} onChange={value => selectPhase(Number(value))} /><PhaseFields phase={p} order={p.sortOrder} /></Form><details><summary>Más · Fase</summary><button className="danger" onClick={() => { if (confirm('¿Eliminar esta fase?')) void run(() => adminMutation(`/phases/${p.id}`, 'DELETE')) }}>ELIMINAR FASE</button></details></>}
     </section>
-    <section id="panel-Grupos" role="tabpanel" aria-labelledby="tab-Grupos" hidden={tab !== 'Grupos'}>
+    <section id="panel-Grupos" aria-label="Grupos" hidden={tab !== 'Grupos'}>
       <Form disclosure title="Añadir grupo" disabled={!p} submit={v => run(() => adminMutation(`/phases/${p!.id}/groups`, 'POST', S.CreateGroupSchema.parse(v)))}><Field label="Nombre" name="name" maxLength={100} /></Form>
       {!d.groups.length && <p>No hay grupos en esta fase.</p>}
       {d.groups.map(group => <details key={group.id}><summary>{group.name} · Administrar</summary><Form title={`Editar grupo ${group.name}`} submit={v => run(() => adminMutation(`/groups/${group.id}`, 'PUT', S.CreateGroupSchema.parse(v)))}><Field label="Nombre" name="name" defaultValue={group.name} /></Form><button className="danger" onClick={() => { if (confirm('¿Eliminar este grupo?')) void run(() => adminMutation(`/groups/${group.id}`, 'DELETE')) }}>ELIMINAR GRUPO</button></details>)}
     </section>
-    <section id="panel-Clasificación" role="tabpanel" aria-labelledby="tab-Clasificación" hidden={tab !== 'Clasificación'}>
+    <section id="panel-Clasificación" aria-label="Clasificación" hidden={tab !== 'Clasificación'}>
       {p?.type === 'TABLE' ? <><RuleForm run={run} phaseId={p.id} />{d.rules.map(rule => <details key={rule.id}><summary>{rule.label} · Posiciones {rule.positions.join(', ')}</summary><RuleForm run={run} phaseId={p.id} rule={rule} /><button className="danger" onClick={() => { if (confirm('¿Eliminar esta regla?')) void run(() => adminMutation(`/phases/${p.id}/classification-rules/${rule.id}`, 'DELETE')) }}>ELIMINAR REGLA</button></details>)}{d.positions && <Positions preview={d.positions} groups={d.groups} run={run} />}</> : <p>Selecciona una fase de tabla para administrar clasificación.</p>}
     </section>
   </section>

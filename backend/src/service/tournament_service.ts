@@ -30,8 +30,8 @@ export class TournamentService {
         return this.repository.getTournamentByLegacyType(legacyType)
     }
 
-    updateTournament(tournamentId: number, name: string, active: boolean, currentPhaseId: number) : Tournament|undefined {
-        return this.repository.updateTournament(tournamentId, name, active, currentPhaseId)
+    updateTournament(tournamentId: number, name: string, active: boolean, currentMalePhaseId: number | null, currentFemalePhaseId: number | null, currentPhaseId: number | null) : Tournament|undefined {
+        return this.repository.updateTournament(tournamentId, name, active, currentMalePhaseId, currentFemalePhaseId, currentPhaseId)
     }
 
     deleteTournamentById(tournamentId: number): boolean {
