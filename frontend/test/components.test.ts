@@ -88,8 +88,13 @@ test('one React root chooses admin only for preserved admin URLs and lazy-loads 
     assert.equal(app.type, Suspense, pathname)
     assert.match(renderToStaticMarkup(app.props.fallback), /role="status".*Cargando administración/)
   }
-  for (const pathname of ['/display', '/display/', '/display/admin.html', '/administrator']) {
+  for (const pathname of ['/display', '/display/', '/display/index.html']) {
     location.pathname = pathname
     assert.notEqual(App().type, Suspense, pathname)
+    assert.doesNotMatch(renderToStaticMarkup(App()), /404/)
+  }
+  for (const pathname of ['/display/admin', '/display/admin.html', '/public/admin', '/administrator', '/admin/unknown']) {
+    location.pathname = pathname
+    assert.match(renderToStaticMarkup(App()), /404.*Página no encontrada/)
   }
 })

@@ -22,7 +22,7 @@ export async function loadAdmin(page: AdminPage, selection: AdminSelection, sign
   const tournaments = await get('/tournaments', S.TournamentListResponseSchema)
   const tournament = tournaments.find(item => item.id === selection.tournamentId) ?? tournaments[0]
   const phases = tournament ? await get(`/tournaments/${tournament.id}/phases`, S.PhaseListResponseSchema) : []
-  const phase = phases.find(item => item.id === selection.phaseId) ?? phases.find(item => item.id === tournament?.currentPhaseId) ?? phases[0]
+  const phase = phases.find(item => item.id === selection.phaseId) ?? phases.find(item => item.id === (tournament?.currentMalePhaseId ?? tournament?.currentFemalePhaseId)) ?? phases[0]
   const teams = tournament && page !== 'tournaments' ? await get(`/teams?tournamentId=${tournament.id}`, S.TeamListResponseSchema) : []
   const [groups, rules, memberships, sanctions, teamCards, matches, ranking, positions] = await Promise.all([
     phase ? get(`/phases/${phase.id}/groups`, S.GroupListResponseSchema) : [],

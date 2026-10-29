@@ -6,7 +6,7 @@ import { ApiError, request } from '../src/api/client.ts'
 const originalFetch = globalThis.fetch
 afterEach(() => { globalThis.fetch = originalFetch })
 
-const tournament = { id: 1, name: ' Copa ', active: 1, currentPhaseId: null, legacyType: null }
+const tournament = { id: 1, name: ' Copa ', active: 1, currentPhaseId: null, currentMalePhaseId: null, currentFemalePhaseId: null, legacyType: null }
 
 test('validates shared responses and transforms booleans and names', async () => {
   globalThis.fetch = async () => Response.json([tournament])

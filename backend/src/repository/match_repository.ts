@@ -34,7 +34,7 @@ export class MatchRepository {
     }
 
     getCurrentPhase(tournamentType: string): Phase | undefined {
-        return this.dbConnection.fetchOneFromQuery<Phase>('SELECT p.* FROM phases p JOIN tournaments t ON t.currentPhaseId=p.id WHERE t.legacyType=?', tournamentType)
+        return this.dbConnection.fetchOneFromQuery<Phase>("SELECT p.* FROM phases p JOIN tournaments t ON p.id=CASE WHEN p.tournamentType='MALE' THEN t.currentMalePhaseId ELSE t.currentFemalePhaseId END WHERE t.legacyType=? AND p.tournamentType=t.legacyType", tournamentType)
     }
 
     getFirstGroup(phaseId: number): Group | undefined {

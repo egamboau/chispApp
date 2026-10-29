@@ -129,7 +129,7 @@ test('transforms tournament responses and defaults phase inputs', () => {
     id: 1,
     name: 'Torneo',
     active: 1,
-    currentPhaseId: null,
+    currentPhaseId: null, currentMalePhaseId: null, currentFemalePhaseId: null,
     legacyType: null,
   });
   assert.equal(tournament.active, true);
@@ -172,4 +172,14 @@ test('validates and transforms phase-detail contracts', () => {
     groups: [],
   }).success, true);
   assert.equal(contracts.PhaseScoringResponseSchema.safeParse({ phase, tables: [] }).success, true);
+});
+
+test('tournament updates accept independent nullable category phases and the legacy contract', () => {
+  const schema = contracts.UpdateTournamentInputSchema;
+  assert.equal(schema.safeParse({ name: 'Copa', currentMalePhaseId: 1, currentFemalePhaseId: 2 }).success, true);
+  assert.equal(schema.safeParse({ name: 'Copa', currentMalePhaseId: null, currentFemalePhaseId: null }).success, true);
+  assert.equal(schema.safeParse({ name: 'Copa', currentPhaseId: 1 }).success, true);
+  assert.equal(schema.safeParse({ name: 'Copa', currentMalePhaseId: 1 }).success, false);
+  assert.equal(schema.safeParse({ name: 'Copa', currentMalePhaseId: -1, currentFemalePhaseId: null }).success, false);
+  assert.equal(schema.safeParse({ name: 'Copa', currentPhaseId: 1, currentMalePhaseId: 1, currentFemalePhaseId: 2 }).success, false);
 });

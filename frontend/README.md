@@ -70,9 +70,10 @@ components from the current URL. Administration is served at `/admin/`, `/admin/
 `/admin/calendar.html` and `/admin/scoring.html`; existing links remain valid.
 Cloudflare Access checks run before serving these pages and `/api/admin` requests.
 Administrative code and CSS load on demand only for `/admin` routes; `/display`
-renders the public display. To preview administration, run the root build and open
-`/admin/` on the backend. The Vite dev server remains
-the public display development entry.
+renders the public display. During development, open `http://localhost:5173/admin/` for administration or
+`http://localhost:5173/display/` for the public display. Vite proxies API requests
+to the backend on port 3000. Unknown page URLs return 404. Production serves
+both pages from the backend, with compiled assets under `/display/assets/`.
 
 Admin forms parse shared input schemas and validated API responses. Mutations use
 same-origin `/api/admin`, display server errors without retrying writes, and block

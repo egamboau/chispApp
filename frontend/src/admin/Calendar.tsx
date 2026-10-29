@@ -69,6 +69,11 @@ export function AdminMatch({ match: m, run, edit }: { match: S.MatchResponse; ru
     </div></article>
 }
 
+/** Combines calendar filters without changing the server's official match order. */
+export function adminCalendarMatches(matches: readonly S.MatchResponse[], date: string, court: string, status: string): S.MatchResponse[] {
+  return matches.filter(item => (!date || item.date === date) && (!court || item.court === Number(court)) && (!status || item.status === status))
+}
+
 /** Maintains calendar filters and edit drafts across live refreshes; date visibility and previews remain server-owned. */
 export function Calendar({ data: d, run }: { data: AdminData; run: Run }) {
   const [editing, setEditing] = useState<S.MatchResponse>(), [creating, setCreating] = useState(false)
@@ -78,7 +83,7 @@ export function Calendar({ data: d, run }: { data: AdminData; run: Run }) {
   /** Returns after save/cancel and restores the prior list position after React renders it. */
   function returnToList() { setEditing(undefined); setCreating(false); requestAnimationFrame(() => window.scrollTo(0, listScroll.current)) }
   const showEditor = creating || !!editing
-  const [date, setDate] = useState(''), [court, setCourt] = useState('')
+  const [date, setDate] = useState(''), [court, setCourt] = useState(''), [status, setStatus] = useState('')
   const [sourceId, setSourceId] = useState('')
   const source = d.sourcePhases.find(item => item.id === Number(sourceId)) ?? d.sourcePhases[0]
   const [preview, setPreview] = useState<S.PhasePositionsResponse>()
@@ -90,12 +95,12 @@ export function Calendar({ data: d, run }: { data: AdminData; run: Run }) {
   }, [source?.id, d.matches])
   const dateMatches = d.matches.filter(item => item.date === date)
   const visible = dateMatches.some(item => item.lineVisible)
-  const filtered = d.matches.filter(item => (!date || item.date === date) && (!court || item.court === Number(court)))
+  const filtered = adminCalendarMatches(d.matches, date, court, status)
   return <section className="task-workspace"><h2>Calendario</h2>
     {showEditor && <section className="panel calendar-editor"><MatchForm key={editing?.id ?? 'new'} data={d} match={editing} run={run} cancel={returnToList} /></section>}
     <section hidden={showEditor}>
       <div className="panel list-heading"><h3>Partidos · {d.phase?.name ?? 'Sin fase'}</h3><button className="primary" disabled={!d.phase || !d.groups.length} onClick={() => openEditor()}>+ Partido</button></div>
-      <div className="panel filters"><label>Fecha<input type="date" value={date} onChange={event => setDate(event.target.value)} /></label><label>Cancha<input type="number" min={1} value={court} onChange={event => setCourt(event.target.value)} /></label><button disabled={!dateMatches.length} onClick={() => void run(() => adminMutation(`/line-visibility/${date}`, 'PUT', S.LineVisibilitySchema.parse({ visible: !visible })))}>{visible ? 'OCULTAR LÍNEAS' : 'PUBLICAR LÍNEAS'}</button></div>
+      <div className="panel filters"><label>Fecha<input type="date" value={date} onChange={event => setDate(event.target.value)} /></label><label>Cancha<input type="number" min={1} value={court} onChange={event => setCourt(event.target.value)} /></label><label>Estado<select aria-label="Estado" value={status} onChange={event => setStatus(event.target.value)}><option value="">Todos</option><option value="SCHEDULED">Programados</option><option value="LIVE">En juego</option><option value="FINISHED">Finalizados</option></select></label><button disabled={!dateMatches.length} onClick={() => void run(() => adminMutation(`/line-visibility/${date}`, 'PUT', S.LineVisibilitySchema.parse({ visible: !visible })))}>{visible ? 'OCULTAR LÍNEAS' : 'PUBLICAR LÍNEAS'}</button></div>
       <div id="matches">{filtered.map(item => <AdminMatch key={item.id} match={item} run={run} edit={() => openEditor(item)} />)}{!filtered.length && <p className="empty">No hay partidos para esta fase y filtros.</p>}</div>
       <details className="panel"><summary>Más · Posiciones de fases anteriores</summary><Select label="Fase origen para posiciones" items={d.sourcePhases} value={source?.id ?? ''} onChange={setSourceId} />{error && <p role="alert" className="error">{error}</p>}{preview && <Positions preview={preview} groups={d.sourceGroups[preview.phaseId] ?? []} run={run} />}</details>
     </section>

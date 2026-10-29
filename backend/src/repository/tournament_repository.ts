@@ -26,8 +26,8 @@ export class TournamentRepository {
         return this.dbConnection.getTournamentByLegacyType(legacyType)
     }
 
-    updateTournament(tournamentId: number, name: string, active: boolean, currentPhaseId: number) : Tournament|undefined{
-        return this.dbConnection.updateTournament(tournamentId, name, active, currentPhaseId)
+    updateTournament(tournamentId: number, name: string, active: boolean, currentMalePhaseId: number | null, currentFemalePhaseId: number | null, currentPhaseId: number | null) : Tournament|undefined{
+        return this.dbConnection.updateTournament(tournamentId, name, active, currentMalePhaseId, currentFemalePhaseId, currentPhaseId)
     }
 
     deleteTournament(tournamentId: number): boolean {

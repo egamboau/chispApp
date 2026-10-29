@@ -97,7 +97,7 @@ test('calendar filters exclude finished matches and preserve server order within
 })
 
 test('public data reload validates responses, chooses current phase and preserves selections', async t => {
-  const tournament = { id: 1, name: 'Copa', active: 1, currentPhaseId: 2, legacyType: null }
+  const tournament = { id: 1, name: 'Copa', active: 1, currentPhaseId: 2, currentMalePhaseId: 2, currentFemalePhaseId: null, legacyType: null }
   const routes: Record<string, unknown> = {
     '/api/tournaments?active=true': [tournament],
     '/api/tournaments/1/phases': [phase, { ...phase, id: 2 }],
@@ -187,3 +187,47 @@ test('SSE refreshes scores, watches heartbeats, retries errors and cleans up on 
   assert.equal(second.closed, true)
   assert.equal(Events.instances.length, 2)
 })
+
+test('phase categories isolate selection, dependent reads and empty categories', async t => {
+  const female = { ...phase, id: 3, tournamentType: 'FEMALE' } as const
+  let phases = [phase, female]
+  const calls: string[] = []
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    calls.push(path)
+    if (path === '/api/tournaments?active=true') return Response.json([{ id: 1, name: 'Copa', active: true, currentPhaseId: 1, currentMalePhaseId: 1, currentFemalePhaseId: null, legacyType: null }])
+    if (path === '/api/tournaments/1/phases') return Response.json(phases)
+    if (path === '/api/matches?phaseId=3') return Response.json([])
+    if (path === '/api/phases/3/standings') return Response.json({ phase: female, hasStandings: false, rules: [], groups: [] })
+    if (path === '/api/phases/3/scoring') return Response.json({ phase: female, tables: [] })
+    assert.fail(`Unexpected request: ${path}`)
+  })
+  const selected = await loadDisplay({ phaseId: 1, category: 'FEMALE' }, new AbortController().signal)
+  assert.equal(selected.phase?.id, 3)
+  assert.deepEqual(selected.phases, [female])
+  const refreshed = await loadDisplay({ phaseId: 3 }, new AbortController().signal)
+  assert.equal(refreshed.phase?.id, 3)
+  assert.deepEqual(refreshed.phases, [female])
+  phases = [phase]
+  calls.length = 0
+  const empty = await loadDisplay({ category: 'FEMALE' }, new AbortController().signal)
+  assert.equal(empty.phase, undefined)
+  assert.deepEqual(empty.phases, [])
+  assert.deepEqual(empty.matches, [])
+  assert.deepEqual(calls, ['/api/tournaments?active=true', '/api/tournaments/1/phases'])
+})
+
+test('each public category defaults to its own current phase while explicit history remains available', async t => {
+  const phases = [phase, { ...phase, id: 2 }, { ...phase, id: 3, tournamentType: 'FEMALE' }, { ...phase, id: 4, tournamentType: 'FEMALE' }];
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === '/api/tournaments?active=true') return Response.json([{ id: 1, name: 'Copa', active: true, currentPhaseId: 1, currentMalePhaseId: 2, currentFemalePhaseId: 4, legacyType: null }]);
+    if (path === '/api/tournaments/1/phases') return Response.json(phases);
+    if (path.startsWith('/api/matches?')) return Response.json([]);
+    const selected = phases.find(item => path.includes(`/phases/${item.id}/`))!;
+    if (path.endsWith('/standings')) return Response.json({ phase: selected, hasStandings: false, rules: [], groups: [] });
+    return Response.json({ phase: selected, tables: [] });
+  });
+  const signal = new AbortController().signal;
+  assert.equal((await loadDisplay({ category: 'MALE' }, signal)).phase?.id, 2);
+  assert.equal((await loadDisplay({ category: 'FEMALE' }, signal)).phase?.id, 4);
+  assert.equal((await loadDisplay({ category: 'FEMALE', phaseId: 3 }, signal)).phase?.id, 3);
+});

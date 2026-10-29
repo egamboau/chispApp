@@ -31,7 +31,7 @@ export function PublicDisplay() {
     const last = previous.current
     const tournamentId = selection.tournamentId ?? last?.tournament?.id
     const phaseId = selection.phaseId ?? (last?.tournament?.id === tournamentId ? last?.phase?.id : undefined)
-    void loadDisplay({ tournamentId, phaseId }, controller.signal).then(data => {
+    void loadDisplay({ tournamentId, phaseId, category: selection.category }, controller.signal).then(data => {
       if (controller.signal.aborted) return
       previous.current = data
       setResult({ selection, data })
@@ -47,8 +47,9 @@ export function PublicDisplay() {
   const results = data ? resultMatches(data.matches, resultsDate) : []
   const navigation = <>
     <div className={styles.selectors}>
-      <label>Torneo<select aria-label="Torneo activo" value={data?.tournament?.id ?? ''} disabled={!data?.tournaments.length} onChange={event => setSelection({ tournamentId: Number(event.target.value) })}>{data?.tournaments.map(tournament => <option key={tournament.id} value={tournament.id}>{tournament.name}</option>)}</select></label>
-      <label>Fase<select aria-label="Fase" value={data?.phase?.id ?? ''} disabled={!data?.phases.length} onChange={event => setSelection({ tournamentId: data?.tournament?.id, phaseId: Number(event.target.value) })}>{data?.phases.map(phase => <option key={phase.id} value={phase.id}>{phase.name}</option>)}</select></label>
+      <label>Torneo<select aria-label="Torneo activo" value={data?.tournament?.id ?? ''} disabled={!data?.tournaments.length} onChange={event => setSelection({ tournamentId: Number(event.target.value), category: selection.category ?? data?.phase?.tournamentType })}>{data?.tournaments.map(tournament => <option key={tournament.id} value={tournament.id}>{tournament.name}</option>)}</select></label>
+      <label>Categoría<select aria-label="Categoría de las fases" value={selection.category ?? data?.phase?.tournamentType ?? ''} disabled={!data?.tournament} onChange={event => setSelection({ tournamentId: data?.tournament?.id, category: event.target.value as DisplaySelection['category'] })}><option value="" disabled>Seleccione</option><option value="MALE">Masculino</option><option value="FEMALE">Femenino</option></select></label>
+      <label>Fase<select aria-label="Fase" value={data?.phase?.id ?? ''} disabled={!data?.phases.length} onChange={event => setSelection({ tournamentId: data?.tournament?.id, phaseId: Number(event.target.value), category: selection.category ?? data?.phase?.tournamentType })}>{data?.phases.map(phase => <option key={phase.id} value={phase.id}>{phase.name}</option>)}</select></label>
     </div>
     <nav className={styles.navigation} aria-label="Vistas del torneo">{(Object.keys(tabs) as Array<keyof typeof tabs>).map(tab => <button key={tab} type="button" aria-pressed={view === tab} onClick={() => setView(tab)}>{tabs[tab]}</button>)}</nav>
   </>
