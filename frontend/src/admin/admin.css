@@ -141,3 +141,7 @@ summary { min-height: 44px; padding: .6rem; cursor: pointer; font-weight: 700; }
 .task-tabs button { flex: 1; }
 .task-tabs [aria-selected=true] { background: var(--primary); border-color: var(--primary); color: white; }
 [hidden] { display: none !important; }
+
+.calendar-editor { max-width: 760px; margin: auto; }
+.calendar-editor .compact-form > fieldset { grid-template-columns: 1fr; }
+.form-section { grid-column: 1 / -1; margin: .5rem 0; }

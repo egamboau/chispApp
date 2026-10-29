@@ -4,7 +4,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { MatchResponse } from '@jupas/shared'
 import { adminMutation, loadAdmin, scoringSelection } from '../src/api/admin.ts'
-import { AdminMatch, Calendar, participantValues } from '../src/admin/Calendar.tsx'
+import { AdminMatch, Calendar, MatchForm, participantValues } from '../src/admin/Calendar.tsx'
 import type { AdminData } from '../src/api/admin.ts'
 import { Positions } from '../src/admin/Tournaments.tsx'
 
@@ -107,7 +107,10 @@ test('fixed-team editors restrict local group, visitor phase and line tournament
     memberships: [{ phaseId: 2, groupId: 2, teamId: 1 }, { phaseId: 2, groupId: 3, teamId: 2 }],
     rules: [], sanctions: [], teamCards: [], matches: [], tables: [], positions: undefined, sourcePhases: [source], sourceGroups: {},
   }
-  const html = renderToStaticMarkup(createElement(Calendar, { data, run: async () => false, revision: 0 }))
+  const list = renderToStaticMarkup(createElement(Calendar, { data, run: async () => false }))
+  assert.match(list, /\+ Partido/)
+  assert.doesNotMatch(list, /Programar partido|name="teamA-kind"/)
+  const html = renderToStaticMarkup(createElement(MatchForm, { data, run: async () => false, cancel() {} }))
   const role = (name: string) => html.split(`<legend>${name}</legend>`)[1]!.split('</fieldset>')[0]!
   assert.match(role('Local'), /Equipo 1/); assert.doesNotMatch(role('Local'), /Equipo [23]/)
   assert.match(role('Visitante'), /Equipo 2/); assert.doesNotMatch(role('Visitante'), /Equipo 3/)
