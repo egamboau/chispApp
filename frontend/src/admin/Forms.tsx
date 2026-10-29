@@ -52,3 +52,13 @@ export function Form({ title, children, submit, disabled = false, save, disclosu
 
 /** Keeps names escaped by React and groups entity controls beside readable labels. */
 export function Row({ children, className = '' }: { children: ReactNode; className?: string }) { return <div className={`config-row ${className}`}>{children}</div> }
+/** Renders accessible task tabs with arrow/Home/End navigation; owners keep inactive panels mounted. */
+export function Tabs({ labels, value, onChange }: { labels: string[]; value: string; onChange: (value: string) => void }) {
+  return <div className="task-tabs" role="tablist" aria-label="Tareas">{labels.map(label => <button key={label} id={`tab-${label}`} role="tab" aria-selected={value === label} aria-controls={`panel-${label}`} tabIndex={value === label ? 0 : -1} onClick={() => onChange(label)} onKeyDown={event => {
+    const offset = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+    if (!offset && event.key !== 'Home' && event.key !== 'End') return
+    event.preventDefault()
+    const index = event.key === 'Home' ? 0 : event.key === 'End' ? labels.length - 1 : (labels.indexOf(label) + offset + labels.length) % labels.length
+    onChange(labels[index]!); (event.currentTarget.parentElement?.children[index] as HTMLElement)?.focus()
+  }}>{label}</button>)}</div>
+}
