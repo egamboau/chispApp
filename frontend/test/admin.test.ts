@@ -156,3 +156,18 @@ test('task tabs expose selected state, roving focus and associated panels', asyn
   assert.match(html, /id="tab-General" role="tab" aria-selected="true" aria-controls="panel-General" tabindex="0"/)
   assert.match(html, /id="tab-Fases" role="tab" aria-selected="false" aria-controls="panel-Fases" tabindex="-1"/)
 })
+
+test('teams open with grouped membership lists and task panels rather than every team editor', async () => {
+  const { Teams } = await import('../src/admin/Teams.tsx')
+  const data: AdminData = {
+    tournaments: [tournament], tournament, phases: [phase], phase,
+    teams: [{ id: 1, name: 'Inscrito', tournamentId: 1, tournamentType: 'MALE' }, { id: 2, name: 'Disponible', tournamentId: 1, tournamentType: 'MALE' }],
+    groups: [{ id: 2, phaseId: 2, name: 'Grupo A' }], memberships: [{ phaseId: 2, groupId: 2, teamId: 1 }],
+    rules: [], sanctions: [], teamCards: [], matches: [], tables: [], positions: undefined, sourcePhases: [], sourceGroups: {},
+  }
+  const html = renderToStaticMarkup(createElement(Teams, { data, run: async () => false, revision: 0 }))
+  assert.match(html, /Grupo A[\s\S]*Ver Inscrito[\s\S]*Sin grupo en esta fase[\s\S]*Ver Disponible/)
+  assert.doesNotMatch(html, /Editar Inscrito|Editar Disponible/)
+  assert.match(html, /id="panel-Jugadores" role="tabpanel" aria-labelledby="tab-Jugadores" hidden=""/)
+  assert.match(html, /id="panel-Disciplina" role="tabpanel" aria-labelledby="tab-Disciplina" hidden=""/)
+})
