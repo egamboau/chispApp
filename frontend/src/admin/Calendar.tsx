@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as S from '@jupas/shared'
 import type { AdminData } from '../api/admin'
 import { adminMutation, adminRequest } from '../api/admin'
-import { Field, Form, Select } from './Forms'
+import { confirmDiscard, Field, Form, Select } from './Forms'
 import type { Run } from './Forms'
 import { Positions } from './Tournaments'
 
@@ -36,8 +36,8 @@ function Participant({ role, data: d, match, groupId }: { role: Role; data: Admi
   </fieldset>
 }
 
-/** Schedules or edits unresolved participants without flattening confirmed references into resolved team IDs. */
-function MatchForm({ data: d, match, run, cancel }: { data: AdminData; match?: S.MatchResponse; run: Run; cancel: () => void }) {
+/** Schedules or edits references in one column; successful saves return to the list, cancellation warns on drafts. */
+export function MatchForm({ data: d, match, run, cancel }: { data: AdminData; match?: S.MatchResponse; run: Run; cancel: () => void }) {
   const [groupId, setGroupId] = useState(match?.groupId ?? d.groups[0]?.id)
   const confirmed = match && Object.values(match.participants).some(item => item?.reference.kind !== 'TEAM' && item?.status === 'CONFIRMED')
   return <><Form title={match ? 'Editar partido' : 'Programar partido'} disabled={!d.phase || !d.groups.length} submit={v => {
@@ -47,10 +47,11 @@ function MatchForm({ data: d, match, run, cancel }: { data: AdminData; match?: S
     await adminMutation(`/matches${match ? `/${match.id}` : ''}`, match ? 'PUT' : 'POST', body)
     cancel()
   })
-  }}><Select label="Grupo" name="groupId" items={d.groups} value={groupId ?? ''} onChange={value => setGroupId(Number(value))} />
+  }}><h4 className="form-section">Programación</h4><Select label="Grupo" name="groupId" items={d.groups} value={groupId ?? ''} onChange={value => setGroupId(Number(value))} />
     <Field label="Fecha" name="date" type="date" defaultValue={match?.date} /><Select label="Jornada" name="jornada" value={match?.jornada ?? 'MORNING'} items={[{ id: 'MORNING', name: 'Mañana' }, { id: 'AFTERNOON', name: 'Tarde' }]} /><Field label="Cancha" name="court" type="number" min={1} step={1} defaultValue={match?.court ?? 1} /><Field label="Orden oficial opcional" name="sortOrder" type="number" min={1} step={1} required={false} defaultValue={match?.sortOrder ?? ''} />
-    <div className="participant-fields">{(Object.keys(roles) as Role[]).map(role => <Participant key={`${role}-${role === 'teamA' ? groupId : ''}`} role={role} data={d} match={match} groupId={groupId!} />)}</div>{confirmed && <p>Asignaciones confirmadas: cambiar referencias requiere revisar y confirmar otra vez fase origen.</p>}
-  </Form>{match && <button onClick={cancel}>CANCELAR EDICIÓN</button>}</>
+    <h4 className="form-section">Participantes</h4><div className="participant-fields">{(Object.keys(roles) as Role[]).map(role => <Participant key={`${role}-${role === 'teamA' ? groupId : ''}`} role={role} data={d} match={match} groupId={groupId!} />)}</div>{confirmed && <p>Asignaciones confirmadas: cambiar referencias requiere revisar y confirmar otra vez fase origen.</p>}
+    <button type="button" onClick={() => { if (confirmDiscard()) cancel() }}>VOLVER AL CALENDARIO</button>
+  </Form></>
 }
 
 /** Renders lifecycle controls permitted by match state; every mutation still passes server transition validation. */
@@ -69,8 +70,14 @@ export function AdminMatch({ match: m, run, edit }: { match: S.MatchResponse; ru
 }
 
 /** Maintains calendar filters and edit drafts across live refreshes; date visibility and previews remain server-owned. */
-export function Calendar({ data: d, run, revision }: { data: AdminData; run: Run; revision: number }) {
-  const [editing, setEditing] = useState<S.MatchResponse>()
+export function Calendar({ data: d, run }: { data: AdminData; run: Run }) {
+  const [editing, setEditing] = useState<S.MatchResponse>(), [creating, setCreating] = useState(false)
+  const listScroll = useRef(0)
+  /** Opens the shared editor while retaining the mounted list, filters and prior page position. */
+  function openEditor(match?: S.MatchResponse) { listScroll.current = window.scrollY; setEditing(match); setCreating(!match); window.scrollTo(0, 0) }
+  /** Returns after save/cancel and restores the prior list position after React renders it. */
+  function returnToList() { setEditing(undefined); setCreating(false); requestAnimationFrame(() => window.scrollTo(0, listScroll.current)) }
+  const showEditor = creating || !!editing
   const [date, setDate] = useState(''), [court, setCourt] = useState('')
   const [sourceId, setSourceId] = useState('')
   const source = d.sourcePhases.find(item => item.id === Number(sourceId)) ?? d.sourcePhases[0]
@@ -83,9 +90,14 @@ export function Calendar({ data: d, run, revision }: { data: AdminData; run: Run
   }, [source?.id, d.matches])
   const dateMatches = d.matches.filter(item => item.date === date)
   const visible = dateMatches.some(item => item.lineVisible)
-  return <><section className="panel"><h2>Calendario</h2><MatchForm key={editing?.id ?? `new-${revision}`} data={d} match={editing} run={run} cancel={() => setEditing(undefined)} />
-    <Select label="Fase origen para posiciones" items={d.sourcePhases} value={source?.id ?? ''} onChange={setSourceId} />{error && <p role="alert" className="error">{error}</p>}{preview && <Positions preview={preview} groups={d.sourceGroups[preview.phaseId] ?? []} run={run} />}
-  </section><section><div className="panel filters"><label>Fecha<input type="date" value={date} onChange={event => setDate(event.target.value)} /></label><label>Cancha<input type="number" min={1} value={court} onChange={event => setCourt(event.target.value)} /></label><button disabled={!dateMatches.length} onClick={() => void run(() => adminMutation(`/line-visibility/${date}`, 'PUT', S.LineVisibilitySchema.parse({ visible: !visible })))}>{visible ? 'OCULTAR LÍNEAS' : 'PUBLICAR LÍNEAS'}</button></div>
-    <div id="matches">{d.matches.filter(item => (!date || item.date === date) && (!court || item.court === Number(court))).map(item => <AdminMatch key={item.id} match={item} run={run} edit={() => setEditing(item)} />)}{!d.matches.length && <p className="empty">No hay partidos en esta fase.</p>}</div>
-  </section></>
+  const filtered = d.matches.filter(item => (!date || item.date === date) && (!court || item.court === Number(court)))
+  return <section className="task-workspace"><h2>Calendario</h2>
+    {showEditor && <section className="panel calendar-editor"><MatchForm key={editing?.id ?? 'new'} data={d} match={editing} run={run} cancel={returnToList} /></section>}
+    <section hidden={showEditor}>
+      <div className="panel list-heading"><h3>Partidos · {d.phase?.name ?? 'Sin fase'}</h3><button className="primary" disabled={!d.phase || !d.groups.length} onClick={() => openEditor()}>+ Partido</button></div>
+      <div className="panel filters"><label>Fecha<input type="date" value={date} onChange={event => setDate(event.target.value)} /></label><label>Cancha<input type="number" min={1} value={court} onChange={event => setCourt(event.target.value)} /></label><button disabled={!dateMatches.length} onClick={() => void run(() => adminMutation(`/line-visibility/${date}`, 'PUT', S.LineVisibilitySchema.parse({ visible: !visible })))}>{visible ? 'OCULTAR LÍNEAS' : 'PUBLICAR LÍNEAS'}</button></div>
+      <div id="matches">{filtered.map(item => <AdminMatch key={item.id} match={item} run={run} edit={() => openEditor(item)} />)}{!filtered.length && <p className="empty">No hay partidos para esta fase y filtros.</p>}</div>
+      <details className="panel"><summary>Más · Posiciones de fases anteriores</summary><Select label="Fase origen para posiciones" items={d.sourcePhases} value={source?.id ?? ''} onChange={setSourceId} />{error && <p role="alert" className="error">{error}</p>}{preview && <Positions preview={preview} groups={d.sourceGroups[preview.phaseId] ?? []} run={run} />}</details>
+    </section>
+  </section>
 }
