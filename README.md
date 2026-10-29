@@ -6,7 +6,7 @@ Permite administrar varios torneos activos, fases, grupos, membresías, sancione
 
 ## Requisitos
 
-- Node.js 20 o superior y npm, o Docker.
+- Node.js 22.12 o superior y npm, o Docker (Node 22 fijado por digest).
 - Docker Swarm inicializado para el despliegue con `stack.yml`.
 
 ## Ejecución local
@@ -58,6 +58,8 @@ El volumen `tournament-data` conserva la base de datos al reiniciar o reemplazar
 
 El despliegue usa Jenkins con agentes separados para construir y desplegar. Cada cambio en `main` ejecuta las pruebas durante la construcción de la imagen, la etiqueta como `sha-...`, la publica en `nas-server.local:5000` y actualiza el stack.
 
+La imagen multistage usa la misma base Node fijada por digest para compilar y ejecutar. `npm ci` instala el lockfile raíz; la construcción ejecuta lint, typecheck, tests de los tres workspaces y build antes de eliminar dependencias de desarrollo. El runtime ejecuta Express como usuario `node`, sirve los assets compilados y no contiene Vite ni TypeScript. Jenkins aplica estas comprobaciones mediante `docker build`; solo `main` publica, respalda y despliega. Actualiza el digest de ambas etapas juntos al renovar Node.
+
 Antes del primer despliegue, crea la red y prepara el export NFS:
 
 ```bash
@@ -65,7 +67,7 @@ docker swarm init # solo la primera vez
 docker network create --driver overlay --attachable public-ingress
 ```
 
-Configura un job **Pipeline from SCM** apuntando a `main` y usando `Jenkinsfile`. Jenkins ejecuta el build y push en un único agente Docker con etiqueta `node-24`, Node.js 24 y acceso al registry local. El agente `swarm-manager` solo realiza el despliegue y necesita acceso al daemon de un manager. No habilites builds de pull requests: ambos agentes tienen acceso a Docker.
+Configura un job **Pipeline from SCM** apuntando a `main` y usando `Jenkinsfile`. Jenkins ejecuta el build y push en un único agente Docker con etiqueta `node-24`, Node.js 24 y acceso al registry local. El agente `base` realiza el respaldo y el despliegue y necesita acceso al daemon de un manager. No habilites builds de pull requests: ambos agentes tienen acceso a Docker.
 
 Configura en Jenkins:
 
@@ -91,7 +93,7 @@ curl --fail https://HOST/api/tournaments
 curl --fail https://HOST/display/
 ```
 
-Comprueba también `/admin/` con una sesión de Cloudflare Access. Las pruebas HTTP verifican que las rutas vanilla y React coexisten, por lo que retirar la imagen nueva restaura únicamente los assets y el servidor anteriores.
+Comprueba también `/admin/` con una sesión de Cloudflare Access. Las rutas `/display/` y `/admin/` usan el mismo build React. El rollback de una migración solo de frontend restaura los assets y el servidor anteriores; si hubo cambios de datos, aplica también las restricciones de restauración indicadas abajo.
 
 En producción no se publica el puerto 3000. El servicio `cloudflared` debe pertenecer a la red overlay `public-ingress` y dirigir el hostname público a `http://tournament:3000`.
 
