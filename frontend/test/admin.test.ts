@@ -174,3 +174,26 @@ test('teams open with grouped membership lists and task panels rather than every
   assert.match(html, /id="panel-Jugadores" role="tabpanel" aria-labelledby="tab-Jugadores" hidden=""/)
   assert.match(html, /id="panel-Disciplina" role="tabpanel" aria-labelledby="tab-Disciplina" hidden=""/)
 })
+
+test('scoring registration previews existing weighted totals and retains the controlled table', async () => {
+  const { ScoringForm } = await import('../src/admin/Scoring.tsx')
+  const html = renderToStaticMarkup(createElement(ScoringForm, {
+    match: { ...match, status: 'FINISHED' }, player: { id: 7, teamId: 1, number: '07', name: 'Ana', displayName: '07 Ana', status: 'REGISTERED' },
+    entry: { playerId: 7, playerNumber: '07', teamId: 1, matchId: 5, scoringTable: 'Copa', directGoals: 1, pepitas: 2, horquetas: 3, total: 14 },
+    tables: [{ id: 4, name: 'Copa', tournamentId: 1, tournamentType: 'MALE' }], tableId: 4, setTableId() {}, run: async () => false, saved() {},
+  }))
+  assert.match(html, /Editar goleo/)
+  assert.match(html, /<option value="4" selected="">Copa/)
+  assert.match(html, /Total: <strong>14<\/strong>/)
+  assert.match(html, /name="directGoals"[^>]*value="1"/)
+})
+
+
+test('scoring payload translates validated table IDs to the existing API name for create and edit', async () => {
+  const { scoringPayload } = await import('../src/admin/Scoring.tsx')
+  const tables = [{ id: 4, name: 'Copa', tournamentId: 1, tournamentType: 'MALE' as const }]
+  const values = { directGoals: '1', pepitas: '2', horquetas: '0', scoringTableId: '4' }
+  assert.deepEqual(scoringPayload(values, tables, 7), { playerId: 7, directGoals: 1, pepitas: 2, horquetas: 0, scoringTable: 'Copa' })
+  assert.deepEqual(scoringPayload(values, tables), { directGoals: 1, pepitas: 2, horquetas: 0, scoringTable: 'Copa' })
+  assert.throws(() => scoringPayload({ ...values, scoringTableId: '99' }, tables), /tabla de goleo válida/)
+})
