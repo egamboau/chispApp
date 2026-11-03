@@ -30,7 +30,8 @@ test('validates group and team inputs and responses', () => {
   });
   assert.equal(contracts.CreateTeamInputSchema.safeParse({ name: 'Tigres' }).success, false);
   assert.equal(contracts.CreateTeamInputSchema.safeParse({ name: 'Tigres', tournamentType: 'MALE' }).success, false);
-  assert.equal(contracts.CreateTeamInputSchema.safeParse({ name: 'Tigres', tournamentId: 1, tournamentType: 'MALE' }).success, false);
+  assert.equal(contracts.CreateTeamInputSchema.safeParse({ name: 'Tigres', tournamentId: 1, tournamentType: 'FEMALE' }).success, true);
+  assert.equal(contracts.CreateTeamInputSchema.safeParse({ name: 'Tigres', tournamentId: 1, tournamentType: 'INVALID' }).success, false);
   assert.equal(contracts.TeamResponseSchema.safeParse({ id: 1, tournamentId: null, tournamentType: 'MALE', name: 'Tigres' }).success, true);
 });
 

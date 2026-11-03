@@ -27,6 +27,7 @@ export class TeamController {
     insertTeam: RequestHandler = (req, res) => {
         const id = idSchema.safeParse(req.body.tournamentId)
         const type = tournamentTypeSchema.safeParse(req.body.tournamentType)
+        if (req.body.tournamentType !== undefined && !type.success) return res.status(400).json({ error: 'Categoría inválida.' })
         const tournament = id.success
             ? this.tournamentService.getTournamentById(id.data)
             : type.success ? this.tournamentService.getTournamentByLegacyType(type.data) : undefined
@@ -36,7 +37,7 @@ export class TeamController {
         if (!input.success) return res.status(400).json({ error: 'Nombre de equipo inválido.' })
 
         try {
-            const tournamentType = tournament.legacyType || (tournament.id % 2 ? 'MALE' : 'FEMALE')
+            const tournamentType = type.success ? type.data : tournament.legacyType || (tournament.id % 2 ? 'MALE' : 'FEMALE')
             res.status(201).json(this.teamService.insertTeam(tournamentType, tournament.id, input.data.name))
         } catch (error) {
             if (error instanceof DatabaseConnectionError && error.name === 'DuplicateTeamError') return res.status(409).json({ error: error.message })
