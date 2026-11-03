@@ -280,3 +280,14 @@ test('admin calendar combines status, date and court filters while preserving ma
   assert.deepEqual(adminCalendarMatches(matches, match.date, '2', 'LIVE'), [])
   assert.deepEqual(adminCalendarMatches([], '', '', 'FINISHED'), [])
 })
+
+
+test('admin errors render the API message as a focusable alert and retain retry actions', async () => {
+  const { ErrorNotice } = await import('../src/admin/Forms.tsx')
+  const message = 'El equipo debe pertenecer al torneo y categoría del partido.'
+  const html = renderToStaticMarkup(createElement(ErrorNotice, { message }, createElement('button', null, 'REINTENTAR')))
+  assert.match(html, /role="alert" tabindex="-1" class="error error-notice"/)
+  assert.ok(html.includes(message))
+  assert.match(html, /<button>REINTENTAR<\/button>/)
+  assert.equal(renderToStaticMarkup(createElement(ErrorNotice, { message: '' })), '')
+})
