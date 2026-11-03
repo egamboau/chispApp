@@ -153,3 +153,8 @@ summary { min-height: 44px; padding: .6rem; cursor: pointer; font-weight: 700; }
 .tournament-submenu { position: absolute; top: calc(100% + .4rem); left: 0; z-index: 10; min-width: 200px; padding: .4rem; border-radius: 10px; background: #10223a; box-shadow: 0 6px 20px #10223a40; display: grid; gap: .3rem; }
 .tournament-submenu a { justify-content: start; border: 0; }
 .tournament-submenu a:hover { background: #244461; }
+
+.admin-feedback { position: sticky; top: 0; z-index: 20; background: var(--panel); box-shadow: 0 4px 16px #17324d18; }
+.admin-feedback p { margin: .25rem 0; }
+.error-notice { padding: .8rem; border: 2px solid var(--danger); border-radius: 9px; background: #fff1f2; overflow-wrap: anywhere; }
+.error-notice button { margin-left: .75rem; }

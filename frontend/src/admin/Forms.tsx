@@ -1,5 +1,16 @@
-import { createContext, useContext, useId, useState } from 'react'
+import { createContext, useContext, useEffect, useId, useRef, useState } from 'react'
 import type { InputHTMLAttributes, ReactNode } from 'react'
+
+/** Announces errors and brings them into view without discarding the current form. */
+export function ErrorNotice({ message, children }: { message: string; children?: ReactNode }) {
+  const notice = useRef<HTMLParagraphElement>(null)
+  useEffect(() => {
+    if (!message) return
+    notice.current?.focus({ preventScroll: true })
+    notice.current?.scrollIntoView({ block: 'nearest' })
+  }, [message])
+  return message ? <p ref={notice} role="alert" tabIndex={-1} className="error error-notice">{message}{children}</p> : null
+}
 
 export type Run = (operation: () => Promise<unknown>) => Promise<boolean>
 const Errors = createContext<Record<string, string>>({})
@@ -46,7 +57,7 @@ export function Form({ title, children, submit, disabled = false, save, disclosu
       setErrors(Object.fromEntries(issues.map(item => [String(item.path[0] ?? ''), item.message])))
       setFailure(error instanceof Error && !issues.length ? error.message : 'Revisa los campos indicados.')
     } finally { delete form.dataset.submitting; setBusy(false) }
-  }}><fieldset disabled={disabled || busy}>{children}{failure && <p role="alert" className="error">{failure}</p>}<button className="primary">{busy ? 'Guardando…' : save ?? 'GUARDAR'}</button></fieldset></form></Errors.Provider></>
+  }}><fieldset disabled={disabled || busy}>{children}<ErrorNotice message={failure} /><button className="primary">{busy ? 'Guardando…' : save ?? 'GUARDAR'}</button></fieldset></form></Errors.Provider></>
   return disclosure ? <details className="form-disclosure"><summary>Agregar · {title}</summary>{form}</details> : <section>{form}</section>
 }
 
