@@ -25,13 +25,13 @@ export function Teams({ data: d, run, revision }: { data: AdminData; run: Run; r
   return <section className="panel task-workspace"><h2>Equipos</h2><p>{t?.name ?? 'Sin torneo'} · {p?.name ?? 'Sin fase'}</p><Tabs labels={['Equipos', 'Jugadores', 'Disciplina']} value={tab} onChange={setTab} />
     <section id="panel-Equipos" role="tabpanel" aria-labelledby="tab-Equipos" hidden={tab !== 'Equipos'}><p>{p ? `Asignando equipos a ${p.name}.` : 'El torneo no tiene fases.'}</p>
     <details className="form-disclosure"><summary>Agregar equipo</summary><Form title="Crear equipo" disabled={!t} submit={v => run(async () => {
-      const created = await adminRequest('/teams', S.TeamResponseSchema, { method: 'POST', body: S.CreateTeamInputSchema.parse({ name: v.name, tournamentId: t!.id }) })
+      const created = await adminRequest('/teams', S.TeamResponseSchema, { method: 'POST', body: S.CreateTeamInputSchema.parse({ name: v.name, tournamentId: t!.id, tournamentType: p?.tournamentType ?? v.tournamentType }) })
       setTeamId(String(created.id))
       if (p && v.groupId) {
         try { await adminMutation(`/phases/${p.id}/memberships`, 'POST', S.MembershipInputSchema.parse({ teamId: created.id, groupId: v.groupId })) }
         catch (failure) { throw new Error(`Equipo creado; no se pudo asignar al grupo. Usa «Asignar equipo existente». ${failure instanceof Error ? failure.message : ''}`, { cause: failure }) }
       }
-    })}><Field label="Nombre" name="name" maxLength={100} /><Select label="Grupo opcional" name="groupId" items={d.groups} optional /></Form>
+    })}><Field label="Nombre" name="name" maxLength={100} />{!p && <Select label="Categoría" name="tournamentType" value="MALE" items={[{ id: 'MALE', name: 'Masculino' }, { id: 'FEMALE', name: 'Femenino' }]} />}<Select label="Grupo opcional" name="groupId" items={d.groups} optional /></Form>
     <Form title="Asignar equipo existente" disabled={!p || !d.groups.length} submit={v => run(() => adminMutation(`/phases/${p!.id}/memberships`, 'POST', S.MembershipInputSchema.parse(v)))}><Select label="Equipo" name="teamId" items={d.teams.filter(item => !memberTeams.includes(item))} /><Select label="Grupo" name="groupId" items={d.groups} /></Form>
     </details>
     {[...d.groups.map(group => ({ id: group.id, name: group.name })), { id: 0, name: 'Sin grupo en esta fase' }].map(group => <section key={group.id} className="team-group"><h3>{group.name}</h3>{d.teams.filter(item => (d.memberships.find(member => member.teamId === item.id)?.groupId ?? 0) === group.id).map(item => <Row key={item.id}><span>{item.name}</span><button aria-pressed={team?.id === item.id} onClick={() => selectTeam(String(item.id))}>Ver {item.name}</button></Row>)}</section>)}

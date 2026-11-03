@@ -727,3 +727,19 @@ test('un torneo mantiene fases vigentes independientes por categoría y valida p
   assert.equal(result.body.find((item: { id: number }) => item.id === id).currentFemalePhaseId, null);
   assert.ok(fs.readdirSync(tempDir).some(name => name.startsWith('test.db.before-category-phases-')));
 });
+
+
+test('team creation honors explicit female category in a legacy male tournament', async () => {
+  const created = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentId: 1, tournamentType: 'FEMALE', name: 'Categoría femenina explícita' }) });
+  assert.equal(created.response.status, 201);
+  assert.equal(created.body.tournamentId, 1);
+  assert.equal(created.body.tournamentType, 'FEMALE');
+  try {
+    const teams = await json('/api/teams?tournamentId=1');
+    assert.equal(teams.body.find((team: { id: number }) => team.id === created.body.id).tournamentType, 'FEMALE');
+    const invalid = await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentId: 1, tournamentType: 'INVALID', name: 'Categoría inválida' }) });
+    assert.equal(invalid.response.status, 400);
+  } finally {
+    await json(`/api/teams/${created.body.id}`, { method: 'DELETE' });
+  }
+});

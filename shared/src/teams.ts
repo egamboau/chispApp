@@ -3,10 +3,11 @@ import { CoercedIdSchema, IdSchema, NameSchema, TournamentTypeSchema } from './c
 
 export { TournamentTypeSchema } from './common';
 
-/** Creates a team using its own name and tournament ID; category is resolved by the server. */
+/** Creates a team with an optional category; legacy callers retain the server default. */
 export const CreateTeamInputSchema = z.object({
   name: NameSchema,
   tournamentId: CoercedIdSchema,
+  tournamentType: TournamentTypeSchema.optional(),
 }).strict();
 
 /** Replaces a team's name. */
