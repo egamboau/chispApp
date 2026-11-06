@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import * as S from '@jupas/shared'
 import type { AdminData } from '../api/admin'
-import { adminMutation, adminRequest } from '../api/admin'
-import { confirmDiscard, Field, Form, Select } from './Forms'
+import { adminMutation, adminRequest, loadAdmin } from '../api/admin'
+import { confirmDiscard, ErrorNotice, Field, Form, Select } from './Forms'
 import type { Run } from './Forms'
 import { Positions } from './Tournaments'
 
@@ -54,6 +54,29 @@ export function MatchForm({ data: d, match, run, cancel }: { data: AdminData; ma
   </Form></>
 }
 
+/** Loads the owning phase before editing, independently of the tournament-wide match list. */
+export function MatchEditor({ data: d, match, run, cancel }: { data: AdminData; match?: S.MatchResponse; run: Run; cancel: () => void }) {
+  const [phaseId, setPhaseId] = useState(match?.phaseId ?? d.phase?.id)
+  const [result, setResult] = useState<{ phaseId: number | undefined; data: AdminData }>()
+  const [error, setError] = useState('')
+  const [retry, setRetry] = useState(0)
+  useEffect(() => {
+    const controller = new AbortController()
+    setError('')
+    void loadAdmin('calendar', { tournamentId: d.tournament?.id, phaseId }, controller.signal).then(data => {
+      if (match && data.phase?.id !== match.phaseId) throw new Error('La fase del partido ya no está disponible.')
+      if (!controller.signal.aborted) setResult({ phaseId, data })
+    }).catch(failure => { if (!controller.signal.aborted) setError(failure.message) })
+    return () => controller.abort()
+  }, [d.tournament?.id, phaseId, retry, match])
+  const data = result && result.phaseId === phaseId ? result.data : undefined
+  return <>
+    <fieldset disabled={!!match}><Select label="Fase del partido" items={d.phases.map(phase => ({ ...phase, name: `${phase.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'} · ${phase.name}` }))} value={phaseId ?? ''} onChange={value => { if (confirmDiscard()) setPhaseId(Number(value)) }} /></fieldset>
+    {error ? <ErrorNotice message={error}><button onClick={() => setRetry(value => value + 1)}>REINTENTAR</button></ErrorNotice> : data ? <MatchForm key={data.phase?.id} data={data} match={match} run={run} cancel={cancel} /> : <p role="status">Cargando fase del partido…</p>}
+    {(!data || error) && <button onClick={cancel}>VOLVER AL CALENDARIO</button>}
+  </>
+}
+
 /** Renders lifecycle controls permitted by match state; every mutation still passes server transition validation. */
 export function AdminMatch({ match: m, run, edit }: { match: S.MatchResponse; run: Run; edit: () => void }) {
   const path = `/matches/${m.id}`
@@ -85,24 +108,26 @@ export function Calendar({ data: d, run }: { data: AdminData; run: Run }) {
   const showEditor = creating || !!editing
   const [date, setDate] = useState(''), [court, setCourt] = useState(''), [status, setStatus] = useState('')
   const [sourceId, setSourceId] = useState('')
-  const source = d.sourcePhases.find(item => item.id === Number(sourceId)) ?? d.sourcePhases[0]
+  const positionPhases = d.phases.filter(item => item.type === 'TABLE')
+  const source = positionPhases.find(item => item.id === Number(sourceId)) ?? positionPhases[0]
   const [preview, setPreview] = useState<S.PhasePositionsResponse>()
+  const [positionGroups, setPositionGroups] = useState<S.GroupResponse[]>([])
   const [error, setError] = useState('')
   useEffect(() => {
     const controller = new AbortController(); setPreview(undefined); setError('')
-    if (source) void adminRequest(`/phases/${source.id}/positions`, S.PhasePositionsResponseSchema, { signal: controller.signal }).then(item => { if (!controller.signal.aborted) setPreview(item) }, failure => { if (!controller.signal.aborted) setError(failure.message) })
+    if (source) void Promise.all([adminRequest(`/phases/${source.id}/positions`, S.PhasePositionsResponseSchema, { signal: controller.signal }), adminRequest(`/phases/${source.id}/groups`, S.GroupListResponseSchema, { signal: controller.signal })]).then(([item, groups]) => { if (!controller.signal.aborted) { setPreview(item); setPositionGroups(groups) } }, failure => { if (!controller.signal.aborted) setError(failure.message) })
     return () => controller.abort()
   }, [source?.id, d.matches])
   const dateMatches = d.matches.filter(item => item.date === date)
   const visible = dateMatches.some(item => item.lineVisible)
   const filtered = adminCalendarMatches(d.matches, date, court, status)
   return <section className="task-workspace"><h2>Calendario</h2>
-    {showEditor && <section className="panel calendar-editor"><MatchForm key={editing?.id ?? 'new'} data={d} match={editing} run={run} cancel={returnToList} /></section>}
+    {showEditor && <section className="panel calendar-editor"><MatchEditor key={editing?.id ?? 'new'} data={d} match={editing} run={run} cancel={returnToList} /></section>}
     <section hidden={showEditor}>
-      <div className="panel list-heading"><h3>Partidos · {d.phase?.name ?? 'Sin fase'}</h3><button className="primary" disabled={!d.phase || !d.groups.length} onClick={() => openEditor()}>+ Partido</button></div>
+      <div className="panel list-heading"><h3>Partidos · {d.tournament?.name ?? 'Sin torneo'}</h3><button className="primary" disabled={!d.phases.length} onClick={() => openEditor()}>+ Partido</button></div>
       <div className="panel filters"><label>Fecha<input type="date" value={date} onChange={event => setDate(event.target.value)} /></label><label>Cancha<input type="number" min={1} value={court} onChange={event => setCourt(event.target.value)} /></label><label>Estado<select aria-label="Estado" value={status} onChange={event => setStatus(event.target.value)}><option value="">Todos</option><option value="SCHEDULED">Programados</option><option value="LIVE">En juego</option><option value="FINISHED">Finalizados</option></select></label><button disabled={!dateMatches.length} onClick={() => void run(() => adminMutation(`/line-visibility/${date}`, 'PUT', S.LineVisibilitySchema.parse({ visible: !visible })))}>{visible ? 'OCULTAR LÍNEAS' : 'PUBLICAR LÍNEAS'}</button></div>
-      <div id="matches">{filtered.map(item => <AdminMatch key={item.id} match={item} run={run} edit={() => openEditor(item)} />)}{!filtered.length && <p className="empty">No hay partidos para esta fase y filtros.</p>}</div>
-      <details className="panel"><summary>Más · Posiciones de fases anteriores</summary><Select label="Fase origen para posiciones" items={d.sourcePhases} value={source?.id ?? ''} onChange={setSourceId} />{error && <p role="alert" className="error">{error}</p>}{preview && <Positions preview={preview} groups={d.sourceGroups[preview.phaseId] ?? []} run={run} />}</details>
+      <div id="matches">{filtered.map(item => <AdminMatch key={item.id} match={item} run={run} edit={() => openEditor(item)} />)}{!filtered.length && <p className="empty">No hay partidos para este torneo y filtros.</p>}</div>
+      <details className="panel"><summary>Más · Posiciones de fases anteriores</summary><Select label="Fase origen para posiciones" items={positionPhases.map(phase => ({ ...phase, name: `${phase.tournamentType === 'FEMALE' ? 'Femenino' : 'Masculino'} · ${phase.name}` }))} value={source?.id ?? ''} onChange={setSourceId} />{error && <p role="alert" className="error">{error}</p>}{preview && <Positions preview={preview} groups={positionGroups} run={run} />}</details>
     </section>
   </section>
 }

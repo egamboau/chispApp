@@ -1,19 +1,15 @@
-import type { MatchResponse, MatchStatus } from '@jupas/shared'
+import type { MatchResponse } from '@jupas/shared'
 import { TeamLabel } from '../components/TeamLabel'
 import styles from './PublicDisplay.module.css'
-
-export interface CalendarFilters { category: 'ALL' | 'MALE' | 'FEMALE'; date: string; status: '' | MatchStatus }
 
 /** Selects finished results for an optional exact date, retaining the server's match order. */
 export function resultMatches(matches: readonly MatchResponse[], date: string): MatchResponse[] {
   return matches.filter(match => match.status === 'FINISHED' && (!date || match.date === date))
 }
 
-/** Filters unfinished calendar matches without reordering the server's randomized/official order. */
-export function calendarMatches(matches: readonly MatchResponse[], filters: CalendarFilters): MatchResponse[] {
-  return matches.filter(match => match.status !== 'FINISHED' &&
-    (filters.category === 'ALL' || match.tournamentType === filters.category) &&
-    (!filters.date || match.date === filters.date) && (!filters.status || match.status === filters.status))
+/** Selects unfinished matches, preserving the server's official order across categories. */
+export function calendarMatches(matches: readonly MatchResponse[]): MatchResponse[] {
+  return matches.filter(match => match.status !== 'FINISHED')
 }
 
 /** Formats a calendar date at local noon so timezone conversion cannot change its day. */
@@ -21,8 +17,8 @@ function shortDate(date: string): string {
   return new Intl.DateTimeFormat('es-GT', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${date}T12:00:00`))
 }
 
-/** Groups matches by date; calendar shows morning before afternoon while preserving each server
- * bucket's order. Results reverse date groups, matching the original public historical view. */
+/** Groups calendar matches by date and jornada, retaining server order within each jornada.
+ * Results retain server order within each day and reverse date groups. */
 export function Calendar({ matches, results = false, empty }: { matches: readonly MatchResponse[]; results?: boolean; empty: string }) {
   const groups = new Map<string, MatchResponse[]>()
   for (const match of matches) {

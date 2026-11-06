@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import type { PhaseScoringResponse, PhaseStandingsResponse } from '@jupas/shared'
 import styles from './PublicDisplay.module.css'
 
@@ -17,12 +18,11 @@ export function Standings({ data }: { data: PhaseStandingsResponse }) {
 }
 
 /** Keeps the selected scoring table when present; renders all three server-calculated rankings. */
-export function Scoring({ data }: { data: PhaseScoringResponse }) {
+export function Scoring({ data, categoryFilter }: { data: PhaseScoringResponse; categoryFilter?: ReactNode }) {
   const [name, setName] = useState('Torneo Regular')
   const selected = data.tables.find(table => table.name === name) ?? data.tables.find(table => table.name === 'Torneo Regular') ?? data.tables[0]
-  if (!selected) return <p className={styles.empty}>Sin tablas de goleo</p>
   return <>
-    <div className={styles.scoringControls}><label>Tabla de goleo<select value={selected.name} onChange={event => setName(event.target.value)}>{data.tables.map(table => <option key={table.id}>{table.name}</option>)}</select></label><p className={styles.legend}>Directo = 1 · Pepita = 2 · Horqueta = 3</p></div>
-    {(['total', 'pepitas', 'horquetas'] as const).map(metric => <section key={metric}><h2>{({ total: 'Goleadores', pepitas: 'Pepitas', horquetas: 'Horquetas' })[metric]}</h2>{selected.rankings[metric].length ? <div className={styles.tableScroll} tabIndex={0} role="region" aria-label={`Ranking ${metric}`}><table><thead><tr>{['Pos.', 'Jugador', 'Equipo', ({ total: 'Total', pepitas: 'Pepitas', horquetas: 'Horquetas' })[metric]].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead><tbody>{selected.rankings[metric].map(row => <tr key={row.playerId}><td>{row.position}.º</td><td><strong>#{row.playerNumber}</strong> {row.playerName || 'Sin nombre'}</td><td>{row.teamName}</td><td><strong>{row[metric]}</strong></td></tr>)}</tbody></table></div> : <p className={styles.empty}>Sin anotaciones</p>}</section>)}
+    <div className={styles.scoringControls}><div className={styles.selectors}>{categoryFilter}{selected && <label>Tabla de goleo<select value={selected.name} onChange={event => setName(event.target.value)}>{data.tables.map(table => <option key={table.id}>{table.name}</option>)}</select></label>}</div><p className={styles.legend}>Directo = 1 · Pepita = 2 · Horqueta = 3</p></div>
+    {!selected ? <p className={styles.empty}>Sin tablas de goleo</p> : (['total', 'pepitas', 'horquetas'] as const).map(metric => <section key={metric}><h2>{({ total: 'Goleadores', pepitas: 'Pepitas', horquetas: 'Horquetas' })[metric]}</h2>{selected.rankings[metric].length ? <div className={styles.tableScroll} tabIndex={0} role="region" aria-label={`Ranking ${metric}`}><table><thead><tr>{['Pos.', 'Jugador', 'Equipo', ({ total: 'Total', pepitas: 'Pepitas', horquetas: 'Horquetas' })[metric]].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead><tbody>{selected.rankings[metric].map(row => <tr key={row.playerId}><td>{row.position}.º</td><td><strong>#{row.playerNumber}</strong> {row.playerName || 'Sin nombre'}</td><td>{row.teamName}</td><td><strong>{row[metric]}</strong></td></tr>)}</tbody></table></div> : <p className={styles.empty}>Sin anotaciones</p>}</section>)}
   </>
 }

@@ -6,7 +6,7 @@
 .navigation button, .page button { min-height: 50px; padding: .75rem 1rem; border: 2px solid #67809c; border-radius: 12px; background: #172b45; color: white; font: 800 clamp(.85rem, 1.3vw, 1.25rem) system-ui; cursor: pointer; }
 .navigation button[aria-pressed=true], .page button[aria-pressed=true] { background: #ffd166; border-color: #ffd166; color: #172033; }
 .navigation button:focus-visible, .page :focus-visible, .selectors select:focus-visible { outline: 3px solid #ffd166; outline-offset: 3px; }
-.filters { align-items: end; justify-content: center; padding: .5rem; background: #07111fe8; }
+.filters { align-items: end; justify-content: center; padding: .5rem; }
 .empty { padding: 4vh; text-align: center; color: #b8c6d9; font-size: clamp(1.5rem, 3vw, 3rem); }
 .day h2 { margin: 2rem 0 1rem; text-transform: uppercase; font-size: clamp(1.5rem, 2.5vw, 2.8rem); }
 .match { display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; align-items: center; gap: 1.5rem; margin-bottom: 1rem; padding: 1.2rem 1.5rem; border: 3px solid transparent; border-left-width: 8px; border-radius: 20px; background: linear-gradient(145deg, #172c45, #0d1c30); box-shadow: 0 16px 45px #0005; }

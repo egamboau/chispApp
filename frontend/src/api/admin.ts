@@ -30,7 +30,8 @@ export async function loadAdmin(page: AdminPage, selection: AdminSelection, sign
     phase && ['teams', 'calendar'].includes(page) ? get(`/phases/${phase.id}/memberships`, S.MembershipListResponseSchema) : [],
     phase && page === 'teams' ? get(`/phases/${phase.id}/sanctions`, S.SanctionListResponseSchema) : [],
     phase && page === 'teams' ? get(`/phases/${phase.id}/team-cards`, S.TeamCardsListResponseSchema) : [],
-    phase && ['calendar', 'scoring'].includes(page) ? get(`/matches?phaseId=${phase.id}${page === 'scoring' ? '&status=FINISHED' : ''}`, S.MatchListResponseSchema) : [],
+    page === 'calendar' && tournament ? get('/matches', S.MatchListResponseSchema).then(matches => matches.filter(match => phases.some(phase => phase.id === match.phaseId))) :
+      phase && page === 'scoring' ? get(`/matches?phaseId=${phase.id}&status=FINISHED`, S.MatchListResponseSchema) : [],
     phase && page === 'scoring' ? get(`/phases/${phase.id}/scoring`, S.PhaseScoringResponseSchema) : undefined,
     phase?.type === 'TABLE' && page === 'tournaments' ? get(`/phases/${phase.id}/positions`, S.PhasePositionsResponseSchema) : undefined,
   ])
