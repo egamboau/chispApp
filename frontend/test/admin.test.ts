@@ -366,3 +366,17 @@ test('issue 63: editing/reloading preserves explicit winners and displays readab
   const create = renderToStaticMarkup(createElement(MatchForm, { data, run: async () => false, cancel() {} }))
   assert.equal((create.match(/value="MATCH_WINNER"/g) ?? []).length, 3)
 })
+
+test('calendar exposes editable public match labels instead of source database IDs', () => {
+  const labelled = { ...match, label: 'Semifinal 1' };
+  const html = renderToStaticMarkup(createElement(AdminMatch, { match: labelled, run: async () => true, edit() {} }));
+  assert.match(html, /Semifinal 1/);
+  assert.match(html, /Etiqueta \(opcional\)/);
+  assert.match(html, /maxLength="80"/i);
+  const data = winnerData();
+  data.matches[0]!.label = 'Semifinal 1';
+  const final = { ...match, participants: { ...match.participants, teamA: { ...participant, reference: { kind: 'MATCH_WINNER' as const, sourceMatchId: 10 } } } };
+  const form = renderToStaticMarkup(createElement(MatchForm, { data, match: final, run: async () => false, cancel() {} }));
+  assert.match(form, /Ganador de Semifinal 1/);
+  assert.doesNotMatch(form, /partido 10/);
+});

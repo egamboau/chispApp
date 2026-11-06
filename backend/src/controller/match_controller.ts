@@ -1,3 +1,4 @@
+import { MatchLabelSchema } from '@jupas/shared';
 import { Request, RequestHandler } from "express";
 import { DatabaseConnectionError } from "../db/db_connection";
 import { z } from "zod";
@@ -13,6 +14,7 @@ const participantSchema = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('MATCH_WINNER'), sourceMatchId: idSchema }).strict(),
 ]);
 const participantMatchSchema = z.object({
+    label: MatchLabelSchema,
     phaseId: idSchema, groupId: idSchema, date: z.string(), jornada: z.enum(['MORNING', 'AFTERNOON']),
     court: idSchema, sortOrder: z.preprocess(value => value === '' || value == null ? null : value, idSchema.nullable()),
     participants: z.object({ teamA: participantSchema, teamB: participantSchema, lineTeam: participantSchema.nullish() }).strict(),
@@ -114,6 +116,17 @@ export class MatchController {
             }
             throw error
         }
+    }
+
+    /** Updates only the public label, including for live or finished matches. */
+    updateLabel: RequestHandler = (req, res) => {
+        const id = idSchema.safeParse(req.params.id)
+        const input = z.object({ label: MatchLabelSchema }).strict().safeParse(req.body)
+        if (!id.success || !input.success || input.data.label === undefined) return res.status(400).json({ error: 'Etiqueta inválida: máximo 80 caracteres.' })
+        const updated = this.service.updateLabel(id.data, input.data.label)
+        if (!updated) return res.status(404).json({ error: 'Partido no encontrado.' })
+        notify('updated', updated.id)
+        res.json(updated)
     }
 
     updateSortOrder: RequestHandler = (req, res) => {

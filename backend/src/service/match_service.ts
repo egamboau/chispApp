@@ -1,3 +1,4 @@
+import { MatchLabelSchema } from '@jupas/shared';
 import { Match, MatchFilters, MatchInput, MatchParticipant, ParticipantMatchInput, StoredMatchParticipants } from "../models/match";
 import { DatabaseConnectionError } from '../db/db_connection';
 import { MatchPlayerScoring, MatchPlayerScoringInput } from "../models/match_player_scoring";
@@ -31,6 +32,7 @@ export class MatchService {
     }
 
     buildInput(body: Record<string, unknown>): { match: MatchInput; errors: string[] } {
+        const label = MatchLabelSchema.safeParse(body.label)
         const phase = body.phaseId
             ? this.phaseService.getPhaseById(Number(body.phaseId))
             : typeof body.tournamentType === 'string' ? this.repository.getCurrentPhase(body.tournamentType) : undefined
@@ -56,6 +58,7 @@ export class MatchService {
         const b = findTeam(body.teamBId, body.teamB)
         const line = findTeam(body.lineTeamId, body.lineTeam)
         const match: MatchInput = {
+            label: label.success ? label.data : undefined,
             phaseId: phase?.id || 0,
             groupId: group?.id || 0,
             teamAId: a?.id || 0,
@@ -71,6 +74,7 @@ export class MatchService {
             sortOrder: body.sortOrder === '' || body.sortOrder == null ? null : Number(body.sortOrder),
         }
         const errors: string[] = []
+        if (!label.success) errors.push('Etiqueta inválida: máximo 80 caracteres.')
         if (!phase || !group || group.phaseId !== phase.id) errors.push('Fase o grupo inválido.')
         errors.push(...this.scheduleErrors(match))
         if (!a || !b || a.id === b.id || (line && [a.id, b.id].includes(line.id))) errors.push('Local y visitante deben existir y todos los equipos asignados deben ser diferentes.')
@@ -98,6 +102,8 @@ export class MatchService {
 
     saveParticipantMatch(input: ParticipantMatchInput, id?: number): Match {
         const fail = (message: string): never => { throw new DatabaseConnectionError('ParticipantReferenceError', message, undefined) }
+        const label = MatchLabelSchema.safeParse(input.label)
+        if (!label.success) return fail('Etiqueta inválida: máximo 80 caracteres.')
         const phase = this.phaseService.getPhaseById(input.phaseId)
         const group = this.groupService.getGroup(input.groupId)
         if (!phase || !group || group.phaseId !== phase.id) return fail('Fase o grupo inválido.')
@@ -113,7 +119,7 @@ export class MatchService {
         const keys = Object.values(input.participants).filter((item): item is MatchParticipant => item != null).map(key)
         if (new Set(keys).size !== keys.length) return fail('Los participantes asignados deben ser diferentes.')
         const existing = id === undefined ? undefined : this.repository.getMatchParticipants(id)
-        const match: MatchInput = { ...input, tournamentType: phase.tournamentType,
+        const match: MatchInput = { ...input, label: label.data, tournamentType: phase.tournamentType,
             teamA: '', teamB: '', lineTeam: '', teamAId: null, teamBId: null, lineTeamId: null }
         for (const role of ['teamA', 'teamB', 'lineTeam'] as const) {
             const participant = input.participants[role]
@@ -132,7 +138,7 @@ export class MatchService {
                     match[role] = `${source.name} · ${participant.position}.º ${sourceGroup.name}`
                 } else if (participant.kind === 'MATCH_WINNER') {
                     if (!Number.isInteger(participant.sourceMatchId) || participant.sourceMatchId < 1) return fail('Partido origen inválido.')
-                    match[role] = `Ganador partido ${participant.sourceMatchId}`
+                    match[role] = 'Ganador por definir'
                 } else return fail('Tipo de participante inválido.')
                 const previous = existing?.[role]
                 if (previous && key(previous.reference) === key(participant)) {
@@ -142,6 +148,11 @@ export class MatchService {
             }
         }
         return this.repository.saveParticipantMatch(match, input.participants, id)
+    }
+
+    /** Renames a match without reopening or changing its sporting state. */
+    updateLabel(id: number, label: string | null): Match | undefined {
+        return this.repository.updateLabel(id, label)
     }
 
     updateSortOrder(id: number, sortOrder: number | null): Match | undefined {

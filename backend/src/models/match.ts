@@ -1,5 +1,6 @@
 export interface Match {
     id: number;
+    label?: string | null;
     tournamentType:string;
     date:string;
     jornada:string;
@@ -37,7 +38,7 @@ export type MatchParticipant =
 
 export type MatchParticipants = Record<'teamA' | 'teamB', MatchParticipant> & { lineTeam?: MatchParticipant | null };
 
-export type ParticipantMatchInput = Pick<MatchInput, 'phaseId' | 'groupId' | 'date' | 'jornada' | 'court' | 'sortOrder'> & {
+export type ParticipantMatchInput = Pick<MatchInput, 'label' | 'phaseId' | 'groupId' | 'date' | 'jornada' | 'court' | 'sortOrder'> & {
     participants: MatchParticipants;
 };
 
@@ -56,6 +57,7 @@ export type MatchParticipantDetails = Record<keyof MatchParticipants, {
 } | null>;
 
 export interface MatchInput {
+    label?: string | null;
     phaseId: number;
     groupId: number;
     teamAId: number | null;

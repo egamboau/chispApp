@@ -168,6 +168,7 @@ class DBConnection {
         CREATE TRIGGER IF NOT EXISTS phase_scoring_table_update AFTER UPDATE OF tournamentId,tournamentType ON phases WHEN NEW.tournamentType IS NOT NULL BEGIN INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name) VALUES(NEW.tournamentId,NEW.tournamentType,'Torneo Regular'); END;`)
         migrateMatchParticipants(this.database);
         migrateMembershipSlots(this.database);
+        this.addColumn('matches', "label TEXT CHECK(label IS NULL OR (length(trim(label)) BETWEEN 1 AND 80))");
     }
 
     private addColumn(table:string, definition:string) {

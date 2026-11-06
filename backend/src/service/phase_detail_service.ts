@@ -1,3 +1,4 @@
+import { matchDisplayLabel } from '@jupas/shared';
 import { Match } from "../models/match";
 import { ClassificationRule, Membership, PhaseScoring, PhaseStandings, RuleInput, Sanction, ScoringRankingRow, ScoringRow, ScoringTable, Standing, TeamCards } from "../models/phase_details";
 import { Team } from "../models/team";
@@ -44,7 +45,7 @@ export class PhaseDetailService {
             const group = reference.kind === 'GROUP_POSITION' ? this.repository.getGroup(reference.sourceGroupId) : undefined
             const team = this.repository.getGroupMembers(slot.phaseId, slot.groupId).find(team => team.id === slot.resolvedTeamId)
             return { id: slot.id, phaseId: slot.phaseId, groupId: slot.groupId, reference, resolvedTeamId: slot.resolvedTeamId,
-                teamName: team?.name ?? null, label: reference.kind === 'GROUP_POSITION' ? `${reference.position}.º del Grupo ${group?.name}` : `Ganador de ${source?.name} · partido ${reference.sourceMatchId}`,
+                teamName: team?.name ?? null, label: reference.kind === 'GROUP_POSITION' ? `${reference.position}.º del Grupo ${group?.name}` : `Ganador de ${matchDisplayLabel({ ...this.repository.getMatch(reference.sourceMatchId), phaseName: source?.name })}`,
                 status: teamId !== null && teamId === slot.resolvedTeamId ? 'CONFIRMED' as const : slot.resolvedTeamId !== null ? 'STALE' as const : 'PENDING' as const }
         })
     }
