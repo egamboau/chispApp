@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CoercedIdSchema, IdSchema, NameSchema, TimestampSchema, TournamentTypeSchema } from './common';
 import { GroupResponseSchema } from './groups';
 import { PhaseResponseSchema } from './phases';
+import { MatchParticipantSchema } from './match';
 
 /** Public result of previewing, confirming or reopening phase positions; excludes the internal snapshot. */
 export const PhasePositionsResponseSchema = z.object({
@@ -10,6 +11,7 @@ export const PhasePositionsResponseSchema = z.object({
   stale: z.boolean(),
   canConfirm: z.boolean(),
   errors: z.array(z.string()),
+  membershipAssignments: z.array(z.object({ slotId: IdSchema, phaseId: IdSchema, groupId: IdSchema, sourceGroupId: IdSchema, position: IdSchema, resolvedTeamId: IdSchema.nullable(), teamId: IdSchema.nullable(), teamName: NameSchema.nullable() }).strict()).optional(),
   assignments: z.array(z.object({
     matchId: IdSchema,
     role: z.enum(['teamA', 'teamB', 'lineTeam']),
@@ -247,3 +249,11 @@ export type ScoringRankingRowResponse = z.infer<typeof ScoringRankingRowResponse
 
 /** Parsed TypeScript value produced by {@link PhaseScoringResponseSchema}. */
 export type PhaseScoringResponse = z.infer<typeof PhaseScoringResponseSchema>;
+
+/** A pending group place retains its calendar reference after resolving to a real team. */
+export const MembershipSlotInputSchema = z.object({ groupId: CoercedIdSchema, reference: MatchParticipantSchema.refine(value => value.kind !== 'TEAM', 'Selecciona una referencia de origen.') }).strict();
+/** Stored group place with current resolution; stale places retain their historical assignment. */
+export const MembershipSlotResponseSchema = z.object({ id: IdSchema, phaseId: IdSchema, groupId: IdSchema, reference: MatchParticipantSchema, resolvedTeamId: IdSchema.nullable(), teamName: NameSchema.nullable(), label: z.string(), status: z.enum(['PENDING', 'CONFIRMED', 'STALE']) }).strict();
+export const MembershipSlotListResponseSchema = z.array(MembershipSlotResponseSchema);
+export type MembershipSlotInput = z.infer<typeof MembershipSlotInputSchema>;
+export type MembershipSlotResponse = z.infer<typeof MembershipSlotResponseSchema>;

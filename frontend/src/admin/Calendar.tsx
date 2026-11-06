@@ -13,6 +13,7 @@ export type Role = keyof typeof roles
 export function participantValues(values: Record<string, string>, match?: S.MatchResponse): S.MatchParticipants {
   const reference = (role: Role): S.MatchParticipant => {
     const kind = values[`${role}-kind`]
+    if (kind === 'SLOT') return S.MatchParticipantSchema.parse(JSON.parse(values[`${role}-slot`] ?? 'null'))
     if (kind === 'GROUP_POSITION') return { kind, sourcePhaseId: Number(values[`${role}-phase`]), sourceGroupId: Number(values[`${role}-group`]), position: Number(values[`${role}-position`]) }
     if (kind === 'MATCH_WINNER') {
       const original = match?.participants[role]?.reference
@@ -27,10 +28,11 @@ export function participantValues(values: Record<string, string>, match?: S.Matc
 /** Edits a participant with fixed teams or earlier same-category table positions; preserves API winner references. */
 function Participant({ role, data: d, match, groupId }: { role: Role; data: AdminData; match?: S.MatchResponse; groupId: number }) {
   const original = match?.participants[role]?.reference
-  const [kind, setKind] = useState(original?.kind ?? 'TEAM')
+  const [kind, setKind] = useState<S.MatchParticipant['kind'] | 'SLOT'>(original?.kind ?? 'TEAM')
   const [sourceId, setSourceId] = useState(original?.kind === 'GROUP_POSITION' ? original.sourcePhaseId : d.sourcePhases[0]?.id)
   const allowed = d.memberships.filter(item => role !== 'teamA' || item.groupId === groupId).map(item => item.teamId)
-  return <fieldset><legend>{roles[role]}</legend><Select label="Asignación" name={`${role}-kind`} value={kind} onChange={value => setKind(value as S.MatchParticipant['kind'])} items={[{ id: 'TEAM', name: 'Equipo fijo' }, { id: 'GROUP_POSITION', name: 'Posición de grupo/fase' }, ...(original?.kind === 'MATCH_WINNER' ? [{ id: 'MATCH_WINNER', name: 'Ganador de partido (conservar)' }] : [])]} />
+  return <fieldset><legend>{roles[role]}</legend><Select label="Asignación" name={`${role}-kind`} value={kind} onChange={value => setKind(value as typeof kind)} items={[{ id: 'TEAM', name: 'Equipo fijo' }, { id: 'GROUP_POSITION', name: 'Posición de grupo/fase' }, ...((d.slots ?? []).length ? [{ id: 'SLOT', name: 'Cupo del grupo' }] : []), ...(original?.kind === 'MATCH_WINNER' ? [{ id: 'MATCH_WINNER', name: 'Ganador de partido (conservar)' }] : [])]} />
+    {kind === 'SLOT' && <Select label="Cupo" name={`${role}-slot`} items={(d.slots ?? []).filter(slot => role !== 'teamA' || slot.groupId === groupId).map(slot => ({ id: JSON.stringify(slot.reference), name: slot.label }))} />}
     {kind === 'TEAM' && <Select label="Equipo" optional={role === 'lineTeam'} name={`${role}-team`} value={original?.kind === 'TEAM' ? original.teamId : ''} items={d.teams.filter(item => role === 'lineTeam' || allowed.includes(item.id))} />}
     {kind === 'GROUP_POSITION' && <><Select label="Fase origen" name={`${role}-phase`} value={sourceId ?? ''} onChange={value => setSourceId(Number(value))} items={d.sourcePhases} /><Select key={sourceId} label="Grupo origen" name={`${role}-group`} value={original?.kind === 'GROUP_POSITION' && original.sourcePhaseId === sourceId ? original.sourceGroupId : ''} items={d.sourceGroups[sourceId!] ?? []} /><Field label="Posición" name={`${role}-position`} type="number" min={1} step={1} defaultValue={original?.kind === 'GROUP_POSITION' ? original.position : 1} /></>}
   </fieldset>

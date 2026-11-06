@@ -1,3 +1,4 @@
+import { MembershipSlotInputSchema } from "@jupas/shared";
 import { RequestHandler } from "express";
 import { z } from "zod";
 import { DatabaseConnectionError } from "../db/db_connection";
@@ -66,6 +67,7 @@ export class PhaseDetailController {
         if (!phaseId.success || !teamId.success || !input.success) return res.status(400).json({ error: 'Grupo inválido.' })
         const group = this.groupService.getGroup(input.data.groupId)
         if (!group || group.phaseId !== phaseId.data) return res.status(400).json({ error: 'Grupo inválido.' })
+        if (this.service.getSlots(phaseId.data).some(slot => slot.resolvedTeamId === teamId.data)) return res.status(409).json({ error: 'Administra este equipo desde su cupo de origen.' })
         if (this.service.teamHasMatches(phaseId.data, teamId.data)) return res.status(409).json({ error: 'El equipo tiene partidos existentes.' })
         const updated = this.service.updateMembership(phaseId.data, teamId.data, group.id)
         if (!updated) return res.status(404).json({ error: 'Membresía no encontrada.' })
@@ -75,9 +77,46 @@ export class PhaseDetailController {
     deleteMembership: RequestHandler = (req, res) => {
         const phaseId = idSchema.safeParse(req.params.id), teamId = idSchema.safeParse(req.params.teamId)
         if (!phaseId.success || !teamId.success) return res.status(400).json({ error: 'Id inválido.' })
+        if (this.service.getSlots(phaseId.data).some(slot => slot.resolvedTeamId === teamId.data)) return res.status(409).json({ error: 'Administra este equipo desde su cupo de origen.' })
         if (this.service.teamHasMatches(phaseId.data, teamId.data)) return res.status(409).json({ error: 'El equipo tiene partidos existentes.' })
         if (!this.service.deleteMembership(phaseId.data, teamId.data)) return res.status(404).json({ error: 'Membresía no encontrada.' })
         res.status(204).end()
+    }
+
+    /** Lists pending, confirmed and stale reference-backed group places. */
+    getSlots: RequestHandler = (req, res) => {
+        const phaseId = idSchema.safeParse(req.params.id)
+        if (!phaseId.success) return res.status(400).json({ error: 'Fase inválida.' })
+        res.json(this.service.getSlots(phaseId.data))
+    }
+
+    /** Creates or replaces a safe reference; SQL compatibility and duplicate conflicts remain visible. */
+    saveSlot: RequestHandler = (req, res) => {
+        const phaseId = idSchema.safeParse(req.params.id), input = MembershipSlotInputSchema.safeParse(req.body)
+        const slotId = req.params.slotId === undefined ? undefined : idSchema.safeParse(req.params.slotId)
+        if (!phaseId.success || !input.success || (slotId && !slotId.success)) return res.status(400).json({ error: 'Cupo o referencia inválida.' })
+        try {
+            const saved = this.service.saveSlot(phaseId.data, input.data.groupId, input.data.reference, slotId?.data)
+            notify('membership-slot', phaseId.data)
+            return res.status(slotId ? 200 : 201).json(saved)
+        } catch (error) {
+            if (error instanceof DatabaseConnectionError) return res.status(409).json({ error: error.message })
+            throw error
+        }
+    }
+
+    /** Deletes a reference only when no match or disciplinary history uses its place. */
+    deleteSlot: RequestHandler = (req, res) => {
+        const phaseId = idSchema.safeParse(req.params.id), slotId = idSchema.safeParse(req.params.slotId)
+        if (!phaseId.success || !slotId.success) return res.status(400).json({ error: 'Id inválido.' })
+        try {
+            this.service.deleteSlot(phaseId.data, slotId.data)
+            notify('membership-slot', phaseId.data)
+            return res.status(204).end()
+        } catch (error) {
+            if (error instanceof DatabaseConnectionError) return res.status(409).json({ error: error.message })
+            throw error
+        }
     }
 
     getRules: RequestHandler = (req, res) => {

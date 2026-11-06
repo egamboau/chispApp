@@ -424,3 +424,75 @@ test('quitar línea de referencia persiste y permite resultados con solo los riv
     assert.equal(f.service.participantsConfirmed(match.id), true);
     assert.ok(f.service.changeStatus(match.id, 'SCHEDULED', 'LIVE'));
 });
+
+test('issue 62: dos grupos con cupos de tabla persisten, confirman y protegen los equipos en uso', t => {
+    const f = completedTable(t), later = f.db.insertPhase({ tournamentId: f.tournament.id, name: 'Grupos finales', type: 'ELIMINATION', tournamentType: 'MALE', sortOrder: 3 })!;
+    const a = f.db.insertGroup(later.id, 'Final A')!, b = f.db.insertGroup(later.id, 'Final B')!;
+    const first = f.details.saveSlot(later.id, a.id, f.position(1));
+    const second = f.details.saveSlot(later.id, b.id, f.position(1, f.groupB.id));
+    assert.equal(first.status, 'PENDING');
+    assert.deepEqual(f.details.getMemberships(later.id), []);
+    assert.throws(() => f.details.saveSlot(later.id, b.id, f.position(1)), /./);
+    const reopened = new PhaseDetailService(new PhaseDetailRepository(new DBConnection(f.databasePath)), new PhaseService(new PhaseRepository(f.db)));
+    assert.deepEqual(reopened.getSlots(later.id), f.details.getSlots(later.id));
+    const match = f.service.saveParticipantMatch({ ...f.input({ teamA: first.reference, teamB: second.reference, lineTeam: null }), phaseId: later.id, groupId: a.id });
+    assert.equal(f.service.changeStatus(match.id, 'SCHEDULED', 'LIVE'), undefined);
+    f.details.confirmPositions(f.table.id);
+    assert.deepEqual(f.details.getMemberships(later.id).map(row => row.teamId).sort(), [f.teams[0]!.id, f.teams[3]!.id].sort());
+    assert.ok(f.details.getSlots(later.id).every(slot => slot.status === 'CONFIRMED'));
+    assert.ok(f.service.changeStatus(match.id, 'SCHEDULED', 'LIVE'));
+    assert.throws(() => f.details.deleteSlot(later.id, first.id), /historial/);
+    f.details.reopenPositions(f.table.id);
+    assert.equal(f.details.getSlots(later.id)[0]!.status, 'STALE');
+    assert.equal(f.service.getMatch(match.id, true)?.teamAId, f.teams[0]!.id);
+    assert.equal(f.db.getAllTeams().length, 6);
+    assert.deepEqual(f.db.fetchAllFromQuery('PRAGMA foreign_key_check'), []);
+});
+
+test('issue 62: ganadores de semifinal materializan dos grupos y nunca cambian rivales iniciados', t => {
+    const f = fixture(t), details = new PhaseDetailService(new PhaseDetailRepository(f.db), new PhaseService(new PhaseRepository(f.db)));
+    const semi1 = f.service.saveParticipantMatch(f.input({ teamA: f.fixed(0), teamB: f.fixed(1), lineTeam: null }));
+    const semi2 = f.service.saveParticipantMatch(f.input({ teamA: f.fixed(3), teamB: f.fixed(4), lineTeam: null }));
+    const later = f.db.insertPhase({ tournamentId: f.tournament.id, name: 'Destinos', type: 'ELIMINATION', tournamentType: 'MALE', sortOrder: 3 })!;
+    const a = f.db.insertGroup(later.id, 'A')!, b = f.db.insertGroup(later.id, 'B')!;
+    const first = details.saveSlot(later.id, a.id, f.winner(semi1.id)), second = details.saveSlot(later.id, b.id, f.winner(semi2.id));
+    const match = f.service.saveParticipantMatch({ ...f.input({ teamA: first.reference, teamB: second.reference, lineTeam: null }), phaseId: later.id, groupId: a.id });
+    for (const semi of [semi1, semi2]) {
+        assert.ok(f.service.changeStatus(semi.id, 'SCHEDULED', 'LIVE'));
+        assert.equal(details.getSlots(later.id).find(slot => slot.reference.kind === 'MATCH_WINNER' && slot.reference.sourceMatchId === semi.id)?.status, 'PENDING');
+        f.service.changeScore(semi.id, 'A', 1);
+        assert.ok(f.service.changeStatus(semi.id, 'LIVE', 'FINISHED'));
+    }
+    assert.ok(details.getSlots(later.id).every(slot => slot.status === 'CONFIRMED'));
+    assert.equal(f.service.getMatch(match.id, true)?.participants?.teamA?.status, 'CONFIRMED');
+    assert.ok(f.service.changeStatus(match.id, 'SCHEDULED', 'LIVE'));
+    f.service.setResult(semi1.id, 0, 1);
+    assert.equal(f.service.getMatch(match.id, true)?.teamAId, f.teams[0]!.id);
+    assert.equal(details.getSlots(later.id)[0]!.status, 'STALE');
+    assert.equal(details.getMemberships(later.id).find(row => row.groupId === a.id)?.teamId, f.teams[0]!.id);
+    assert.deepEqual(new PhaseDetailService(new PhaseDetailRepository(new DBConnection(f.databasePath)), new PhaseService(new PhaseRepository(f.db))).getSlots(later.id), details.getSlots(later.id));
+    assert.equal(f.db.getAllTeams().length, 6);
+});
+
+test('issue 62: valida origen/categoría/orden, edición segura, conflictos y empates pendientes', t => {
+    const f = fixture(t), details = new PhaseDetailService(new PhaseDetailRepository(f.db), new PhaseService(new PhaseRepository(f.db)));
+    const semi = f.service.saveParticipantMatch(f.input({ teamA: f.fixed(0), teamB: f.fixed(1), lineTeam: null }));
+    const later = f.db.insertPhase({ tournamentId: f.tournament.id, name: 'Destino', type: 'ELIMINATION', tournamentType: 'MALE', sortOrder: 3 })!;
+    const group = f.db.insertGroup(later.id, 'General')!;
+    for (const reference of [f.winner(999), f.position(99), { kind: 'GROUP_POSITION', sourcePhaseId: f.table.id, sourceGroupId: f.knockoutGroup.id, position: 1 } as const]) assert.throws(() => details.saveSlot(later.id, group.id, reference));
+    assert.throws(() => details.saveSlot(f.table.id, f.groupA.id, f.winner(semi.id)));
+    const female = f.db.insertPhase({ tournamentId: f.tournament.id, name: 'Destino femenino', type: 'ELIMINATION', tournamentType: 'FEMALE', sortOrder: 3 })!;
+    const femaleGroup = f.db.insertGroup(female.id, 'General')!;
+    assert.throws(() => details.saveSlot(female.id, femaleGroup.id, f.winner(semi.id)));
+    const slot = details.saveSlot(later.id, group.id, f.position(1));
+    assert.equal(details.saveSlot(later.id, group.id, f.winner(semi.id), slot.id).reference.kind, 'MATCH_WINNER');
+    assert.ok(f.service.changeStatus(semi.id, 'SCHEDULED', 'LIVE'));
+    assert.ok(f.service.changeStatus(semi.id, 'LIVE', 'FINISHED'));
+    assert.equal(details.getSlots(later.id)[0]!.status, 'PENDING');
+    f.db.executeQuery('INSERT INTO phase_memberships VALUES(?,?,?)', later.id, group.id, f.teams[0]!.id);
+    assert.throws(() => f.service.setResult(semi.id, 1, 0));
+    assert.equal(f.service.getMatch(semi.id, true)?.scoreA, 0);
+    details.deleteSlot(later.id, slot.id);
+    assert.equal(details.getSlots(later.id).length, 0);
+    assert.equal(details.getMemberships(later.id).length, 1);
+});

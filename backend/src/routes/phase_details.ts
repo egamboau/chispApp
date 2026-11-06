@@ -5,6 +5,10 @@ export class PhaseDetailRoute {
     public readonly router = Router();
 
     constructor(controller: PhaseDetailController) {
+        this.router.get('/api/phases/:id/membership-slots', controller.getSlots)
+        this.router.post('/api/phases/:id/membership-slots', controller.saveSlot)
+        this.router.put('/api/phases/:id/membership-slots/:slotId', controller.saveSlot)
+        this.router.delete('/api/phases/:id/membership-slots/:slotId', controller.deleteSlot)
         this.router.get('/api/phases/:id/memberships', controller.getMemberships)
         this.router.post('/api/phases/:id/memberships', controller.insertMembership)
         this.router.put('/api/phases/:id/memberships/:teamId', controller.updateMembership)

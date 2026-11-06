@@ -101,3 +101,16 @@ export interface PhaseScoring {
         horquetas: ScoringRankingRow[];
     } }>;
 }
+
+/** Reference-backed place; resolvedTeamId records the real membership without losing its source. */
+export interface MembershipSlot {
+    id: number;
+    phaseId: number;
+    groupId: number;
+    kind: 'GROUP_POSITION' | 'MATCH_WINNER';
+    sourcePhaseId: number | null;
+    sourceGroupId: number | null;
+    position: number | null;
+    sourceMatchId: number | null;
+    resolvedTeamId: number | null;
+}

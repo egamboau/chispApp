@@ -8,6 +8,7 @@ import { Tournament } from "../models/tournament";
 import { Group } from "../models/group";
 import { Team } from "../models/team";
 import { createMatchReferences, migrateMatchParticipants } from './match_participants';
+import { migrateMembershipSlots } from './membership_slots';
 
 export class DatabaseConnectionError extends Error {
     constructor(name:string, message:string, cause: unknown) {
@@ -166,6 +167,7 @@ class DBConnection {
         CREATE TRIGGER IF NOT EXISTS phase_scoring_table_insert AFTER INSERT ON phases WHEN NEW.tournamentType IS NOT NULL BEGIN INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name) VALUES(NEW.tournamentId,NEW.tournamentType,'Torneo Regular'); END;
         CREATE TRIGGER IF NOT EXISTS phase_scoring_table_update AFTER UPDATE OF tournamentId,tournamentType ON phases WHEN NEW.tournamentType IS NOT NULL BEGIN INSERT OR IGNORE INTO scoring_tables(tournamentId,tournamentType,name) VALUES(NEW.tournamentId,NEW.tournamentType,'Torneo Regular'); END;`)
         migrateMatchParticipants(this.database);
+        migrateMembershipSlots(this.database);
     }
 
     private addColumn(table:string, definition:string) {

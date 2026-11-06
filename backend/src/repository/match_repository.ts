@@ -2,6 +2,10 @@ import DBConnection, { DatabaseConnectionError } from "../db/db_connection";
 import { Group } from "../models/group";
 import { Match, MatchFilters, MatchInput, MatchParticipant, MatchParticipants, StoredMatchParticipants, MatchParticipantDetails } from "../models/match";
 import { Phase } from "../models/phases";
+import { PhaseDetailRepository } from "./phase_detail_repository";
+import { PhaseDetailService } from "../service/phase_detail_service";
+import { PhaseService } from "../service/phase_service";
+import { PhaseRepository } from "./phase_repository";
 import { Team } from "../models/team";
 
 const matchSelect = `SELECT m.*,t.name tournamentName,p.name phaseName,g.name groupName,
@@ -13,6 +17,11 @@ const matchSelect = `SELECT m.*,t.name tournamentName,p.name phaseName,g.name gr
 
 export class MatchRepository {
     constructor(private readonly dbConnection: DBConnection) {}
+
+    /** Shares reference resolution with group places and confirmed standings. */
+    referenceService(): PhaseDetailService {
+        return new PhaseDetailService(new PhaseDetailRepository(this.dbConnection), new PhaseService(new PhaseRepository(this.dbConnection)))
+    }
 
     getMatch(id: number, includeParticipants = true): Match | undefined {
         const match = this.dbConnection.fetchOneFromQuery<Match>(`${matchSelect} WHERE m.id=?`, id)
@@ -96,6 +105,7 @@ export class MatchRepository {
         return { teamA: participant('teamA')!, teamB: participant('teamB')!, lineTeam: participant('lineTeam') }
     }
 
+    /** Presents current reference status while retaining the recorded participants of started matches. */
     private withParticipants(match: Match): Match {
         const stored = this.getMatchParticipants(match.id)!
         const displayed = { ...match, lineTeam: match.lineTeam || null }
@@ -104,8 +114,7 @@ export class MatchRepository {
             const item = stored[role]
             if (!item) { participants[role] = null; continue }
             const { reference, resolvedTeamId } = item
-            const confirmed = reference.kind === 'TEAM' || (reference.kind === 'GROUP_POSITION' && Boolean(
-                this.dbConnection.fetchOneFromQuery('SELECT 1 FROM phase_position_confirmations WHERE phaseId=?', reference.sourcePhaseId)))
+            const confirmed = reference.kind === 'TEAM' || (this.referenceService().resolveReference(reference) === resolvedTeamId && resolvedTeamId !== null)
             participants[role] = {
                 reference, resolvedTeamId,
                 resolvedTeam: resolvedTeamId === null ? null : { id: resolvedTeamId, name: match[role]! },
@@ -120,6 +129,7 @@ export class MatchRepository {
         return { ...displayed, participants }
     }
 
+    /** Saves all participant sources atomically and resolves valid winners without changing started matches. */
     saveParticipantMatch(match: MatchInput, participants: MatchParticipants, id?: number): Match {
         return this.dbConnection.transaction(() => {
             if (id !== undefined) {
@@ -138,6 +148,7 @@ export class MatchRepository {
                     reference.kind === 'GROUP_POSITION' ? reference.position : null,
                     reference.kind === 'MATCH_WINNER' ? reference.sourceMatchId : null)
             }
+            this.referenceService().refreshReferences()
             return this.getMatch(saved.id)!
         })
     }
@@ -155,15 +166,24 @@ export class MatchRepository {
         else this.dbConnection.executeQuery('DELETE FROM published_line_dates WHERE date=?', date)
     }
 
+    /** Applies a lifecycle transition only after current sources confirm distinct participants; refreshes dependent places atomically. */
     changeStatus(id: number, from: string, to: string): boolean {
+        this.referenceService().refreshReferences()
         if (to === 'LIVE' && from === 'SCHEDULED') {
             const match = this.getMatch(id)
-            if (!match || Object.values(match.participants!).some(item => item !== null && item.resolvedTeamId === null)) return false
+            if (!match || Object.values(match.participants!).some(item => item !== null && item.status !== 'CONFIRMED')) return false
+            if (this.referenceService().getSlots(match.phaseId!).some(slot => slot.status !== 'CONFIRMED' && [match.teamAId, match.teamBId, match.lineTeamId].includes(slot.resolvedTeamId) && slot.resolvedTeamId !== null)) return false
+            const ids = [match.teamAId, match.teamBId, match.lineTeamId].filter(id => id !== null)
+            if (new Set(ids).size !== ids.length) return false
             if (this.dbConnection.fetchOneFromQuery(`SELECT 1 FROM match_participant_references r
                 LEFT JOIN phase_position_confirmations c ON c.phaseId=r.sourcePhaseId
                 WHERE r.matchId=? AND r.kind='GROUP_POSITION' AND c.phaseId IS NULL`, id)) return false
         }
-        return this.dbConnection.executeQuery('UPDATE matches SET status=?,updatedAt=CURRENT_TIMESTAMP WHERE id=? AND status=?', to, id, from).changes > 0
+        return this.dbConnection.transaction(() => {
+            const changed = this.dbConnection.executeQuery('UPDATE matches SET status=?,updatedAt=CURRENT_TIMESTAMP WHERE id=? AND status=?', to, id, from).changes > 0
+            this.referenceService().refreshReferences()
+            return changed
+        })
     }
 
     changeScore(id: number, team: 'A' | 'B', delta: number): boolean {
@@ -171,8 +191,13 @@ export class MatchRepository {
         return this.dbConnection.executeQuery(`UPDATE matches SET ${column}=${column}+?,updatedAt=CURRENT_TIMESTAMP WHERE id=? AND status='LIVE' AND ${column}+?>=0`, delta, id, delta).changes > 0
     }
 
+    /** Corrects a finished result and refreshes dependent scheduled winners and group places in the same transaction. */
     setResult(id: number, scoreA: number, scoreB: number): boolean {
-        return this.dbConnection.executeQuery("UPDATE matches SET scoreA=?,scoreB=?,updatedAt=CURRENT_TIMESTAMP WHERE id=? AND status='FINISHED'", scoreA, scoreB, id).changes > 0
+        return this.dbConnection.transaction(() => {
+            const changed = this.dbConnection.executeQuery("UPDATE matches SET scoreA=?,scoreB=?,updatedAt=CURRENT_TIMESTAMP WHERE id=? AND status='FINISHED'", scoreA, scoreB, id).changes > 0
+            this.referenceService().refreshReferences()
+            return changed
+        })
     }
 
     resetScore(id: number): boolean {
