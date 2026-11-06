@@ -9,32 +9,54 @@ import { Positions } from './Tournaments'
 const roles = { teamA: 'Local', teamB: 'Visitante', lineTeam: 'Línea' } as const
 export type Role = keyof typeof roles
 
-/** Builds all three typed references, preserving existing match-winner references during schedule edits. */
-export function participantValues(values: Record<string, string>, match?: S.MatchResponse): S.MatchParticipants {
+/** Builds all three typed references from visible fields; optional line stays null and incomplete sources fail validation. */
+export function participantValues(values: Record<string, string>): S.MatchParticipants {
   const reference = (role: Role): S.MatchParticipant => {
     const kind = values[`${role}-kind`]
     if (kind === 'SLOT') return S.MatchParticipantSchema.parse(JSON.parse(values[`${role}-slot`] ?? 'null'))
     if (kind === 'GROUP_POSITION') return { kind, sourcePhaseId: Number(values[`${role}-phase`]), sourceGroupId: Number(values[`${role}-group`]), position: Number(values[`${role}-position`]) }
-    if (kind === 'MATCH_WINNER') {
-      const original = match?.participants[role]?.reference
-      if (original?.kind !== 'MATCH_WINNER') throw new Error('Referencia de ganador no disponible.')
-      return original
-    }
+    if (kind === 'MATCH_WINNER') return { kind, sourceMatchId: Number(values[`${role}-match`]) }
     return { kind: 'TEAM', teamId: Number(values[`${role}-team`]) }
   }
   return S.MatchParticipantsSchema.parse({ teamA: reference('teamA'), teamB: reference('teamB'), lineTeam: values['lineTeam-kind'] === 'TEAM' && !values['lineTeam-team'] ? null : reference('lineTeam') })
 }
 
-/** Edits a participant with fixed teams or earlier same-category table positions; preserves API winner references. */
+/** Finds valid elimination sources using server phase/category rules; excludes self and every descendant when editing. */
+export function winnerSources(data: AdminData, matchId?: number): S.MatchResponse[] {
+  const phase = data.phase
+  if (!phase) return []
+  const phases = data.phases.filter(source => source.type === 'ELIMINATION' && source.tournamentId === phase.tournamentId && source.tournamentType === phase.tournamentType && (source.id === phase.id || source.sortOrder < phase.sortOrder))
+  const blocked = new Set(matchId === undefined ? [] : [matchId])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const match of data.matches) {
+      if (!blocked.has(match.id) && Object.values(match.participants).some(item => item?.reference.kind === 'MATCH_WINNER' && blocked.has(item.reference.sourceMatchId))) {
+        blocked.add(match.id); changed = true
+      }
+    }
+  }
+  return data.matches.filter(match => !blocked.has(match.id) && match.tournamentType === phase.tournamentType && phases.some(source => source.id === match.phaseId))
+}
+
+/** Edits fixed teams, group positions or eligible elimination winners; changing assignment clears obsolete fields. */
 function Participant({ role, data: d, match, groupId }: { role: Role; data: AdminData; match?: S.MatchResponse; groupId: number }) {
   const original = match?.participants[role]?.reference
   const [kind, setKind] = useState<S.MatchParticipant['kind'] | 'SLOT'>(original?.kind ?? 'TEAM')
-  const [sourceId, setSourceId] = useState(original?.kind === 'GROUP_POSITION' ? original.sourcePhaseId : d.sourcePhases[0]?.id)
+  const [keepOriginal, setKeepOriginal] = useState(true)
+  const winners = winnerSources(d, match?.id)
+  const winnerPhases = d.phases.filter(phase => winners.some(item => item.phaseId === phase.id))
+  const [sourceId, setSourceId] = useState(original?.kind === 'GROUP_POSITION' ? original.sourcePhaseId : original?.kind === 'MATCH_WINNER' ? winners.find(item => item.id === original.sourceMatchId)?.phaseId : undefined)
+  const phases = kind === 'MATCH_WINNER' ? winnerPhases : d.sourcePhases
+  const selected = phases.find(phase => phase.id === sourceId)?.id ?? phases[0]?.id
+  const sources = winners.filter(item => item.phaseId === selected)
   const allowed = d.memberships.filter(item => role !== 'teamA' || item.groupId === groupId).map(item => item.teamId)
-  return <fieldset><legend>{roles[role]}</legend><Select label="Asignación" name={`${role}-kind`} value={kind} onChange={value => setKind(value as typeof kind)} items={[{ id: 'TEAM', name: 'Equipo fijo' }, { id: 'GROUP_POSITION', name: 'Posición de grupo/fase' }, ...((d.slots ?? []).length ? [{ id: 'SLOT', name: 'Cupo del grupo' }] : []), ...(original?.kind === 'MATCH_WINNER' ? [{ id: 'MATCH_WINNER', name: 'Ganador de partido (conservar)' }] : [])]} />
+  return <fieldset><legend>{roles[role]}</legend><Select label="Asignación" name={`${role}-kind`} value={kind} onChange={value => { setKind(value as typeof kind); setKeepOriginal(false); setSourceId(undefined) }} items={[{ id: 'TEAM', name: 'Equipo fijo' }, { id: 'GROUP_POSITION', name: 'Posición de grupo/fase' }, ...((d.slots ?? []).length ? [{ id: 'SLOT', name: 'Cupo del grupo' }] : []), { id: 'MATCH_WINNER', name: 'Ganador de partido' }]} />
     {kind === 'SLOT' && <Select label="Cupo" name={`${role}-slot`} items={(d.slots ?? []).filter(slot => role !== 'teamA' || slot.groupId === groupId).map(slot => ({ id: JSON.stringify(slot.reference), name: slot.label }))} />}
-    {kind === 'TEAM' && <Select label="Equipo" optional={role === 'lineTeam'} name={`${role}-team`} value={original?.kind === 'TEAM' ? original.teamId : ''} items={d.teams.filter(item => role === 'lineTeam' || allowed.includes(item.id))} />}
-    {kind === 'GROUP_POSITION' && <><Select label="Fase origen" name={`${role}-phase`} value={sourceId ?? ''} onChange={value => setSourceId(Number(value))} items={d.sourcePhases} /><Select key={sourceId} label="Grupo origen" name={`${role}-group`} value={original?.kind === 'GROUP_POSITION' && original.sourcePhaseId === sourceId ? original.sourceGroupId : ''} items={d.sourceGroups[sourceId!] ?? []} /><Field label="Posición" name={`${role}-position`} type="number" min={1} step={1} defaultValue={original?.kind === 'GROUP_POSITION' ? original.position : 1} /></>}
+    {kind === 'TEAM' && <Select label="Equipo" optional={role === 'lineTeam'} name={`${role}-team`} value={keepOriginal && original?.kind === 'TEAM' ? original.teamId : ''} items={d.teams.filter(item => role === 'lineTeam' || allowed.includes(item.id))} />}
+    {(kind === 'GROUP_POSITION' || kind === 'MATCH_WINNER') && <Select label="Fase origen" name={`${role}-phase`} value={selected ?? ''} onChange={value => { setSourceId(Number(value)); setKeepOriginal(false) }} items={phases} />}
+    {kind === 'GROUP_POSITION' && <><Select key={`${kind}-${selected}`} label="Grupo origen" name={`${role}-group`} value={keepOriginal && original?.kind === 'GROUP_POSITION' && original.sourcePhaseId === selected ? original.sourceGroupId : ''} items={d.sourceGroups[selected!] ?? []} /><Field label="Posición" name={`${role}-position`} type="number" min={1} step={1} defaultValue={keepOriginal && original?.kind === 'GROUP_POSITION' ? original.position : 1} /></>}
+    {kind === 'MATCH_WINNER' && <><Select key={`${kind}-${selected}`} label="Partido origen" name={`${role}-match`} value={keepOriginal && original?.kind === 'MATCH_WINNER' && sources.some(source => source.id === original.sourceMatchId) ? original.sourceMatchId : ''} items={sources.map(source => ({ id: source.id, name: `Ganador de ${source.phaseName} · partido ${source.id} · ${source.date} · ${source.teamA} contra ${source.teamB}` }))} />{!sources.length && <p role="status">No hay partidos eliminatorios de origen elegibles.</p>}</>}
   </fieldset>
 }
 
@@ -45,7 +67,7 @@ export function MatchForm({ data: d, match, run, cancel }: { data: AdminData; ma
   return <><Form title={match ? 'Editar partido' : 'Programar partido'} disabled={!d.phase || !d.groups.length} submit={v => {
     if (confirmed && !confirm('¿Guardar cambios con asignaciones confirmadas? Revisa y confirma otra vez la fase origen.')) return Promise.resolve(false)
     return run(async () => {
-    const body = S.ParticipantMatchInputSchema.parse({ phaseId: d.phase!.id, groupId: v.groupId, date: v.date, jornada: v.jornada, court: v.court, sortOrder: v.sortOrder, participants: participantValues(v, match) })
+    const body = S.ParticipantMatchInputSchema.parse({ phaseId: d.phase!.id, groupId: v.groupId, date: v.date, jornada: v.jornada, court: v.court, sortOrder: v.sortOrder, participants: participantValues(v) })
     await adminMutation(`/matches${match ? `/${match.id}` : ''}`, match ? 'PUT' : 'POST', body)
     cancel()
   })
