@@ -21,10 +21,15 @@ export interface DisplayData {
 /** Reloads public data, retaining available selections or preferring the tournament's current phase.
  * Server match order, visibility, standings and scoring remain authoritative. Ranking failures do
  * not prevent score updates; required-data failures reject. Aborting cancels every request. */
-export async function loadDisplay(selection: DisplaySelection, signal: AbortSignal): Promise<DisplayData> {
+export async function loadDisplay(selection: DisplaySelection, signal: AbortSignal, scope: 'phase' | 'live' | 'calendar' | 'results' = 'phase'): Promise<DisplayData> {
   const tournaments = await request('/api/tournaments?active=true', TournamentListResponseSchema, { signal })
   const tournament = tournaments.find(item => item.id === selection.tournamentId) ?? tournaments[0]
   const allPhases = tournament ? await request(`/api/tournaments/${tournament.id}/phases`, PhaseListResponseSchema, { signal }) : []
+  if (scope !== 'phase') {
+    const matches = tournament ? await request(scope === 'live' ? '/api/matches?status=LIVE' : scope === 'results' ? '/api/matches?status=FINISHED' : '/api/matches', MatchListResponseSchema, { signal }) : []
+    const phaseIds = new Set(allPhases.map(phase => phase.id))
+    return { tournaments, tournament, phases: allPhases, matches: matches.filter(match => phaseIds.has(match.phaseId)) }
+  }
   const preferredPhase = allPhases.find(item => item.id === selection.phaseId) ?? allPhases.find(item => item.id === (tournament?.currentMalePhaseId ?? tournament?.currentFemalePhaseId)) ?? allPhases[0]
   const category = selection.category ?? preferredPhase?.tournamentType
   const phases = allPhases.filter(item => item.tournamentType === category)

@@ -4,7 +4,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { MatchResponse } from '@jupas/shared'
 import { adminMutation, loadAdmin, scoringSelection } from '../src/api/admin.ts'
-import { adminCalendarMatches, AdminMatch, Calendar, MatchForm, participantValues } from '../src/admin/Calendar.tsx'
+import { adminCalendarMatches, AdminMatch, Calendar, MatchEditor, MatchForm, participantValues } from '../src/admin/Calendar.tsx'
 import type { AdminData } from '../src/api/admin.ts'
 import { Positions } from '../src/admin/Tournaments.tsx'
 
@@ -56,7 +56,7 @@ test('admin reads include inactive tournaments, typed references and same-catego
     calls.push(path)
     const data: Record<string, unknown> = {
       '/api/admin/tournaments': [tournament], '/api/admin/tournaments/1/phases': [source, phase, { ...source, id: 3, tournamentType: 'FEMALE' }],
-      '/api/admin/teams?tournamentId=1': [], '/api/admin/phases/2/groups': [], '/api/admin/phases/2/memberships': [], '/api/admin/matches?phaseId=2': [match], '/api/admin/phases/1/groups': [{ id: 1, phaseId: 1, name: 'Origen' }],
+      '/api/admin/phases/3/groups': [], '/api/admin/phases/3/memberships': [], '/api/admin/teams?tournamentId=1': [], '/api/admin/phases/2/groups': [], '/api/admin/phases/2/memberships': [], '/api/admin/matches': [match, { ...match, id: 6, phaseId: 3, tournamentType: 'FEMALE', status: 'LIVE' }, { ...match, id: 7, phaseId: 99 }], '/api/admin/phases/1/groups': [{ id: 1, phaseId: 1, name: 'Origen' }],
     }
     assert.ok(path in data, path)
     return Response.json(data[path])
@@ -65,6 +65,14 @@ test('admin reads include inactive tournaments, typed references and same-catego
   assert.equal(data.phase?.id, 2); assert.equal(data.tournament?.active, false)
   assert.deepEqual(data.sourcePhases, [source]); assert.equal(data.sourceGroups[1]?.[0]?.name, 'Origen')
   assert.deepEqual(data.matches[0]?.participants, match.participants)
+  assert.deepEqual(data.matches.map(item => item.id), [5, 6])
+  const html = renderToStaticMarkup(createElement(Calendar, { data: { ...data, matches: data.matches.map(item => ({ ...item, status: 'LIVE' })) }, run: async () => false }))
+  assert.equal((html.match(/aria-label="Sumar gol A"/g) ?? []).length, 2)
+  assert.match(html, /Masculino/)
+  assert.match(html, /Femenino/)
+
+  const otherPhase = await loadAdmin('calendar', { phaseId: 3 }, new AbortController().signal)
+  assert.deepEqual(otherPhase.matches.map(item => item.id), [5, 6])
   assert.ok(calls.every(path => path.startsWith('/api/admin/')))
 })
 
@@ -111,6 +119,13 @@ test('fixed-team editors restrict local group, visitor phase and line tournament
   assert.match(list, /\+ Partido/)
   assert.match(list, /aria-label="Estado"[\s\S]*<option value="" selected="">Todos<\/option><option value="SCHEDULED">Programados<\/option><option value="LIVE">En juego<\/option><option value="FINISHED">Finalizados<\/option>/)
   assert.doesNotMatch(list, /Programar partido|name="teamA-kind"/)
+  assert.match(list, /Partidos · Copa/)
+  const editor = renderToStaticMarkup(createElement(MatchEditor, { data, match: { ...match, phaseId: 1 }, run: async () => false, cancel() {} }))
+  assert.match(editor, /fieldset disabled=""[\s\S]*Fase del partido/)
+  assert.match(editor, /value="1" selected=""/)
+  assert.match(editor, /Cargando fase del partido/)
+  assert.doesNotMatch(editor, /name="teamA-kind"/)
+
   const html = renderToStaticMarkup(createElement(MatchForm, { data, run: async () => false, cancel() {} }))
   const role = (name: string) => html.split(`<legend>${name}</legend>`)[1]!.split('</fieldset>')[0]!
   assert.match(role('Local'), /Equipo 1/); assert.doesNotMatch(role('Local'), /Equipo [23]/)

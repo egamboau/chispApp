@@ -75,20 +75,20 @@ test('scoring prefers regular table and displays each server ranking without rec
   assert.equal((fallback.match(/Sin anotaciones/g) ?? []).length, 3)
 })
 
-test('calendar filters exclude finished matches and preserve server order within jornadas', () => {
+test('calendar groups morning before afternoon and preserves each jornada order across categories', () => {
   const matches = [
     { ...match, id: 4, teamA: 'Tarde primero', jornada: 'AFTERNOON' },
     { ...match, id: 3, teamA: 'Mañana primero' },
     { ...match, id: 2, teamA: 'Mañana segundo', status: 'SCHEDULED' },
-    { ...match, id: 5, tournamentType: 'FEMALE' },
+    { ...match, id: 5, tournamentType: 'FEMALE', teamA: 'Mañana femenino' },
+    { ...match, id: 8, tournamentType: 'FEMALE', teamA: 'Tarde femenino', jornada: 'AFTERNOON' },
     { ...match, id: 6, status: 'FINISHED' },
     { ...match, id: 7, date: '2026-10-21' },
   ] as MatchResponse[]
-  const selected = calendarMatches(matches, { category: 'MALE', date: '2026-10-20', status: '' })
-  assert.deepEqual(selected.map(item => item.id), [4, 3, 2])
-  assert.deepEqual(calendarMatches(matches, { category: 'ALL', date: '', status: 'SCHEDULED' }).map(item => item.id), [2])
+  const selected = calendarMatches(matches)
+  assert.deepEqual(selected.map(item => item.id), [4, 3, 2, 5, 8, 7])
   const html = renderToStaticMarkup(createElement(Calendar, { matches: selected.map(item => ({ ...item, participants: { ...item.participants, teamA: { ...participant, resolvedTeam: { id: 1, name: item.teamA } } } })), empty: 'Vacío' }))
-  assert.match(html, /Mañana primero[\s\S]*Mañana segundo[\s\S]*Tarde primero/)
+  assert.match(html, /Mañana primero[\s\S]*Mañana segundo[\s\S]*Mañana femenino[\s\S]*Tarde primero[\s\S]*Tarde femenino/)
   assert.match(html, /Por publicar/)
   assert.doesNotMatch(html, /Línea secreta/)
   assert.match(html, /Marcador 2 a 0/)
@@ -231,3 +231,67 @@ test('each public category defaults to its own current phase while explicit hist
   assert.equal((await loadDisplay({ category: 'FEMALE' }, signal)).phase?.id, 4);
   assert.equal((await loadDisplay({ category: 'FEMALE', phaseId: 3 }, signal)).phase?.id, 3);
 });
+
+test('live view shows both categories across phases in only the selected tournament and refreshes', async t => {
+  const female = { ...phase, id: 3, tournamentType: 'FEMALE' }
+  const tournament = { id: 1, name: 'Copa', active: true, currentPhaseId: 1, currentMalePhaseId: 1, currentFemalePhaseId: 3, legacyType: null }
+  let matches = [match, { ...match, id: 2, phaseId: 3, tournamentType: 'FEMALE' }, { ...match, id: 3, phaseId: 9 }]
+  const calls: string[] = []
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    calls.push(path)
+    if (path === '/api/tournaments?active=true') return Response.json([tournament, { ...tournament, id: 2 }])
+    if (path === '/api/tournaments/1/phases') return Response.json([phase, female])
+    if (path === '/api/tournaments/2/phases') return Response.json([{ ...phase, id: 9, tournamentId: 2 }])
+    if (path === '/api/matches?status=LIVE' || path === '/api/matches') return Response.json(matches)
+    if (path === '/api/matches?status=FINISHED') return Response.json(matches.filter(item => item.status === 'FINISHED'))
+    assert.fail(`Unexpected request: ${path}`)
+  })
+  const signal = new AbortController().signal
+  const selection = { tournamentId: 1, category: 'MALE' as const, phaseId: 1 }
+  const initial = await loadDisplay(selection, signal, 'live')
+  assert.deepEqual(initial.matches.map(item => item.id), [1, 2])
+  assert.equal(initial.phase, undefined)
+  assert.ok(calls.every(path => !path.includes('/standings') && !path.includes('/scoring')))
+  assert.deepEqual((await loadDisplay({ tournamentId: 2 }, signal, 'live')).matches.map(item => item.id), [3])
+  matches = matches.map(item => ({ ...item, scoreA: 7 }))
+  assert.equal((await loadDisplay(selection, signal, 'live')).matches[1]?.scoreA, 7)
+  matches = [
+    { ...match, id: 1, status: 'SCHEDULED', sortOrder: 1 },
+    { ...match, id: 2, phaseId: 3, tournamentType: 'FEMALE', status: 'SCHEDULED', sortOrder: 1 },
+    { ...match, id: 3, sortOrder: 2 },
+    { ...match, id: 4, phaseId: 9, status: 'SCHEDULED' },
+    { ...match, id: 5, status: 'FINISHED' },
+  ]
+  const calendar = await loadDisplay(selection, signal, 'calendar')
+  assert.deepEqual(calendarMatches(calendar.matches).map(item => item.id), [1, 2, 3])
+  assert.equal(calendar.phase, undefined)
+  assert.deepEqual((await loadDisplay({ tournamentId: 2 }, signal, 'calendar')).matches.map(item => item.id), [4])
+  matches = [
+    { ...match, id: 1, status: 'FINISHED', date: '2026-10-19' },
+    { ...match, id: 2, phaseId: 3, tournamentType: 'FEMALE', status: 'FINISHED' },
+    { ...match, id: 3, status: 'FINISHED' },
+    { ...match, id: 4, phaseId: 9, status: 'FINISHED' },
+    { ...match, id: 5, status: 'LIVE' },
+  ]
+  const results = await loadDisplay(selection, signal, 'results')
+  assert.deepEqual(results.matches.map(item => item.id), [1, 2, 3])
+  assert.deepEqual(resultMatches(results.matches, '2026-10-20').map(item => item.id), [2, 3])
+  assert.equal(results.phase, undefined)
+  const html = renderToStaticMarkup(createElement(Calendar, { matches: results.matches, results: true, empty: 'Sin resultados' }))
+  assert.ok(html.indexOf('20 de octubre') < html.indexOf('19 de octubre'))
+  assert.match(html, /Femenino/)
+  assert.match(html, /Masculino/)
+  assert.deepEqual((await loadDisplay({ tournamentId: 2 }, signal, 'results')).matches.map(item => item.id), [4])
+  matches = []
+  assert.deepEqual((await loadDisplay(selection, signal, 'results')).matches, [])
+  assert.deepEqual((await loadDisplay(selection, signal, 'live')).matches, [])
+  assert.deepEqual((await loadDisplay(selection, signal, 'calendar')).matches, [])
+})
+
+test('live navigation exposes only the tournament selector', async () => {
+  const { PublicDisplay } = await import('../src/pages/PublicDisplay.tsx')
+  const html = renderToStaticMarkup(createElement(PublicDisplay))
+  assert.match(html, /Torneo activo/)
+  assert.doesNotMatch(html, /Categoría de las fases|aria-label="Fase"/)
+  assert.match(html, /aria-pressed="true">EN JUEGO/)
+})
