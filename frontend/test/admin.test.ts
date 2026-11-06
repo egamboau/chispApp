@@ -5,7 +5,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { MatchResponse } from '@jupas/shared'
 import { adminMutation, loadAdmin, scoringSelection } from '../src/api/admin.ts'
-import { adminCalendarMatches, AdminMatch, Calendar, MatchEditor, MatchForm, participantValues } from '../src/admin/Calendar.tsx'
+import { adminCalendarMatches, AdminMatch, Calendar, MatchEditor, MatchForm, participantValues, winnerSources } from '../src/admin/Calendar.tsx'
 import type { AdminData } from '../src/api/admin.ts'
 import { Positions } from '../src/admin/Tournaments.tsx'
 
@@ -22,11 +22,11 @@ const match: MatchResponse = {
 }
 
 test('participant forms preserve confirmed group positions and existing API winner references', () => {
-  assert.deepEqual(participantValues({ 'teamA-kind': 'GROUP_POSITION', 'teamA-phase': '1', 'teamA-group': '1', 'teamA-position': '3', 'teamB-kind': 'MATCH_WINNER', 'lineTeam-kind': 'TEAM', 'lineTeam-team': '3' }, match), {
+  assert.deepEqual(participantValues({ 'teamA-kind': 'GROUP_POSITION', 'teamA-phase': '1', 'teamA-group': '1', 'teamA-position': '3', 'teamB-kind': 'MATCH_WINNER', 'teamB-match': '4', 'lineTeam-kind': 'TEAM', 'lineTeam-team': '3' }), {
     teamA: { kind: 'GROUP_POSITION', sourcePhaseId: 1, sourceGroupId: 1, position: 3 }, teamB: { kind: 'MATCH_WINNER', sourceMatchId: 4 }, lineTeam: { kind: 'TEAM', teamId: 3 },
   })
-  assert.throws(() => participantValues({ 'teamA-kind': 'MATCH_WINNER' }, match), /Referencia de ganador/)
-  assert.throws(() => participantValues({ 'teamA-kind': 'TEAM', 'teamA-team': '0' }, match))
+  assert.throws(() => participantValues({ 'teamA-kind': 'MATCH_WINNER' }))
+  assert.throws(() => participantValues({ 'teamA-kind': 'TEAM', 'teamA-team': '0' }))
 })
 
 test('React match controls follow lifecycle and retain corrections, order and scoring deep links', () => {
@@ -155,8 +155,8 @@ test('position buttons confirm before writing and use the source phase for both 
 
 test('line assignment can be omitted or cleared without relaxing required rivals', () => {
   const values = { 'teamA-kind': 'TEAM', 'teamA-team': '1', 'teamB-kind': 'TEAM', 'teamB-team': '2', 'lineTeam-kind': 'TEAM', 'lineTeam-team': '' }
-  assert.equal(participantValues(values, match).lineTeam, null)
-  assert.throws(() => participantValues({ ...values, 'teamA-team': '' }, match))
+  assert.equal(participantValues(values).lineTeam, null)
+  assert.throws(() => participantValues({ ...values, 'teamA-team': '' }))
   const html = renderToStaticMarkup(createElement(AdminMatch, { match: { ...match, lineTeam: null, lineTeamId: null, participants: { ...match.participants, lineTeam: null } }, run: async () => false, edit() {} }))
   assert.match(html, /Sin asignar/)
 })
@@ -325,4 +325,44 @@ test('issue 62: groups expose pending references, origin formats and stale place
   assert.match(html, /1.º del Grupo A/)
   assert.match(html, /Desactualizado: revisar origen/)
   assert.match(html, /QUITAR CUPO/)
+})
+
+/** Supplies two semifinals using the actual admin DTOs. */
+function winnerData(): AdminData {
+  const semifinal = { ...phase, id: 4, name: 'Semifinal', sortOrder: 1 }
+  const fixed = { teamA: participant, teamB: { ...participant, reference: { kind: 'TEAM' as const, teamId: 2 }, resolvedTeamId: 2 }, lineTeam: null }
+  const first = { ...match, id: 10, phaseId: 4, phaseName: 'Semifinal', teamA: '1.º Grupo A', teamB: '2.º Grupo B', participants: fixed }
+  return { tournaments: [tournament], tournament, phases: [semifinal, phase], phase, teams: [], groups: [{ id: 2, phaseId: 2, name: 'Final' }], memberships: [], slots: [], winnerPhases: [], winnerMatches: [], rules: [], sanctions: [], teamCards: [], matches: [first, { ...first, id: 11 }], tables: [], positions: undefined, sourcePhases: [], sourceGroups: {} }
+}
+
+test('issue 63: explicit winner IDs create a final, change all roles and reject incomplete references', () => {
+  const values = { 'teamA-kind': 'MATCH_WINNER', 'teamA-match': '10', 'teamB-kind': 'MATCH_WINNER', 'teamB-match': '11', 'lineTeam-kind': 'TEAM', 'lineTeam-team': '' }
+  assert.deepEqual(participantValues(values), { teamA: { kind: 'MATCH_WINNER', sourceMatchId: 10 }, teamB: { kind: 'MATCH_WINNER', sourceMatchId: 11 }, lineTeam: null })
+  assert.deepEqual(participantValues({ ...values, 'teamA-match': '12', 'lineTeam-kind': 'MATCH_WINNER', 'lineTeam-match': '13' }), { teamA: { kind: 'MATCH_WINNER', sourceMatchId: 12 }, teamB: { kind: 'MATCH_WINNER', sourceMatchId: 11 }, lineTeam: { kind: 'MATCH_WINNER', sourceMatchId: 13 } })
+  assert.deepEqual(participantValues({ ...values, 'teamA-kind': 'TEAM', 'teamA-team': '7' }).teamA, { kind: 'TEAM', teamId: 7 })
+  assert.throws(() => participantValues({ ...values, 'teamA-match': '' }))
+  assert.throws(() => participantValues({ ...values, 'lineTeam-kind': 'MATCH_WINNER', 'lineTeam-match': '' }))
+})
+
+test('issue 63: source eligibility excludes other tournaments/categories, future phases, self and indirect cycles', () => {
+  const data = winnerData(), same = { ...data.matches[0]!, id: 12, phaseId: phase.id }
+  const dependent = (id: number, sourceMatchId: number) => ({ ...same, id, participants: { ...same.participants, teamA: { ...participant, reference: { kind: 'MATCH_WINNER' as const, sourceMatchId } } } })
+  data.phases.push({ ...phase, id: 8, tournamentType: 'FEMALE' }, { ...phase, id: 9, sortOrder: 9 }, { ...phase, id: 15, tournamentId: 99, sortOrder: 1 })
+  data.matches.push(same, dependent(13, 12), dependent(14, 13), { ...same, id: 20, phaseId: 8, tournamentType: 'FEMALE' }, { ...same, id: 21, phaseId: 9 }, { ...same, id: 22, phaseId: 15 })
+  assert.deepEqual(winnerSources(data).map(item => item.id), [10, 11, 12, 13, 14])
+  assert.deepEqual(winnerSources(data, 12).map(item => item.id), [10, 11])
+})
+
+test('issue 63: editing/reloading preserves explicit winners and displays readable sources and empty feedback', () => {
+  const data = winnerData()
+  const final = { ...match, participants: { teamA: { ...participant, reference: { kind: 'MATCH_WINNER' as const, sourceMatchId: 10 } }, teamB: { ...participant, reference: { kind: 'MATCH_WINNER' as const, sourceMatchId: 11 } }, lineTeam: { ...participant, reference: { kind: 'MATCH_WINNER' as const, sourceMatchId: 10 } } } }
+  const render = (selected: MatchResponse, sourceData = data) => renderToStaticMarkup(createElement(MatchForm, { data: sourceData, match: selected, run: async () => false, cancel() {} }))
+  const html = render(JSON.parse(JSON.stringify(final)))
+  assert.equal((html.match(/name="(?:teamA|teamB|lineTeam)-match"/g) ?? []).length, 3)
+  assert.match(html, /value="10" selected/); assert.match(html, /value="11" selected/)
+  assert.match(html, /Ganador de Semifinal/); assert.match(html, /1.º Grupo A/)
+  assert.match(render({ ...final, participants: { ...final.participants, teamA: { ...participant, reference: { kind: 'MATCH_WINNER', sourceMatchId: 11 } } } }), /name="teamA-match"[^]*?value="11" selected/)
+  assert.match(render(final, { ...data, matches: [] }), /No hay partidos eliminatorios de origen elegibles/)
+  const create = renderToStaticMarkup(createElement(MatchForm, { data, run: async () => false, cancel() {} }))
+  assert.equal((create.match(/value="MATCH_WINNER"/g) ?? []).length, 3)
 })
