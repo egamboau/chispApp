@@ -1,3 +1,4 @@
+import { GroupSlots } from './GroupSlots'
 import * as S from '@jupas/shared'
 import type { AdminData } from '../api/admin'
 import { adminMutation } from '../api/admin'
@@ -18,6 +19,7 @@ export function TournamentMenu({ current, query, onSelect }: { current?: string;
 export function Positions({ preview, groups, run }: { preview: S.PhasePositionsResponse; groups: S.GroupResponse[]; run: Run }) {
   return <section><h3>Cierre y asignación de posiciones</h3><p>{preview.confirmedAt ? `Confirmado: ${preview.confirmedAt}` : 'Posiciones sin confirmar.'} Las correcciones no cambian automáticamente los equipos asignados.</p>
     {preview.errors.map((error, index) => <p className="error" key={index}>{error}</p>)}
+    {preview.membershipAssignments?.map(item => <Row key={`slot-${item.slotId}`}><span>Cupo {item.slotId} · Grupo destino {item.groupId} · {item.position}.º {groups.find(group => group.id === item.sourceGroupId)?.name} → {item.teamName ?? 'Sin resolver'}</span></Row>)}
     {preview.assignments.map(item => <Row key={`${item.matchId}-${item.role}`}><span>Partido {item.matchId} · {({ teamA: 'Local', teamB: 'Visitante', lineTeam: 'Línea' })[item.role]} · {item.position}.º {groups.find(group => group.id === item.sourceGroupId)?.name} → {item.teamName ?? 'Sin resolver'}{item.resolvedTeamId !== null && item.resolvedTeamId !== item.teamId ? ' (cambiaría el equipo asignado)' : ''}</span></Row>)}
     <button disabled={!preview.canConfirm} onClick={() => { if (confirm('¿Confirmar la clasificación y congelar los equipos previsualizados?')) void run(() => adminMutation(`/phases/${preview.phaseId}/positions/confirm`, 'POST')) }}>CONFIRMAR Y CONGELAR</button>
     {preview.confirmedAt && <button onClick={() => { if (confirm('¿Reabrir asignaciones? Los equipos se conservan; los partidos pendientes no podrán iniciar hasta reconfirmar. Los iniciados o terminados no pueden cambiar de equipo.')) void run(() => adminMutation(`/phases/${preview.phaseId}/positions/reopen`, 'POST')) }}>REABRIR ASIGNACIONES</button>}
@@ -46,7 +48,7 @@ export function Tournaments({ data: d, run, tab, setTab, selectTournament, selec
     <section id="panel-Grupos" aria-label="Grupos" hidden={tab !== 'Grupos'}>
       <Form disclosure title="Añadir grupo" disabled={!p} submit={v => run(() => adminMutation(`/phases/${p!.id}/groups`, 'POST', S.CreateGroupSchema.parse(v)))}><Field label="Nombre" name="name" maxLength={100} /></Form>
       {!d.groups.length && <p>No hay grupos en esta fase.</p>}
-      {d.groups.map(group => <details key={group.id}><summary>{group.name} · Administrar</summary><Form title={`Editar grupo ${group.name}`} submit={v => run(() => adminMutation(`/groups/${group.id}`, 'PUT', S.CreateGroupSchema.parse(v)))}><Field label="Nombre" name="name" defaultValue={group.name} /></Form><button className="danger" onClick={() => { if (confirm('¿Eliminar este grupo?')) void run(() => adminMutation(`/groups/${group.id}`, 'DELETE')) }}>ELIMINAR GRUPO</button></details>)}
+      {d.groups.map(group => <details key={group.id}><summary>{group.name} · Administrar</summary><GroupSlots data={d} groupId={group.id} run={run} /><Form title={`Editar grupo ${group.name}`} submit={v => run(() => adminMutation(`/groups/${group.id}`, 'PUT', S.CreateGroupSchema.parse(v)))}><Field label="Nombre" name="name" defaultValue={group.name} /></Form><button className="danger" onClick={() => { if (confirm('¿Eliminar este grupo?')) void run(() => adminMutation(`/groups/${group.id}`, 'DELETE')) }}>ELIMINAR GRUPO</button></details>)}
     </section>
     <section id="panel-Clasificación" aria-label="Clasificación" hidden={tab !== 'Clasificación'}>
       {p?.type === 'TABLE' ? <><RuleForm run={run} phaseId={p.id} />{d.rules.map(rule => <details key={rule.id}><summary>{rule.label} · Posiciones {rule.positions.join(', ')}</summary><RuleForm run={run} phaseId={p.id} rule={rule} /><button className="danger" onClick={() => { if (confirm('¿Eliminar esta regla?')) void run(() => adminMutation(`/phases/${p.id}/classification-rules/${rule.id}`, 'DELETE')) }}>ELIMINAR REGLA</button></details>)}{d.positions && <Positions preview={d.positions} groups={d.groups} run={run} />}</> : <p>Selecciona una fase de tabla para administrar clasificación.</p>}

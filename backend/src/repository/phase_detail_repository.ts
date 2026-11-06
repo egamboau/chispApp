@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import DBConnection, { DatabaseConnectionError } from "../db/db_connection";
 import { Group } from "../models/group";
 import { Match } from "../models/match";
-import { ClassificationRule, Membership, RuleInput, Sanction, ScoringRow, ScoringTable, TeamCards } from "../models/phase_details";
+import { ClassificationRule, Membership, MembershipSlot, RuleInput, Sanction, ScoringRow, ScoringTable, TeamCards } from "../models/phase_details";
 import { Team } from "../models/team";
 
 export interface PositionReference {
@@ -82,6 +82,50 @@ export class PhaseDetailRepository {
     deleteMembership(phaseId: number, teamId: number): boolean {
         return this.dbConnection.executeQuery('DELETE FROM phase_memberships WHERE phaseId=? AND teamId=?', phaseId, teamId).changes > 0
     }
+
+    /** Lists retained source references, optionally restricted to their destination phase. */
+    getSlots(phaseId?: number): MembershipSlot[] {
+        return phaseId === undefined ? this.dbConnection.fetchAllFromQuery<MembershipSlot>('SELECT * FROM membership_slots ORDER BY id')
+            : this.dbConnection.fetchAllFromParameterizedQuery<MembershipSlot>('SELECT * FROM membership_slots WHERE phaseId=? ORDER BY id', phaseId)
+    }
+
+    /** Saves a validated reference atomically; SQL guards enforce compatibility and uniqueness. */
+    saveSlot(phaseId: number, groupId: number, reference: import('../models/match').MatchParticipant, id?: number): number {
+        if (reference.kind === 'TEAM') throw new DatabaseConnectionError('PositionResolutionError', 'El cupo requiere una referencia.', undefined)
+        const values = [phaseId, groupId, reference.kind, reference.kind === 'GROUP_POSITION' ? reference.sourcePhaseId : null,
+            reference.kind === 'GROUP_POSITION' ? reference.sourceGroupId : null, reference.kind === 'GROUP_POSITION' ? reference.position : null,
+            reference.kind === 'MATCH_WINNER' ? reference.sourceMatchId : null]
+        if (id !== undefined) {
+            this.dbConnection.executeQuery('UPDATE membership_slots SET phaseId=?,groupId=?,kind=?,sourcePhaseId=?,sourceGroupId=?,position=?,sourceMatchId=? WHERE id=?', ...values, id)
+            return id
+        }
+        return Number(this.dbConnection.executeQuery('INSERT INTO membership_slots(phaseId,groupId,kind,sourcePhaseId,sourceGroupId,position,sourceMatchId) VALUES(?,?,?,?,?,?,?)', ...values).lastInsertRowid)
+    }
+
+    /** Removes an unused place after its materialized membership has been released. */
+    deleteSlot(id: number): void { this.dbConnection.executeQuery('DELETE FROM membership_slots WHERE id=?', id) }
+
+    /** Materializes a resolved place using the existing membership uniqueness constraint; conflicts roll back. */
+    assignSlot(slot: MembershipSlot, teamId: number | null): void {
+        if (slot.resolvedTeamId === teamId) return
+        if (slot.resolvedTeamId !== null) this.deleteMembership(slot.phaseId, slot.resolvedTeamId)
+        if (teamId !== null) this.insertMembership({ phaseId: slot.phaseId, groupId: slot.groupId, teamId })
+        this.dbConnection.executeQuery('UPDATE membership_slots SET resolvedTeamId=? WHERE id=?', teamId, slot.id)
+    }
+
+    /** Reads retained participant sources without resolving or mutating matches. */
+    getMatchReferences(): Array<{ matchId: number; role: 'teamA' | 'teamB' | 'lineTeam'; kind: string; sourcePhaseId: number | null; sourceGroupId: number | null; position: number | null; sourceMatchId: number | null }> {
+        return this.dbConnection.fetchAllFromQuery('SELECT * FROM match_participant_references ORDER BY matchId,role')
+    }
+
+    /** Resolves only scheduled winner participants; started matches retain their recorded participants. */
+    assignWinner(matchId: number, role: 'teamA' | 'teamB' | 'lineTeam', teamId: number | null): void {
+        const team = teamId === null ? undefined : this.dbConnection.fetchOneElementFromTable<Team>('teams', teamId)
+        this.dbConnection.executeQuery(`UPDATE matches SET ${role}Id=?,${role}=?,updatedAt=CURRENT_TIMESTAMP WHERE id=? AND status='SCHEDULED'`, teamId, team?.name ?? 'Ganador pendiente', matchId)
+    }
+
+    /** Looks up display labels without interpreting them as team names. */
+    getGroup(id: number): Group | undefined { return this.dbConnection.fetchOneElementFromTable<Group>('groups_table', id) }
 
     getRules(phaseId: number): ClassificationRule[] {
         return this.dbConnection.fetchAllFromParameterizedQuery<ClassificationRule>('SELECT * FROM classification_rules WHERE phaseId=? ORDER BY startPosition', phaseId)

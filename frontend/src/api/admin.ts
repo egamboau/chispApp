@@ -35,9 +35,12 @@ export async function loadAdmin(page: AdminPage, selection: AdminSelection, sign
     phase && page === 'scoring' ? get(`/phases/${phase.id}/scoring`, S.PhaseScoringResponseSchema) : undefined,
     phase?.type === 'TABLE' && page === 'tournaments' ? get(`/phases/${phase.id}/positions`, S.PhasePositionsResponseSchema) : undefined,
   ])
-  const sourcePhases = page === 'calendar' ? phases.filter(item => item.type === 'TABLE' && item.sortOrder < phase!.sortOrder && item.tournamentType === phase!.tournamentType) : []
+  const slots = phase && ['tournaments', 'calendar'].includes(page) ? await get(`/phases/${phase.id}/membership-slots`, S.MembershipSlotListResponseSchema) : []
+  const sourcePhases = ['calendar', 'tournaments'].includes(page) ? phases.filter(item => item.type === 'TABLE' && item.sortOrder < phase!.sortOrder && item.tournamentType === phase!.tournamentType) : []
+  const winnerPhases = ['calendar', 'tournaments'].includes(page) && phase ? phases.filter(item => item.type === 'ELIMINATION' && item.sortOrder < phase.sortOrder && item.tournamentType === phase.tournamentType) : []
+  const winnerMatches = winnerPhases.length ? await get('/matches', S.MatchListResponseSchema).then(items => items.filter(item => winnerPhases.some(source => source.id === item.phaseId))) : []
   const sourceGroups = Object.fromEntries(await Promise.all(sourcePhases.map(async item => [item.id, await get(`/phases/${item.id}/groups`, S.GroupListResponseSchema)]))) as Record<number, S.GroupResponse[]>
-  return { tournaments, tournament, phases, phase, teams, groups, rules, memberships, sanctions, teamCards, matches, tables: ranking?.tables ?? [], positions, sourcePhases, sourceGroups }
+  return { slots, winnerPhases, winnerMatches, tournaments, tournament, phases, phase, teams, groups, rules, memberships, sanctions, teamCards, matches, tables: ranking?.tables ?? [], positions, sourcePhases, sourceGroups }
 }
 export type AdminData = Awaited<ReturnType<typeof loadAdmin>>
 

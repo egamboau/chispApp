@@ -35,6 +35,96 @@ export class PhaseDetailService {
         return this.repository.deleteMembership(phaseId, teamId)
     }
 
+    /** Returns current group-place status and retains historical assignments when the source changes. */
+    getSlots(phaseId: number) {
+        return this.repository.getSlots(phaseId).map(slot => {
+            const reference = this.slotReference(slot)
+            const teamId = this.resolveReference(reference)
+            const source = reference.kind === 'GROUP_POSITION' ? this.phaseService.getPhaseById(reference.sourcePhaseId) : this.phaseService.getPhaseById(this.repository.getMatch(reference.sourceMatchId).phaseId!)
+            const group = reference.kind === 'GROUP_POSITION' ? this.repository.getGroup(reference.sourceGroupId) : undefined
+            const team = this.repository.getGroupMembers(slot.phaseId, slot.groupId).find(team => team.id === slot.resolvedTeamId)
+            return { id: slot.id, phaseId: slot.phaseId, groupId: slot.groupId, reference, resolvedTeamId: slot.resolvedTeamId,
+                teamName: team?.name ?? null, label: reference.kind === 'GROUP_POSITION' ? `${reference.position}.º del Grupo ${group?.name}` : `Ganador de ${source?.name} · partido ${reference.sourceMatchId}`,
+                status: teamId !== null && teamId === slot.resolvedTeamId ? 'CONFIRMED' as const : slot.resolvedTeamId !== null ? 'STALE' as const : 'PENDING' as const }
+        })
+    }
+
+    /** Adds or edits an unused place; compatibility, duplicate and materialization failures roll back together. */
+    saveSlot(phaseId: number, groupId: number, reference: import('../models/match').MatchParticipant, id?: number) {
+        return this.repository.transaction(() => {
+            if (id !== undefined) this.releaseSlot(phaseId, id)
+            const saved = this.repository.saveSlot(phaseId, groupId, reference, id)
+            this.refreshReferences()
+            return this.getSlots(phaseId).find(slot => slot.id === saved)!
+        })
+    }
+
+    /** Removes an unused reference and its materialized membership without affecting direct memberships. */
+    deleteSlot(phaseId: number, id: number): void {
+        this.repository.transaction(() => { this.releaseSlot(phaseId, id); this.repository.deleteSlot(id) })
+    }
+
+    /** Rejects editing places used by a match or disciplinary history; deleting dependent data is never implicit. */
+    private releaseSlot(phaseId: number, id: number): void {
+        const slot = this.repository.getSlots(phaseId).find(slot => slot.id === id)
+        if (!slot) throw new DatabaseConnectionError('PositionResolutionError', 'Cupo no encontrado.', undefined)
+        const reference = this.slotReference(slot)
+        const used = this.repository.getMatchReferences().some(row => this.repository.getMatch(row.matchId).phaseId === phaseId &&
+            (reference.kind === 'GROUP_POSITION' ? row.kind === reference.kind && row.sourcePhaseId === reference.sourcePhaseId && row.sourceGroupId === reference.sourceGroupId && row.position === reference.position
+                : row.kind === reference.kind && row.sourceMatchId === reference.sourceMatchId))
+        if (used || (slot.resolvedTeamId !== null && (this.repository.teamHasMatches(phaseId, slot.resolvedTeamId)
+            || this.repository.getSanctions(phaseId).some(row => row.teamId === slot.resolvedTeamId)
+            || this.repository.getTeamCards(phaseId).some(row => row.teamId === slot.resolvedTeamId)))) {
+            throw new DatabaseConnectionError('PositionResolutionError', 'El cupo tiene partidos o historial asociado.', undefined)
+        }
+        this.repository.assignSlot(slot, null)
+    }
+
+    /** Reuses confirmed standings and finished unequal-score elimination results; unresolved/cyclic chains stay pending. */
+    resolveReference(reference: import('../models/match').MatchParticipant, visiting = new Set<number>()): number | null {
+        if (reference.kind === 'TEAM') return reference.teamId
+        if (reference.kind === 'GROUP_POSITION') {
+            const preview = this.previewPositions(reference.sourcePhaseId)
+            if (!preview?.confirmedAt || preview.stale || !preview.canConfirm) return null
+            return this.getStandings(reference.sourcePhaseId)?.groups.find(group => group.id === reference.sourceGroupId)?.standings.find(row => row.position === reference.position && !row.requiresTiebreaker)?.teamId ?? null
+        }
+        if (visiting.has(reference.sourceMatchId)) return null
+        visiting.add(reference.sourceMatchId)
+        const match = this.repository.getMatch(reference.sourceMatchId)
+        if (!match || match.status !== 'FINISHED' || match.scoreA === match.scoreB || match.teamAId === null || match.teamBId === null) return null
+        for (const row of this.repository.getMatchReferences().filter(row => row.matchId === match.id)) {
+            const source = row.kind === 'GROUP_POSITION' ? { kind: 'GROUP_POSITION' as const, sourcePhaseId: row.sourcePhaseId!, sourceGroupId: row.sourceGroupId!, position: row.position! }
+                : { kind: 'MATCH_WINNER' as const, sourceMatchId: row.sourceMatchId! }
+            if (this.resolveReference(source, new Set(visiting)) !== match[`${row.role}Id`]) return null
+        }
+        return match.scoreA > match.scoreB ? match.teamAId : match.teamBId
+    }
+
+    /** Refreshes scheduled winners and real memberships atomically; started/history-bearing assignments remain stale. */
+    refreshReferences(): void {
+        this.repository.transaction(() => {
+            for (const row of this.repository.getMatchReferences().filter(row => row.kind === 'MATCH_WINNER')) {
+                const match = this.repository.getMatch(row.matchId)
+                const teamId = this.resolveReference({ kind: 'MATCH_WINNER', sourceMatchId: row.sourceMatchId! })
+                if (match.status === 'SCHEDULED' && match[`${row.role}Id`] !== teamId) this.repository.assignWinner(match.id, row.role, teamId)
+            }
+            for (const slot of this.repository.getSlots()) {
+                const teamId = this.resolveReference(this.slotReference(slot))
+                if (slot.resolvedTeamId === teamId) continue
+                if (slot.resolvedTeamId !== null && (this.repository.teamHasMatches(slot.phaseId, slot.resolvedTeamId)
+                    || this.repository.getSanctions(slot.phaseId).some(row => row.teamId === slot.resolvedTeamId)
+                    || this.repository.getTeamCards(slot.phaseId).some(row => row.teamId === slot.resolvedTeamId))) continue
+                this.repository.assignSlot(slot, teamId)
+            }
+        })
+    }
+
+    /** Reconstructs the calendar contract from the normalized persisted source columns. */
+    private slotReference(slot: import('../models/phase_details').MembershipSlot): Exclude<import('../models/match').MatchParticipant, { kind: 'TEAM' }> {
+        return slot.kind === 'GROUP_POSITION' ? { kind: slot.kind, sourcePhaseId: slot.sourcePhaseId!, sourceGroupId: slot.sourceGroupId!, position: slot.position! }
+            : { kind: slot.kind, sourceMatchId: slot.sourceMatchId! }
+    }
+
     getRules(phaseId: number): ClassificationRule[] {
         return this.repository.getRules(phaseId).map(rule => ({ ...rule, positions: PhaseDetailService.rulePositions(rule) }))
     }
@@ -103,6 +193,7 @@ export class PhaseDetailService {
         return { phase, hasStandings: true, rules, groups }
     }
 
+    /** Previews current standings, match assignments and group places; reports conflicts and changes since confirmation. */
     previewPositions(phaseId: number) {
         const table = this.getStandings(phaseId)
         if (!table) return undefined
@@ -137,13 +228,26 @@ export class PhaseDetailService {
             }).filter(id => id !== null)
             if (new Set(ids).size !== ids.length) errors.push(`Partido ${matchId}: los participantes resueltos deben ser diferentes.`)
         }
+        const membershipAssignments = this.repository.getSlots().filter(slot => slot.kind === 'GROUP_POSITION' && slot.sourcePhaseId === phaseId).map(slot => {
+            const row = table.groups.find(group => group.id === slot.sourceGroupId)?.standings.find(row => row.position === slot.position && !row.requiresTiebreaker)
+            if (!row) errors.push(`Cupo ${slot.id}: posición sin resolver.`)
+            const conflict = row && this.repository.getMemberships(slot.phaseId).some(member => member.teamId === row.teamId && member.teamId !== slot.resolvedTeamId)
+            if (conflict) errors.push(`Cupo ${slot.id}: el equipo ya pertenece a la fase destino.`)
+            if (slot.resolvedTeamId !== null && slot.resolvedTeamId !== row?.teamId && this.repository.teamHasMatches(slot.phaseId, slot.resolvedTeamId)) errors.push(`Cupo ${slot.id}: el equipo tiene partidos existentes.`)
+            return { slotId: slot.id, phaseId: slot.phaseId, groupId: slot.groupId, sourceGroupId: slot.sourceGroupId!, position: slot.position!, resolvedTeamId: slot.resolvedTeamId, teamId: row?.teamId ?? null, teamName: row?.teamName ?? null }
+        })
+        for (const phase of new Set(membershipAssignments.map(item => item.phaseId))) {
+            const ids = membershipAssignments.filter(item => item.phaseId === phase).map(item => item.teamId).filter(id => id !== null)
+            if (new Set(ids).size !== ids.length) errors.push('Los cupos resueltos deben pertenecer a equipos diferentes.')
+        }
         const snapshot = JSON.stringify(table)
         const confirmation = this.repository.getPositionConfirmation(phaseId)
         const stale = Boolean(confirmation && (confirmation.snapshot !== snapshot || errors.length))
         if (stale) errors.push('La clasificación cambió después de confirmar. Reabre y revisa las asignaciones antes de reconfirmar.')
-        return { phaseId, confirmedAt: confirmation?.confirmedAt ?? null, stale, canConfirm: errors.length === 0, errors, assignments, snapshot }
+        return { phaseId, confirmedAt: confirmation?.confirmedAt ?? null, stale, canConfirm: errors.length === 0, errors, assignments, ...(membershipAssignments.length ? { membershipAssignments } : {}), snapshot }
     }
 
+    /** Atomically freezes a valid classification and resolves its match participants and destination group places. */
     confirmPositions(phaseId: number) {
         return this.repository.transaction(() => {
             const preview = this.previewPositions(phaseId)
@@ -153,14 +257,17 @@ export class PhaseDetailService {
                 if (assignment.resolvedTeamId !== assignment.teamId) this.repository.assignPosition(assignment, assignment.teamId!, assignment.teamName!)
             }
             this.repository.confirmPositions(phaseId, preview.snapshot)
+            this.refreshReferences()
             return this.previewPositions(phaseId)
         })
     }
 
+    /** Reopens a classification and refreshes safe dependent places while retaining assignments with history. */
     reopenPositions(phaseId: number) {
         return this.repository.transaction(() => {
             if (!this.phaseService.getPhaseById(phaseId)) return undefined
             this.repository.reopenPositions(phaseId)
+            this.refreshReferences()
             return this.previewPositions(phaseId)
         })
     }

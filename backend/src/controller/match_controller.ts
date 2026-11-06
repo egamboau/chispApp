@@ -161,7 +161,12 @@ export class MatchController {
         const id = idSchema.safeParse(req.params.id), input = resultSchema.safeParse(req.body)
         if (!id.success) return res.status(400).json({ error: 'Id de partido inválido.' })
         if (!input.success) return res.status(400).json({ error: 'El marcador debe usar enteros no negativos.' })
-        const updated = this.service.setResult(id.data, input.data.scoreA, input.data.scoreB)
+        let updated
+        try { updated = this.service.setResult(id.data, input.data.scoreA, input.data.scoreB) }
+        catch (error) {
+            if (error instanceof DatabaseConnectionError) return res.status(409).json({ error: 'No se puede resolver el resultado: hay conflictos de membresía o participantes.' })
+            throw error
+        }
         if (!updated) {
             const match = this.service.getMatch(id.data, true)
             return res.status(match ? 409 : 404).json({ error: match ? 'Solo se puede corregir un partido finalizado.' : 'Partido no encontrado.' })
@@ -248,7 +253,12 @@ export class MatchController {
         return (req, res) => {
             const id = idSchema.safeParse(req.params.id)
             if (!id.success) return res.status(400).json({ error: 'Id de partido inválido.' })
-            const updated = this.service.changeStatus(id.data, from, to)
+            let updated
+            try { updated = this.service.changeStatus(id.data, from, to) }
+            catch (error) {
+                if (error instanceof DatabaseConnectionError) return res.status(409).json({ error: 'No se puede resolver el origen: hay conflictos de membresía o participantes.' })
+                throw error
+            }
             if (!updated) {
                 const match = this.service.getMatch(id.data, true)
                 return res.status(match ? 409 : 404).json({ error: match ? `El partido debe estar ${from} y tener sus participantes resueltos y confirmados para iniciar.` : 'Partido no encontrado.' })

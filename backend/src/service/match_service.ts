@@ -198,8 +198,10 @@ export class MatchService {
         return this.scoringRepository.delete(matchId, playerId)
     }
 
+    /** Requires current source confirmation, including retained group places, before recording results. */
     participantsConfirmed(id: number): boolean {
         const match = this.repository.getMatch(id)
+        if (match?.phaseId && this.repository.referenceService().getSlots(match.phaseId).some(slot => slot.status !== 'CONFIRMED' && slot.resolvedTeamId !== null && [match.teamAId, match.teamBId, match.lineTeamId].includes(slot.resolvedTeamId))) return false
         return Boolean(match?.participants && Object.entries(match.participants).every(([role, item]) => (role === 'lineTeam' && item === null) || item?.status === 'CONFIRMED'))
     }
 

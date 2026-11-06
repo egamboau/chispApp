@@ -1,3 +1,4 @@
+import { GroupSlots } from '../src/admin/GroupSlots.tsx'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createElement } from 'react'
@@ -56,7 +57,7 @@ test('admin reads include inactive tournaments, typed references and same-catego
     calls.push(path)
     const data: Record<string, unknown> = {
       '/api/admin/tournaments': [tournament], '/api/admin/tournaments/1/phases': [source, phase, { ...source, id: 3, tournamentType: 'FEMALE' }],
-      '/api/admin/phases/3/groups': [], '/api/admin/phases/3/memberships': [], '/api/admin/teams?tournamentId=1': [], '/api/admin/phases/2/groups': [], '/api/admin/phases/2/memberships': [], '/api/admin/matches': [match, { ...match, id: 6, phaseId: 3, tournamentType: 'FEMALE', status: 'LIVE' }, { ...match, id: 7, phaseId: 99 }], '/api/admin/phases/1/groups': [{ id: 1, phaseId: 1, name: 'Origen' }],
+      '/api/admin/phases/2/membership-slots': [], '/api/admin/phases/3/membership-slots': [], '/api/admin/phases/3/groups': [], '/api/admin/phases/3/memberships': [], '/api/admin/teams?tournamentId=1': [], '/api/admin/phases/2/groups': [], '/api/admin/phases/2/memberships': [], '/api/admin/matches': [match, { ...match, id: 6, phaseId: 3, tournamentType: 'FEMALE', status: 'LIVE' }, { ...match, id: 7, phaseId: 99 }], '/api/admin/phases/1/groups': [{ id: 1, phaseId: 1, name: 'Origen' }],
     }
     assert.ok(path in data, path)
     return Response.json(data[path])
@@ -113,7 +114,7 @@ test('fixed-team editors restrict local group, visitor phase and line tournament
     tournaments: [tournament], tournament, phases: [source, phase], phase, groups: [{ id: 2, phaseId: 2, name: 'Grupo A' }],
     teams: [1, 2, 3].map(id => ({ id, name: `Equipo ${id}`, tournamentId: 1, tournamentType: 'MALE' })),
     memberships: [{ phaseId: 2, groupId: 2, teamId: 1 }, { phaseId: 2, groupId: 3, teamId: 2 }],
-    rules: [], sanctions: [], teamCards: [], matches: [], tables: [], positions: undefined, sourcePhases: [source], sourceGroups: {},
+    slots: [], winnerPhases: [], winnerMatches: [], rules: [], sanctions: [], teamCards: [], matches: [], tables: [], positions: undefined, sourcePhases: [source], sourceGroups: {},
   }
   const list = renderToStaticMarkup(createElement(Calendar, { data, run: async () => false }))
   assert.match(list, /\+ Partido/)
@@ -182,7 +183,7 @@ test('teams open with grouped membership lists and task panels rather than every
     tournaments: [tournament], tournament, phases: [phase], phase,
     teams: [{ id: 1, name: 'Inscrito', tournamentId: 1, tournamentType: 'MALE' }, { id: 2, name: 'Disponible', tournamentId: 1, tournamentType: 'MALE' }],
     groups: [{ id: 2, phaseId: 2, name: 'Grupo A' }], memberships: [{ phaseId: 2, groupId: 2, teamId: 1 }],
-    rules: [], sanctions: [], teamCards: [], matches: [], tables: [], positions: undefined, sourcePhases: [], sourceGroups: {},
+    slots: [], winnerPhases: [], winnerMatches: [], rules: [], sanctions: [], teamCards: [], matches: [], tables: [], positions: undefined, sourcePhases: [], sourceGroups: {},
   }
   const html = renderToStaticMarkup(createElement(Teams, { data, run: async () => false, revision: 0 }))
   assert.match(html, /Grupo A[\s\S]*Ver Inscrito[\s\S]*Sin grupo en esta fase[\s\S]*Ver Disponible/)
@@ -218,7 +219,7 @@ test('tournament General lists every tournament and opens editing in the chosen 
   const { Tournaments } = await import('../src/admin/Tournaments.tsx')
   const data: AdminData = {
     tournaments: [tournament, { ...tournament, id: 9, name: 'Otra copa', active: true }], tournament, phases: [phase], phase,
-    teams: [], groups: [], memberships: [], rules: [], sanctions: [], teamCards: [], matches: [], tables: [], positions: undefined, sourcePhases: [], sourceGroups: {},
+    teams: [], groups: [], memberships: [], slots: [], winnerPhases: [], winnerMatches: [], rules: [], sanctions: [], teamCards: [], matches: [], tables: [], positions: undefined, sourcePhases: [], sourceGroups: {},
   }
   let selected: number | undefined
   const props = { data, run: async () => false, tab: 'General', setTab() {}, selectPhase() {}, selectTournament(id: number) { selected = id } }
@@ -259,7 +260,7 @@ test('current phase form separates categories and saves both selections includin
   const female = { ...phase, id: 8, name: 'Grupos femeninos', tournamentType: 'FEMALE' as const }
   const data: AdminData = {
     tournaments: [tournament], tournament: { ...tournament, currentFemalePhaseId: 8 }, phases: [phase, female], phase,
-    teams: [], groups: [], memberships: [], rules: [], sanctions: [], teamCards: [], matches: [], tables: [], positions: undefined, sourcePhases: [], sourceGroups: {},
+    teams: [], groups: [], memberships: [], slots: [], winnerPhases: [], winnerMatches: [], rules: [], sanctions: [], teamCards: [], matches: [], tables: [], positions: undefined, sourcePhases: [], sourceGroups: {},
   }
   let payload: unknown
   t.mock.method(globalThis, 'fetch', async (_url: string, init: RequestInit) => { payload = JSON.parse(init.body as string); return new Response(null, { status: 204 }) })
@@ -305,4 +306,23 @@ test('admin errors render the API message as a focusable alert and retain retry 
   assert.ok(html.includes(message))
   assert.match(html, /<button>REINTENTAR<\/button>/)
   assert.equal(renderToStaticMarkup(createElement(ErrorNotice, { message: '' })), '')
+})
+
+test('issue 62: calendar uses group-place references without inventing teams', () => {
+  const slot = { kind: 'MATCH_WINNER', sourceMatchId: 17 } as const
+  assert.deepEqual(participantValues({ 'teamA-kind': 'SLOT', 'teamA-slot': JSON.stringify(slot), 'teamB-kind': 'TEAM', 'teamB-team': '2', 'lineTeam-kind': 'TEAM', 'lineTeam-team': '' }), {
+    teamA: slot, teamB: { kind: 'TEAM', teamId: 2 }, lineTeam: null,
+  })
+  assert.throws(() => participantValues({ 'teamA-kind': 'SLOT', 'teamA-slot': '{}' }))
+})
+
+
+test('issue 62: groups expose pending references, origin formats and stale places beside each group', () => {
+  const data: AdminData = { tournaments: [tournament], tournament, phases: [source, phase], phase, teams: [], groups: [{ id: 2, phaseId: 2, name: 'Destino' }], rules: [], memberships: [], sanctions: [], teamCards: [], matches: [], tables: [], positions: undefined, sourcePhases: [source], sourceGroups: { 1: [{ id: 1, phaseId: 1, name: 'A' }] }, winnerPhases: [], winnerMatches: [], slots: [{ id: 1, phaseId: 2, groupId: 2, reference: { kind: 'GROUP_POSITION', sourcePhaseId: 1, sourceGroupId: 1, position: 1 }, resolvedTeamId: 1, teamName: 'A', label: '1.º del Grupo A', status: 'STALE' }] }
+  const html = renderToStaticMarkup(createElement(GroupSlots, { data, groupId: 2, run: async () => false }))
+  assert.match(html, /Añadir cupo pendiente/)
+  assert.match(html, /Ganador de partido/)
+  assert.match(html, /1.º del Grupo A/)
+  assert.match(html, /Desactualizado: revisar origen/)
+  assert.match(html, /QUITAR CUPO/)
 })
