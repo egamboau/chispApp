@@ -1,3 +1,4 @@
+import { matchDisplayLabel } from '@jupas/shared';
 import DBConnection, { DatabaseConnectionError } from "../db/db_connection";
 import { Group } from "../models/group";
 import { Match, MatchFilters, MatchInput, MatchParticipant, MatchParticipants, StoredMatchParticipants, MatchParticipantDetails } from "../models/match";
@@ -70,13 +71,13 @@ export class MatchRepository {
     }
 
     insertMatch(match: MatchInput, includeParticipants = true): Match {
-        const result = this.dbConnection.executeNamedQuery('INSERT INTO matches(tournamentType,date,jornada,teamA,teamB,lineTeam,court,sortOrder,phaseId,groupId,teamAId,teamBId,lineTeamId) VALUES(@tournamentType,@date,@jornada,@teamA,@teamB,@lineTeam,@court,@sortOrder,@phaseId,@groupId,@teamAId,@teamBId,@lineTeamId)', match)
+        const result = this.dbConnection.executeNamedQuery('INSERT INTO matches(label,tournamentType,date,jornada,teamA,teamB,lineTeam,court,sortOrder,phaseId,groupId,teamAId,teamBId,lineTeamId) VALUES(@label,@tournamentType,@date,@jornada,@teamA,@teamB,@lineTeam,@court,@sortOrder,@phaseId,@groupId,@teamAId,@teamBId,@lineTeamId)', { ...match, label: match.label ?? null })
         return this.getMatch(Number(result.lastInsertRowid), includeParticipants)!
     }
 
     updateMatch(id: number, match: MatchInput, includeParticipants = true): Match {
         if (this.hasParticipantReferences(id)) throw new DatabaseConnectionError('ParticipantReferenceError', 'Este partido requiere editar sus referencias de participantes.', undefined)
-        this.dbConnection.executeNamedQuery('UPDATE matches SET tournamentType=@tournamentType,date=@date,jornada=@jornada,teamA=@teamA,teamB=@teamB,lineTeam=@lineTeam,court=@court,sortOrder=@sortOrder,phaseId=@phaseId,groupId=@groupId,teamAId=@teamAId,teamBId=@teamBId,lineTeamId=@lineTeamId,updatedAt=CURRENT_TIMESTAMP WHERE id=@id', { ...match, id })
+        this.dbConnection.executeNamedQuery('UPDATE matches SET label=@label,tournamentType=@tournamentType,date=@date,jornada=@jornada,teamA=@teamA,teamB=@teamB,lineTeam=@lineTeam,court=@court,sortOrder=@sortOrder,phaseId=@phaseId,groupId=@groupId,teamAId=@teamAId,teamBId=@teamBId,lineTeamId=@lineTeamId,updatedAt=CURRENT_TIMESTAMP WHERE id=@id', { ...match, label: match.label === undefined ? this.getMatch(id, false)?.label ?? null : match.label, id })
         return this.getMatch(id, includeParticipants)!
     }
 
@@ -120,6 +121,10 @@ export class MatchRepository {
                 resolvedTeam: resolvedTeamId === null ? null : { id: resolvedTeamId, name: match[role]! },
                 status: resolvedTeamId === null ? 'PENDING' : confirmed ? 'CONFIRMED' : 'RESOLVED',
             }
+            if (reference.kind === 'MATCH_WINNER' && resolvedTeamId === null) {
+                const source = this.getMatch(reference.sourceMatchId, false)
+                displayed[role] = source ? `Ganador de ${matchDisplayLabel(source)}` : 'Ganador por definir'
+            }
             if (match.status === 'SCHEDULED' && reference.kind === 'GROUP_POSITION' && !confirmed) {
                 const phase = this.dbConnection.fetchOneFromQuery<Phase>('SELECT * FROM phases WHERE id=?', reference.sourcePhaseId)!
                 const group = this.dbConnection.fetchOneFromQuery<Group>('SELECT * FROM groups_table WHERE id=?', reference.sourceGroupId)!
@@ -151,6 +156,11 @@ export class MatchRepository {
             this.referenceService().refreshReferences()
             return this.getMatch(saved.id)!
         })
+    }
+
+    /** Changes public metadata in any lifecycle state without touching participants or results. */
+    updateLabel(id: number, label: string | null): Match | undefined {
+        return this.dbConnection.executeQuery('UPDATE matches SET label=?,updatedAt=CURRENT_TIMESTAMP WHERE id=?', label, id).changes ? this.getMatch(id) : undefined
     }
 
     updateSortOrder(id: number, sortOrder: number | null): Match | undefined {

@@ -9,6 +9,15 @@ import {
   TournamentTypeSchema,
 } from './common';
 
+/** Optional public match label; blank input clears it. Kept short enough for winner placeholders. */
+export const MatchLabelSchema = z.preprocess(value => typeof value === 'string' && !value.trim() ? null : value,
+  z.string().trim().min(1).max(80).nullable().optional());
+
+/** Names a match without database IDs or potentially unpublished participant details. */
+export function matchDisplayLabel(match: { label?: string | null; phaseName?: string; date: string; jornada: string; court: number }): string {
+  return match.label || `${match.phaseName || 'Partido'} · ${match.date} · ${match.jornada === 'MORNING' ? 'Mañana' : 'Tarde'} · Cancha ${match.court}`;
+}
+
 /** Match lifecycle state: scheduled, live or finished. */
 export const MatchStatusSchema = z.enum(['SCHEDULED', 'LIVE', 'FINISHED']);
 
@@ -28,6 +37,7 @@ export const MatchParticipantsSchema = z.object({
 
 /** Scheduling with references, including teams that are not yet known. */
 export const ParticipantMatchInputSchema = z.object({
+  label: MatchLabelSchema,
   phaseId: CoercedIdSchema,
   groupId: CoercedIdSchema,
   date: DateSchema,
@@ -64,6 +74,7 @@ export type ParticipantMatchInput = z.infer<typeof ParticipantMatchInputSchema>;
 export type MatchParticipantDetails = z.infer<typeof MatchParticipantsResponseSchema>;
 
 const matchInputFields = {
+  label: MatchLabelSchema,
   groupId: CoercedIdSchema,
   teamAId: CoercedIdSchema,
   teamBId: CoercedIdSchema,
@@ -161,15 +172,16 @@ export const MatchScoringResponseSchema = z.object({
 /** List of player-scoring responses for a match. */
 export const MatchScoringListResponseSchema = z.array(MatchScoringResponseSchema);
 
-/** Match details for display; hidden lines and undefined order are nullable, and lineVisible parses to boolean. */
+/** Match details for display; participant captions may combine names and metadata. Hidden lines and undefined order are nullable. */
 export const MatchResponseSchema = z.object({
   id: IdSchema,
+  label: z.string().max(80).nullable().optional(),
   tournamentType: TournamentTypeSchema,
   date: DateSchema,
   jornada: MatchTimeSchema,
-  teamA: NameSchema,
-  teamB: NameSchema,
-  lineTeam: NameSchema.nullable(),
+  teamA: z.string().min(1),
+  teamB: z.string().min(1),
+  lineTeam: z.string().min(1).nullable(),
   court: z.number().int().positive(),
   sortOrder: z.number().int().positive().nullable(),
   scoreA: z.number().int().nonnegative(),

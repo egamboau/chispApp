@@ -55,7 +55,7 @@ test('scheduled group participants stay pending until confirmed and show no scor
 test('list announces loading and empty states and renders supplied matches', () => {
   assert.match(renderToStaticMarkup(createElement(MatchList, { loading: true })), /role="status".*Cargando/)
   assert.match(renderToStaticMarkup(createElement(MatchList, { matches: [] })), /role="status".*No hay partidos/)
-  assert.match(renderToStaticMarkup(createElement(MatchList, { matches: [match] })), /Partido 1/)
+  assert.match(renderToStaticMarkup(createElement(MatchList, { matches: [match] })), /Fase · 2026-10-20 · Mañana · Cancha 1/)
 })
 
 test('layout has a skip target and navigation identifies only the current link', () => {
@@ -98,3 +98,10 @@ test('one React root chooses admin only for preserved admin URLs and lazy-loads 
     assert.match(renderToStaticMarkup(App()), /404.*Página no encontrada/)
   }
 })
+
+test('public match cards show the editable label without database IDs or hidden lines', () => {
+  const html = renderToStaticMarkup(createElement(MatchCard, { match: { ...match, label: 'Semifinal 1' } }));
+  assert.match(html, /aria-label="Semifinal 1"/);
+  assert.match(html, /<h3>Semifinal 1<\/h3>/);
+  assert.doesNotMatch(html, /Partido 1|Línea secreta/);
+});

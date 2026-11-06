@@ -496,3 +496,48 @@ test('issue 62: valida origen/categoría/orden, edición segura, conflictos y em
     assert.equal(details.getSlots(later.id).length, 0);
     assert.equal(details.getMemberships(later.id).length, 1);
 });
+
+/** Public labels survive restart and old clients; renaming never mutates source identities or scores. */
+test('etiquetas públicas persisten y actualizan ganadores y cupos sin exponer IDs', async t => {
+    const f = fixture(t);
+    const sourceInput = f.input({ teamA: f.fixed(0), teamB: f.fixed(1) });
+    const source = f.service.saveParticipantMatch({ ...sourceInput, label: '  Semifinal 1  ' });
+    assert.equal(source.label, 'Semifinal 1');
+    const final = f.service.saveParticipantMatch(f.input({ teamA: f.winner(source.id), teamB: f.fixed(2) }));
+    assert.equal(final.teamA, 'Ganador de Semifinal 1');
+    const later = f.db.insertPhase({ tournamentId: f.tournament.id, name: 'Destino', type: 'TABLE', tournamentType: 'MALE', sortOrder: 3 })!;
+    const group = f.db.insertGroup(later.id, 'A')!;
+    const details = new PhaseDetailService(new PhaseDetailRepository(f.db), new PhaseService(new PhaseRepository(f.db)));
+    const slot = details.saveSlot(later.id, group.id, f.winner(source.id));
+    assert.equal(slot.label, 'Ganador de Semifinal 1');
+    // A scheduling update from an older client must not erase a public label.
+    assert.equal(f.service.saveParticipantMatch(sourceInput, source.id).label, 'Semifinal 1');
+    const restarted = new DBConnection(f.databasePath);
+    assert.equal(serviceFor(restarted).getMatch(source.id, true)?.label, 'Semifinal 1');
+    const controller = new MatchController(f.service, null as never);
+    const rename = async (body: unknown, id = source.id) => {
+        let status = 200;
+        const response = { status(value: number) { status = value; return this; }, json() { return this; } };
+        await controller.updateLabel({ params: { id: String(id) }, body } as never, response as never, error => { throw error; });
+        return status;
+    };
+    assert.equal(await rename({ label: 'x'.repeat(81) }), 400);
+    assert.equal(await rename({ label: 12 }), 400);
+    assert.equal(await rename({}), 400);
+    assert.equal(await rename({ label: 'Otra' }, 999999), 404);
+    f.db.executeQuery("UPDATE matches SET status='FINISHED',scoreA=2,scoreB=1 WHERE id=?", source.id);
+    assert.equal(await rename({ label: 'Semifinal Norte' }), 200);
+    assert.equal(f.service.getMatch(final.id, true)?.teamA, 'Ganador de Semifinal Norte');
+    assert.equal(details.getSlots(later.id)[0]?.label, 'Ganador de Semifinal Norte');
+    const after = f.service.getMatch(source.id, true)!;
+    assert.deepEqual([after.status, after.scoreA, after.scoreB, after.teamAId], ['FINISHED', 2, 1, source.teamAId]);
+    assert.equal(await rename({ label: '   ' }), 200);
+    const fallback = f.service.getMatch(final.id, true)!;
+    assert.match(fallback.teamA, /Ganador de Eliminación · 2026-10-20 · Mañana · Cancha 1/);
+    MatchResponseSchema.parse(fallback);
+    // Simulate the pre-label schema and verify the additive startup migration.
+    f.db.executeQuery('ALTER TABLE matches DROP COLUMN label');
+    const migrated = serviceFor(new DBConnection(f.databasePath)).getMatch(source.id, true)!;
+    assert.equal(migrated.label, null);
+    assert.deepEqual([migrated.status, migrated.scoreA, migrated.scoreB], ['FINISHED', 2, 1]);
+});
