@@ -6,17 +6,17 @@ export function migrateMembershipSlots(database: Database.Database): void {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         phaseId INTEGER NOT NULL REFERENCES phases(id) ON DELETE RESTRICT,
         groupId INTEGER NOT NULL REFERENCES groups_table(id) ON DELETE RESTRICT,
-        kind TEXT NOT NULL CHECK(kind IN ('GROUP_POSITION','MATCH_WINNER')),
+        kind TEXT NOT NULL CHECK(kind IN ('GROUP_POSITION','MATCH_WINNER','MATCH_LOSER')),
         sourcePhaseId INTEGER REFERENCES phases(id) ON DELETE RESTRICT,
         sourceGroupId INTEGER REFERENCES groups_table(id) ON DELETE RESTRICT,
         position INTEGER CHECK(position IS NULL OR (typeof(position)='integer' AND position>0)),
         sourceMatchId INTEGER REFERENCES matches(id) ON DELETE RESTRICT,
         resolvedTeamId INTEGER REFERENCES teams(id) ON DELETE RESTRICT,
         CHECK((kind='GROUP_POSITION' AND sourcePhaseId IS NOT NULL AND sourceGroupId IS NOT NULL AND position IS NOT NULL AND sourceMatchId IS NULL)
-           OR (kind='MATCH_WINNER' AND sourceMatchId IS NOT NULL AND sourcePhaseId IS NULL AND sourceGroupId IS NULL AND position IS NULL))
+           OR (kind IN ('MATCH_WINNER','MATCH_LOSER') AND sourceMatchId IS NOT NULL AND sourcePhaseId IS NULL AND sourceGroupId IS NULL AND position IS NULL))
     );
     CREATE UNIQUE INDEX IF NOT EXISTS membership_slot_position ON membership_slots(phaseId,sourcePhaseId,sourceGroupId,position) WHERE kind='GROUP_POSITION';
-    CREATE UNIQUE INDEX IF NOT EXISTS membership_slot_winner ON membership_slots(phaseId,sourceMatchId) WHERE kind='MATCH_WINNER';
+    CREATE UNIQUE INDEX IF NOT EXISTS membership_slot_winner ON membership_slots(phaseId,kind,sourceMatchId) WHERE kind IN ('MATCH_WINNER','MATCH_LOSER');
     CREATE UNIQUE INDEX IF NOT EXISTS membership_slot_team ON membership_slots(phaseId,resolvedTeamId) WHERE resolvedTeamId IS NOT NULL;
     CREATE VIEW IF NOT EXISTS invalid_membership_slots AS
         SELECT r.id FROM membership_slots r
@@ -30,7 +30,7 @@ export function migrateMembershipSlots(database: Database.Database): void {
            OR source.sortOrder>=destination.sortOrder
            OR (r.kind='GROUP_POSITION' AND (source.type<>'TABLE' OR g.phaseId<>source.id
                OR r.position>(SELECT COUNT(*) FROM phase_memberships pm WHERE pm.phaseId=source.id AND pm.groupId=g.id)))
-           OR (r.kind='MATCH_WINNER' AND (source.type<>'ELIMINATION' OR m.tournamentType IS NOT source.tournamentType));`);
+           OR (r.kind IN ('MATCH_WINNER','MATCH_LOSER') AND (source.type<>'ELIMINATION' OR m.tournamentType IS NOT source.tournamentType));`);
     const guard = `SELECT RAISE(ABORT,'Referencia de cupo inválida: revisa origen, torneo, categoría y orden de fase.') WHERE EXISTS(SELECT 1 FROM invalid_membership_slots);`;
     for (const [name, event, table] of [
         ['slot_insert', 'INSERT', 'membership_slots'], ['slot_update', 'UPDATE', 'membership_slots'],

@@ -541,3 +541,76 @@ test('etiquetas públicas persisten y actualizan ganadores y cupos sin exponer I
     assert.equal(migrated.label, null);
     assert.deepEqual([migrated.status, migrated.scoreA, migrated.scoreB], ['FINISHED', 2, 1]);
 });
+
+test('semifinal losers advance to third place, refresh on corrections and retain started participants', t => {
+    const f = fixture(t);
+    const loser = (sourceMatchId: number): MatchParticipant => ({ kind: 'MATCH_LOSER', sourceMatchId });
+    const semi1 = f.service.saveParticipantMatch({ ...f.input({ teamA: f.fixed(0), teamB: f.fixed(1) }), label: 'Semifinal 1' });
+    const semi2 = f.service.saveParticipantMatch(f.input({ teamA: f.fixed(3), teamB: f.fixed(4) }));
+    const third = f.service.saveParticipantMatch(f.input({ teamA: loser(semi1.id), teamB: loser(semi2.id) }));
+    assert.match(third.teamA, /Perdedor de Semifinal 1/);
+    assert.equal(third.teamAId, null);
+    assert.deepEqual(MatchResponseSchema.parse(third).participants.teamA.reference, loser(semi1.id));
+    assert.throws(() => f.service.saveParticipantMatch(f.input({ teamA: loser(third.id), teamB: f.fixed(1) }), semi1.id));
+    assert.throws(() => f.service.saveParticipantMatch(f.input({ teamA: loser(999999), teamB: f.fixed(1) })));
+    for (const semi of [semi1, semi2]) {
+        f.service.changeStatus(semi.id, 'SCHEDULED', 'LIVE');
+        f.service.changeScore(semi.id, 'A', 1);
+        f.service.changeStatus(semi.id, 'LIVE', 'FINISHED');
+    }
+    assert.equal(f.service.getMatch(third.id, true)?.teamAId, f.teams[1]!.id);
+    assert.equal(f.service.getMatch(third.id, true)?.teamBId, f.teams[4]!.id);
+    const later = f.db.insertPhase({ tournamentId: f.tournament.id, name: 'Podio', type: 'ELIMINATION', tournamentType: 'MALE', sortOrder: 3 })!;
+    const group = f.db.insertGroup(later.id, 'General')!;
+    const details = new PhaseDetailService(new PhaseDetailRepository(f.db), new PhaseService(new PhaseRepository(f.db)));
+    const slot = details.saveSlot(later.id, group.id, loser(semi1.id));
+    assert.equal(slot.resolvedTeamId, f.teams[1]!.id);
+    assert.match(slot.label, /Perdedor de Semifinal 1/);
+    const winnerSlot = details.saveSlot(later.id, group.id, f.winner(semi1.id));
+    assert.notEqual(winnerSlot.resolvedTeamId, slot.resolvedTeamId);
+    f.service.setResult(semi1.id, 0, 2);
+    assert.equal(f.service.getMatch(third.id, true)?.teamAId, f.teams[0]!.id);
+    assert.equal(details.getSlots(later.id)[0]!.resolvedTeamId, f.teams[0]!.id);
+    assert.equal(details.getSlots(later.id).find(item => item.id === winnerSlot.id)!.resolvedTeamId, f.teams[1]!.id);
+    f.service.setResult(semi1.id, 1, 1);
+    assert.equal(f.service.getMatch(third.id, true)?.teamAId, null);
+    f.service.setResult(semi1.id, 0, 2);
+    f.service.changeStatus(third.id, 'SCHEDULED', 'LIVE');
+    f.service.setResult(semi1.id, 3, 0);
+    assert.equal(f.service.getMatch(third.id, true)?.teamAId, f.teams[0]!.id);
+    assert.equal(f.service.participantsConfirmed(third.id), false);
+    assert.deepEqual(serviceFor(new DBConnection(f.databasePath)).getMatchParticipants(third.id)?.teamA.reference, loser(semi1.id));
+});
+
+test('upgrades legacy winner reference constraints without losing slots or participant sources', t => {
+    const f = fixture(t);
+    const semi = f.service.saveParticipantMatch(f.input({ teamA: f.fixed(0), teamB: f.fixed(1) }));
+    const final = f.service.saveParticipantMatch(f.input({ teamA: f.winner(semi.id), teamB: f.fixed(2) }));
+    const later = f.db.insertPhase({ tournamentId: f.tournament.id, name: 'Final', type: 'ELIMINATION', tournamentType: 'MALE', sortOrder: 3 })!;
+    const group = f.db.insertGroup(later.id, 'General')!;
+    const details = new PhaseDetailService(new PhaseDetailRepository(f.db), new PhaseService(new PhaseRepository(f.db)));
+    const slot = details.saveSlot(later.id, group.id, f.winner(semi.id));
+    const raw = new Database(f.databasePath);
+    raw.transaction(() => {
+        const guards = raw.prepare("SELECT type,name FROM sqlite_master WHERE (type='trigger' AND (name LIKE 'match_reference_%' OR name LIKE 'membership_slot_guard_%')) OR (type='view' AND name IN ('invalid_match_references','invalid_membership_slots'))").all() as Array<{ type: string; name: string }>;
+        for (const guard of guards) raw.exec(`DROP ${guard.type} "${guard.name}"`);
+        for (const name of ['match_participant_references', 'membership_slots']) {
+            const { sql } = raw.prepare("SELECT sql FROM sqlite_master WHERE name=?").get(name) as { sql: string };
+            raw.exec(sql.replace(name, `${name}_legacy`).replaceAll(",'MATCH_LOSER'", '').replaceAll("kind IN ('MATCH_WINNER')", "kind='MATCH_WINNER'"));
+            raw.exec(`INSERT INTO ${name}_legacy SELECT * FROM ${name}`);
+            raw.exec(`DROP TABLE ${name}`);
+            raw.exec(`ALTER TABLE ${name}_legacy RENAME TO ${name}`);
+        }
+    })();
+    raw.close();
+    const upgraded = new DBConnection(f.databasePath), service = serviceFor(upgraded);
+    assert.deepEqual(service.getMatchParticipants(final.id)?.teamA.reference, f.winner(semi.id));
+    const newDetails = new PhaseDetailService(new PhaseDetailRepository(upgraded), new PhaseService(new PhaseRepository(upgraded)));
+    assert.equal(newDetails.getSlots(later.id)[0]!.id, slot.id);
+    const loser = { kind: 'MATCH_LOSER' as const, sourceMatchId: semi.id };
+    const third = service.saveParticipantMatch(f.input({ teamA: loser, teamB: f.fixed(3) }));
+    assert.deepEqual(service.getMatchParticipants(third.id)?.teamA.reference, loser);
+    assert.throws(() => service.saveParticipantMatch(f.input({ teamA: { kind: 'MATCH_LOSER', sourceMatchId: third.id }, teamB: f.fixed(4) }), semi.id));
+    assert.equal(newDetails.saveSlot(later.id, group.id, loser).reference.kind, 'MATCH_LOSER');
+    assert.deepEqual(serviceFor(new DBConnection(f.databasePath)).getMatchParticipants(third.id)?.teamA.reference, loser);
+});

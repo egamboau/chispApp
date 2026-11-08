@@ -8,6 +8,7 @@ import { Tournament } from "../models/tournament";
 import { Group } from "../models/group";
 import { Team } from "../models/team";
 import { createMatchReferences, migrateMatchParticipants } from './match_participants';
+import { migrateMatchOutcomes } from './match_outcomes';
 import { migrateMembershipSlots } from './membership_slots';
 
 export class DatabaseConnectionError extends Error {
@@ -107,6 +108,7 @@ class DBConnection {
         CREATE TABLE IF NOT EXISTS classification_rules (id INTEGER PRIMARY KEY AUTOINCREMENT,phaseId INTEGER NOT NULL REFERENCES phases(id) ON DELETE CASCADE,startPosition INTEGER NOT NULL CHECK(startPosition>0),endPosition INTEGER NOT NULL CHECK(endPosition>=startPosition),label TEXT NOT NULL CHECK(length(trim(label))>0));`);
 
 
+        migrateMatchOutcomes(this.database);
         createMatchReferences(this.database);
         for (const role of ['teamA', 'teamB', 'lineTeam']) {
             this.database.exec(`INSERT OR IGNORE INTO teams(tournamentType,name)

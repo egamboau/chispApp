@@ -79,7 +79,7 @@ Admin forms parse shared input schemas and validated API responses. Mutations us
 same-origin `/api/admin`, display server errors without retrying writes, and block
 duplicate submissions. Failed reads disable stale editing; selection changes abort
 old requests. Calendar SSE refreshes retain filters and drafts. Confirmed group
-positions and API-created match-winner references survive schedule edits; the server
+positions and match-winner/loser references survive schedule edits; the server
 owns all transition and assignment checks. Scoring deep links resolve tournament and
 phase before loading a finished match, including inactive tournaments. Create scoring
 tables in Tablas, then select one for new or existing player totals. The UI validates

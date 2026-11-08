@@ -107,7 +107,7 @@ export interface MembershipSlot {
     id: number;
     phaseId: number;
     groupId: number;
-    kind: 'GROUP_POSITION' | 'MATCH_WINNER';
+    kind: 'GROUP_POSITION' | 'MATCH_WINNER' | 'MATCH_LOSER';
     sourcePhaseId: number | null;
     sourceGroupId: number | null;
     position: number | null;

@@ -75,7 +75,7 @@ The request types are named `CreateGroup` and `UpdateGroup`.
 | Contract | Purpose |
 | --- | --- |
 | `MatchStatusSchema` | `SCHEDULED`, `LIVE` or `FINISHED`. |
-| `MatchParticipantSchema`, `MatchParticipantsSchema` | Request references to a fixed team, group position or match winner; all three roles are required. |
+| `MatchParticipantSchema`, `MatchParticipantsSchema` | Request references to a fixed team, group position or match winner/loser; local and visitor are required, line is optional. |
 | `ParticipantMatchInputSchema` | Current participant scheduling request; omitted, null or blank sort order becomes null. |
 | `MatchParticipantResponseSchema`, `MatchParticipantDetailsSchema`, `MatchParticipantsResponseSchema` | Numeric response references, resolution details and all three roles; hidden line details are null. |
 | `MatchInputSchema` | Match scheduling body: `groupId`, three team IDs, date, jornada, court and optional nullable sort order. Phase, category and team names are derived from IDs. |

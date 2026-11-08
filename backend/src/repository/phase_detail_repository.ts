@@ -94,7 +94,7 @@ export class PhaseDetailRepository {
         if (reference.kind === 'TEAM') throw new DatabaseConnectionError('PositionResolutionError', 'El cupo requiere una referencia.', undefined)
         const values = [phaseId, groupId, reference.kind, reference.kind === 'GROUP_POSITION' ? reference.sourcePhaseId : null,
             reference.kind === 'GROUP_POSITION' ? reference.sourceGroupId : null, reference.kind === 'GROUP_POSITION' ? reference.position : null,
-            reference.kind === 'MATCH_WINNER' ? reference.sourceMatchId : null]
+            (reference.kind === 'MATCH_WINNER' || reference.kind === 'MATCH_LOSER') ? reference.sourceMatchId : null]
         if (id !== undefined) {
             this.dbConnection.executeQuery('UPDATE membership_slots SET phaseId=?,groupId=?,kind=?,sourcePhaseId=?,sourceGroupId=?,position=?,sourceMatchId=? WHERE id=?', ...values, id)
             return id
@@ -118,7 +118,7 @@ export class PhaseDetailRepository {
         return this.dbConnection.fetchAllFromQuery('SELECT * FROM match_participant_references ORDER BY matchId,role')
     }
 
-    /** Resolves only scheduled winner participants; started matches retain their recorded participants. */
+    /** Resolves only scheduled outcome participants; started matches retain their recorded participants. */
     assignWinner(matchId: number, role: 'teamA' | 'teamB' | 'lineTeam', teamId: number | null): void {
         const team = teamId === null ? undefined : this.dbConnection.fetchOneElementFromTable<Team>('teams', teamId)
         this.dbConnection.executeQuery(`UPDATE matches SET ${role}Id=?,${role}=?,updatedAt=CURRENT_TIMESTAMP WHERE id=? AND status='SCHEDULED'`, teamId, team?.name ?? 'Ganador pendiente', matchId)

@@ -12,6 +12,7 @@ const participantSchema = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('TEAM'), teamId: idSchema }).strict(),
     z.object({ kind: z.literal('GROUP_POSITION'), sourcePhaseId: idSchema, sourceGroupId: idSchema, position: idSchema }).strict(),
     z.object({ kind: z.literal('MATCH_WINNER'), sourceMatchId: idSchema }).strict(),
+  z.object({ kind: z.literal('MATCH_LOSER'), sourceMatchId: idSchema }).strict(),
 ]);
 const participantMatchSchema = z.object({
     label: MatchLabelSchema,

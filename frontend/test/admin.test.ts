@@ -109,7 +109,7 @@ test('invalid payloads and cancelled administrative reads cannot become editable
 })
 
 
-test('fixed-team editors restrict local group, visitor phase and line tournament independently', () => {
+test('fixed-team editors restrict both opponents to the selected group and allow tournament lines', () => {
   const data: AdminData = {
     tournaments: [tournament], tournament, phases: [source, phase], phase, groups: [{ id: 2, phaseId: 2, name: 'Grupo A' }],
     teams: [1, 2, 3].map(id => ({ id, name: `Equipo ${id}`, tournamentId: 1, tournamentType: 'MALE' })),
@@ -130,8 +130,14 @@ test('fixed-team editors restrict local group, visitor phase and line tournament
   const html = renderToStaticMarkup(createElement(MatchForm, { data, run: async () => false, cancel() {} }))
   const role = (name: string) => html.split(`<legend>${name}</legend>`)[1]!.split('</fieldset>')[0]!
   assert.match(role('Local'), /Equipo 1/); assert.doesNotMatch(role('Local'), /Equipo [23]/)
-  assert.match(role('Visitante'), /Equipo 2/); assert.doesNotMatch(role('Visitante'), /Equipo 3/)
+  assert.match(role('Visitante'), /Equipo 1/); assert.doesNotMatch(role('Visitante'), /Equipo [23]/)
   assert.match(role('Línea'), /Equipo 3/)
+  const otherGroup = renderToStaticMarkup(createElement(MatchForm, { data, match: { ...match, groupId: 3, participants: { teamA: participant, teamB: participant, lineTeam: participant } }, run: async () => false, cancel() {} }))
+  for (const name of ['Local', 'Visitante']) {
+    const options = otherGroup.split(`<legend>${name}</legend>`)[1]!.split('</fieldset>')[0]!
+    assert.match(options, /Equipo 2/)
+    assert.doesNotMatch(options, /Equipo [13]/)
+  }
 })
 
 test('position buttons confirm before writing and use the source phase for both lifecycle actions', async t => {
@@ -380,3 +386,18 @@ test('calendar exposes editable public match labels instead of source database I
   assert.match(form, /Ganador de Semifinal 1/);
   assert.doesNotMatch(form, /partido 10/);
 });
+
+test('losers can be selected and preserved for a third-place playoff and block descendant sources', () => {
+  const data = winnerData()
+  const values = { 'teamA-kind': 'MATCH_LOSER', 'teamA-match': '10', 'teamB-kind': 'MATCH_LOSER', 'teamB-match': '11', 'lineTeam-kind': 'TEAM', 'lineTeam-team': '' }
+  const references = participantValues(values)
+  assert.deepEqual(references, { teamA: { kind: 'MATCH_LOSER', sourceMatchId: 10 }, teamB: { kind: 'MATCH_LOSER', sourceMatchId: 11 }, lineTeam: null })
+  assert.throws(() => participantValues({ ...values, 'teamA-match': '' }))
+  const third = { ...match, id: 12, participants: { teamA: { ...participant, reference: references.teamA }, teamB: { ...participant, reference: references.teamB }, lineTeam: null } }
+  const html = renderToStaticMarkup(createElement(MatchForm, { data, match: third, run: async () => false, cancel() {} }))
+  assert.match(html, /value="MATCH_LOSER" selected/)
+  assert.match(html, /Perdedor de Semifinal/)
+  assert.match(html, /name="teamA-match"[^]*?value="10" selected/)
+  data.matches.push(third)
+  assert.deepEqual(winnerSources(data, 10).map(item => item.id), [11])
+})

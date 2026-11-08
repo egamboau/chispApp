@@ -9,14 +9,14 @@ export function createMatchReferences(database: Database.Database): void {
     CREATE TABLE IF NOT EXISTS match_participant_references (
         matchId INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
         role TEXT NOT NULL CHECK(role IN ('teamA','teamB','lineTeam')),
-        kind TEXT NOT NULL CHECK(kind IN ('GROUP_POSITION','MATCH_WINNER')),
+        kind TEXT NOT NULL CHECK(kind IN ('GROUP_POSITION','MATCH_WINNER','MATCH_LOSER')),
         sourcePhaseId INTEGER REFERENCES phases(id) ON DELETE RESTRICT,
         sourceGroupId INTEGER REFERENCES groups_table(id) ON DELETE RESTRICT,
         position INTEGER CHECK(position IS NULL OR (typeof(position)='integer' AND position>0)),
         sourceMatchId INTEGER REFERENCES matches(id) ON DELETE RESTRICT,
         PRIMARY KEY(matchId,role),
         CHECK((kind='GROUP_POSITION' AND sourcePhaseId IS NOT NULL AND sourceGroupId IS NOT NULL AND position IS NOT NULL AND sourceMatchId IS NULL)
-           OR (kind='MATCH_WINNER' AND sourceMatchId IS NOT NULL AND sourcePhaseId IS NULL AND sourceGroupId IS NULL AND position IS NULL))
+           OR (kind IN ('MATCH_WINNER','MATCH_LOSER') AND sourceMatchId IS NOT NULL AND sourcePhaseId IS NULL AND sourceGroupId IS NULL AND position IS NULL))
     );
     CREATE INDEX IF NOT EXISTS match_reference_phase ON match_participant_references(sourcePhaseId);
     CREATE INDEX IF NOT EXISTS match_reference_group ON match_participant_references(sourceGroupId);
@@ -45,7 +45,7 @@ export function migrateMatchParticipants(database: Database.Database): void {
                 OR (r.kind='GROUP_POSITION' AND (source.type<>'TABLE' OR g.phaseId<>source.id
                     OR source.sortOrder>=destination.sortOrder
                     OR r.position>(SELECT COUNT(*) FROM phase_memberships pm WHERE pm.phaseId=source.id AND pm.groupId=g.id)))
-                OR (r.kind='MATCH_WINNER' AND (source.type<>'ELIMINATION'
+                OR (r.kind IN ('MATCH_WINNER','MATCH_LOSER') AND (source.type<>'ELIMINATION'
                     OR sourceMatch.tournamentType IS NOT source.tournamentType
                     OR (source.id<>destination.id AND source.sortOrder>=destination.sortOrder)));
         `);
@@ -57,8 +57,8 @@ export function migrateMatchParticipants(database: Database.Database): void {
                 ${validReferences}
                 SELECT RAISE(ABORT,'Las referencias de partidos no pueden formar ciclos.') WHERE EXISTS(
                     WITH RECURSIVE dependencies(id) AS (
-                        SELECT NEW.sourceMatchId WHERE NEW.kind='MATCH_WINNER'
-                        UNION SELECT r.sourceMatchId FROM match_participant_references r JOIN dependencies d ON r.matchId=d.id WHERE r.kind='MATCH_WINNER'
+                        SELECT NEW.sourceMatchId WHERE NEW.kind IN ('MATCH_WINNER','MATCH_LOSER')
+                        UNION SELECT r.sourceMatchId FROM match_participant_references r JOIN dependencies d ON r.matchId=d.id WHERE r.kind IN ('MATCH_WINNER','MATCH_LOSER')
                     ) SELECT 1 FROM dependencies WHERE id=NEW.matchId
                 );
                 SELECT RAISE(ABORT,'Los participantes deben ser diferentes.') WHERE EXISTS(
