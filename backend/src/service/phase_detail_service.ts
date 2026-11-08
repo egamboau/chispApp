@@ -45,7 +45,7 @@ export class PhaseDetailService {
             const group = reference.kind === 'GROUP_POSITION' ? this.repository.getGroup(reference.sourceGroupId) : undefined
             const team = this.repository.getGroupMembers(slot.phaseId, slot.groupId).find(team => team.id === slot.resolvedTeamId)
             return { id: slot.id, phaseId: slot.phaseId, groupId: slot.groupId, reference, resolvedTeamId: slot.resolvedTeamId,
-                teamName: team?.name ?? null, label: reference.kind === 'GROUP_POSITION' ? `${reference.position}.º del Grupo ${group?.name}` : `Ganador de ${matchDisplayLabel({ ...this.repository.getMatch(reference.sourceMatchId), phaseName: source?.name })}`,
+                teamName: team?.name ?? null, label: reference.kind === 'GROUP_POSITION' ? `${reference.position}.º del Grupo ${group?.name}` : `${reference.kind === 'MATCH_LOSER' ? 'Perdedor' : 'Ganador'} de ${matchDisplayLabel({ ...this.repository.getMatch(reference.sourceMatchId), phaseName: source?.name })}`,
                 status: teamId !== null && teamId === slot.resolvedTeamId ? 'CONFIRMED' as const : slot.resolvedTeamId !== null ? 'STALE' as const : 'PENDING' as const }
         })
     }
@@ -95,28 +95,32 @@ export class PhaseDetailService {
         if (!match || match.status !== 'FINISHED' || match.scoreA === match.scoreB || match.teamAId === null || match.teamBId === null) return null
         for (const row of this.repository.getMatchReferences().filter(row => row.matchId === match.id)) {
             const source = row.kind === 'GROUP_POSITION' ? { kind: 'GROUP_POSITION' as const, sourcePhaseId: row.sourcePhaseId!, sourceGroupId: row.sourceGroupId!, position: row.position! }
-                : { kind: 'MATCH_WINNER' as const, sourceMatchId: row.sourceMatchId! }
+                : { kind: row.kind as 'MATCH_WINNER' | 'MATCH_LOSER', sourceMatchId: row.sourceMatchId! }
             if (this.resolveReference(source, new Set(visiting)) !== match[`${row.role}Id`]) return null
         }
-        return match.scoreA > match.scoreB ? match.teamAId : match.teamBId
+        return (match.scoreA > match.scoreB) === (reference.kind === 'MATCH_WINNER') ? match.teamAId : match.teamBId
     }
 
-    /** Refreshes scheduled winners and real memberships atomically; started/history-bearing assignments remain stale. */
+    /** Refreshes scheduled outcomes and real memberships atomically; started/history-bearing assignments remain stale. */
     refreshReferences(): void {
         this.repository.transaction(() => {
-            for (const row of this.repository.getMatchReferences().filter(row => row.kind === 'MATCH_WINNER')) {
+            for (const row of this.repository.getMatchReferences().filter(row => (row.kind === 'MATCH_WINNER' || row.kind === 'MATCH_LOSER'))) {
                 const match = this.repository.getMatch(row.matchId)
-                const teamId = this.resolveReference({ kind: 'MATCH_WINNER', sourceMatchId: row.sourceMatchId! })
+                const teamId = this.resolveReference({ kind: row.kind as 'MATCH_WINNER' | 'MATCH_LOSER', sourceMatchId: row.sourceMatchId! })
                 if (match.status === 'SCHEDULED' && match[`${row.role}Id`] !== teamId) this.repository.assignWinner(match.id, row.role, teamId)
             }
+            const changes = []
             for (const slot of this.repository.getSlots()) {
                 const teamId = this.resolveReference(this.slotReference(slot))
                 if (slot.resolvedTeamId === teamId) continue
                 if (slot.resolvedTeamId !== null && (this.repository.teamHasMatches(slot.phaseId, slot.resolvedTeamId)
                     || this.repository.getSanctions(slot.phaseId).some(row => row.teamId === slot.resolvedTeamId)
                     || this.repository.getTeamCards(slot.phaseId).some(row => row.teamId === slot.resolvedTeamId))) continue
-                this.repository.assignSlot(slot, teamId)
+                changes.push({ slot, teamId })
             }
+            // Release changing memberships first so winner/loser swaps do not violate uniqueness.
+            for (const { slot } of changes) this.repository.assignSlot(slot, null)
+            for (const { slot, teamId } of changes) this.repository.assignSlot({ ...slot, resolvedTeamId: null }, teamId)
         })
     }
 

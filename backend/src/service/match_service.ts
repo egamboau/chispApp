@@ -113,7 +113,8 @@ export class MatchService {
             switch (participant.kind) {
                 case 'TEAM': return `TEAM:${participant.teamId}`
                 case 'GROUP_POSITION': return `GROUP_POSITION:${participant.sourcePhaseId}:${participant.sourceGroupId}:${participant.position}`
-                case 'MATCH_WINNER': return `MATCH_WINNER:${participant.sourceMatchId}`
+                case 'MATCH_WINNER':
+                case 'MATCH_LOSER': return `${participant.kind}:${participant.sourceMatchId}`
             }
         }
         const keys = Object.values(input.participants).filter((item): item is MatchParticipant => item != null).map(key)
@@ -136,9 +137,9 @@ export class MatchService {
                     const sourceGroup = this.groupService.getGroup(participant.sourceGroupId)
                     if (!source || !sourceGroup) return fail('Fase o grupo origen inválido.')
                     match[role] = `${source.name} · ${participant.position}.º ${sourceGroup.name}`
-                } else if (participant.kind === 'MATCH_WINNER') {
+                } else if (participant.kind === 'MATCH_WINNER' || participant.kind === 'MATCH_LOSER') {
                     if (!Number.isInteger(participant.sourceMatchId) || participant.sourceMatchId < 1) return fail('Partido origen inválido.')
-                    match[role] = 'Ganador por definir'
+                    match[role] = participant.kind === 'MATCH_LOSER' ? 'Perdedor por definir' : 'Ganador por definir'
                 } else return fail('Tipo de participante inválido.')
                 const previous = existing?.[role]
                 if (previous && key(previous.reference) === key(participant)) {

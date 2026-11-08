@@ -9,18 +9,18 @@ import type { Run } from './Forms'
 function SlotForm({ data: d, groupId, slot, run }: { data: AdminData; groupId: number; slot?: S.MembershipSlotResponse; run: Run }) {
   const original = slot?.reference
   const [kind, setKind] = useState(original?.kind ?? 'GROUP_POSITION')
-  const [phaseId, setPhaseId] = useState(original?.kind === 'GROUP_POSITION' ? original.sourcePhaseId : d.winnerMatches.find(match => original?.kind === 'MATCH_WINNER' && match.id === original.sourceMatchId)?.phaseId ?? undefined)
-  const sources = kind === 'MATCH_WINNER' ? d.winnerPhases : d.sourcePhases
+  const [phaseId, setPhaseId] = useState(original?.kind === 'GROUP_POSITION' ? original.sourcePhaseId : d.winnerMatches.find(match => (original?.kind === 'MATCH_WINNER' || original?.kind === 'MATCH_LOSER') && match.id === original.sourceMatchId)?.phaseId ?? undefined)
+  const sources = (kind === 'MATCH_WINNER' || kind === 'MATCH_LOSER') ? d.winnerPhases : d.sourcePhases
   const selected = sources.find(phase => phase.id === phaseId)?.id ?? sources[0]?.id
   const matches = d.winnerMatches.filter(match => match.phaseId === selected)
   return <Form disclosure={!slot} title={slot ? 'Editar cupo' : 'Añadir cupo pendiente'} submit={values => run(() => {
-    const reference = kind === 'MATCH_WINNER' ? { kind, sourceMatchId: values.sourceMatchId } : { kind, sourcePhaseId: values.sourcePhaseId, sourceGroupId: values.sourceGroupId, position: values.position }
+    const reference = (kind === 'MATCH_WINNER' || kind === 'MATCH_LOSER') ? { kind, sourceMatchId: values.sourceMatchId } : { kind, sourcePhaseId: values.sourcePhaseId, sourceGroupId: values.sourceGroupId, position: values.position }
     return adminMutation(`/phases/${d.phase!.id}/membership-slots${slot ? `/${slot.id}` : ''}`, slot ? 'PUT' : 'POST', S.MembershipSlotInputSchema.parse({ groupId, reference }))
   })}>
-    <Select label="Tipo de cupo" value={kind} onChange={value => { setKind(value as typeof kind); setPhaseId(undefined) }} items={[{ id: 'GROUP_POSITION', name: 'Posición de grupo' }, { id: 'MATCH_WINNER', name: 'Ganador de partido' }]} />
+    <Select label="Tipo de cupo" value={kind} onChange={value => { setKind(value as typeof kind); setPhaseId(undefined) }} items={[{ id: 'GROUP_POSITION', name: 'Posición de grupo' }, { id: 'MATCH_WINNER', name: 'Ganador de partido' }, { id: 'MATCH_LOSER', name: 'Perdedor de partido' }]} />
     <Select label="Fase origen" name="sourcePhaseId" value={selected ?? ''} onChange={value => setPhaseId(Number(value))} items={sources} />
-    {kind === 'GROUP_POSITION' ? <><Select key={`${kind}-${selected}`} label="Grupo origen" name="sourceGroupId" value={original?.kind === kind && original.sourcePhaseId === selected ? original.sourceGroupId : ''} items={d.sourceGroups[selected!] ?? []} /><Field label="Posición" name="position" type="number" min={1} step={1} defaultValue={original?.kind === kind ? original.position : 1} /></> : <Select key={`${kind}-${selected}`} label="Partido origen" name="sourceMatchId" value={original?.kind === 'MATCH_WINNER' && matches.some(match => match.id === original.sourceMatchId) ? original.sourceMatchId : ''} items={matches.map(match => ({ id: match.id, name: `${S.matchDisplayLabel(match)} · ${match.teamA} contra ${match.teamB}` }))} />}
-    {(!sources.length || (kind === 'MATCH_WINNER' && !matches.length)) && <p role="status">No hay fuentes de origen elegibles.</p>}
+    {kind === 'GROUP_POSITION' ? <><Select key={`${kind}-${selected}`} label="Grupo origen" name="sourceGroupId" value={original?.kind === kind && original.sourcePhaseId === selected ? original.sourceGroupId : ''} items={d.sourceGroups[selected!] ?? []} /><Field label="Posición" name="position" type="number" min={1} step={1} defaultValue={original?.kind === kind ? original.position : 1} /></> : <Select key={`${kind}-${selected}`} label="Partido origen" name="sourceMatchId" value={(original?.kind === 'MATCH_WINNER' || original?.kind === 'MATCH_LOSER') && matches.some(match => match.id === original.sourceMatchId) ? original.sourceMatchId : ''} items={matches.map(match => ({ id: match.id, name: `${S.matchDisplayLabel(match)} · ${match.teamA} contra ${match.teamB}` }))} />}
+    {(!sources.length || ((kind === 'MATCH_WINNER' || kind === 'MATCH_LOSER') && !matches.length)) && <p role="status">No hay fuentes de origen elegibles.</p>}
   </Form>
 }
 

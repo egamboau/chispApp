@@ -15,7 +15,7 @@ export function participantValues(values: Record<string, string>): S.MatchPartic
     const kind = values[`${role}-kind`]
     if (kind === 'SLOT') return S.MatchParticipantSchema.parse(JSON.parse(values[`${role}-slot`] ?? 'null'))
     if (kind === 'GROUP_POSITION') return { kind, sourcePhaseId: Number(values[`${role}-phase`]), sourceGroupId: Number(values[`${role}-group`]), position: Number(values[`${role}-position`]) }
-    if (kind === 'MATCH_WINNER') return { kind, sourceMatchId: Number(values[`${role}-match`]) }
+    if (kind === 'MATCH_WINNER' || kind === 'MATCH_LOSER') return { kind, sourceMatchId: Number(values[`${role}-match`]) }
     return { kind: 'TEAM', teamId: Number(values[`${role}-team`]) }
   }
   return S.MatchParticipantsSchema.parse({ teamA: reference('teamA'), teamB: reference('teamB'), lineTeam: values['lineTeam-kind'] === 'TEAM' && !values['lineTeam-team'] ? null : reference('lineTeam') })
@@ -31,7 +31,7 @@ export function winnerSources(data: AdminData, matchId?: number): S.MatchRespons
   while (changed) {
     changed = false
     for (const match of data.matches) {
-      if (!blocked.has(match.id) && Object.values(match.participants).some(item => item?.reference.kind === 'MATCH_WINNER' && blocked.has(item.reference.sourceMatchId))) {
+      if (!blocked.has(match.id) && Object.values(match.participants).some(item => (item?.reference.kind === 'MATCH_WINNER' || item?.reference.kind === 'MATCH_LOSER') && blocked.has(item.reference.sourceMatchId))) {
         blocked.add(match.id); changed = true
       }
     }
@@ -39,24 +39,24 @@ export function winnerSources(data: AdminData, matchId?: number): S.MatchRespons
   return data.matches.filter(match => !blocked.has(match.id) && match.tournamentType === phase.tournamentType && phases.some(source => source.id === match.phaseId))
 }
 
-/** Edits fixed teams, group positions or eligible elimination winners; changing assignment clears obsolete fields. */
+/** Edits fixed teams, group positions or eligible elimination outcomes; changing assignment clears obsolete fields. */
 function Participant({ role, data: d, match, groupId }: { role: Role; data: AdminData; match?: S.MatchResponse; groupId: number }) {
   const original = match?.participants[role]?.reference
   const [kind, setKind] = useState<S.MatchParticipant['kind'] | 'SLOT'>(original?.kind ?? 'TEAM')
   const [keepOriginal, setKeepOriginal] = useState(true)
   const winners = winnerSources(d, match?.id)
   const winnerPhases = d.phases.filter(phase => winners.some(item => item.phaseId === phase.id))
-  const [sourceId, setSourceId] = useState(original?.kind === 'GROUP_POSITION' ? original.sourcePhaseId : original?.kind === 'MATCH_WINNER' ? winners.find(item => item.id === original.sourceMatchId)?.phaseId : undefined)
-  const phases = kind === 'MATCH_WINNER' ? winnerPhases : d.sourcePhases
+  const [sourceId, setSourceId] = useState(original?.kind === 'GROUP_POSITION' ? original.sourcePhaseId : (original?.kind === 'MATCH_WINNER' || original?.kind === 'MATCH_LOSER') ? winners.find(item => item.id === original.sourceMatchId)?.phaseId : undefined)
+  const phases = (kind === 'MATCH_WINNER' || kind === 'MATCH_LOSER') ? winnerPhases : d.sourcePhases
   const selected = phases.find(phase => phase.id === sourceId)?.id ?? phases[0]?.id
   const sources = winners.filter(item => item.phaseId === selected)
-  const allowed = d.memberships.filter(item => role !== 'teamA' || item.groupId === groupId).map(item => item.teamId)
-  return <fieldset><legend>{roles[role]}</legend><Select label="Asignación" name={`${role}-kind`} value={kind} onChange={value => { setKind(value as typeof kind); setKeepOriginal(false); setSourceId(undefined) }} items={[{ id: 'TEAM', name: 'Equipo fijo' }, { id: 'GROUP_POSITION', name: 'Posición de grupo/fase' }, ...((d.slots ?? []).length ? [{ id: 'SLOT', name: 'Cupo del grupo' }] : []), { id: 'MATCH_WINNER', name: 'Ganador de partido' }]} />
-    {kind === 'SLOT' && <Select label="Cupo" name={`${role}-slot`} items={(d.slots ?? []).filter(slot => role !== 'teamA' || slot.groupId === groupId).map(slot => ({ id: JSON.stringify(slot.reference), name: slot.label }))} />}
+  const allowed = d.memberships.filter(item => role === 'lineTeam' || item.groupId === groupId).map(item => item.teamId)
+  return <fieldset><legend>{roles[role]}</legend><Select label="Asignación" name={`${role}-kind`} value={kind} onChange={value => { setKind(value as typeof kind); setKeepOriginal(false); setSourceId(undefined) }} items={[{ id: 'TEAM', name: 'Equipo fijo' }, { id: 'GROUP_POSITION', name: 'Posición de grupo/fase' }, ...((d.slots ?? []).length ? [{ id: 'SLOT', name: 'Cupo del grupo' }] : []), { id: 'MATCH_WINNER', name: 'Ganador de partido' }, { id: 'MATCH_LOSER', name: 'Perdedor de partido' }]} />
+    {kind === 'SLOT' && <Select label="Cupo" name={`${role}-slot`} items={(d.slots ?? []).filter(slot => role === 'lineTeam' || slot.groupId === groupId).map(slot => ({ id: JSON.stringify(slot.reference), name: slot.label }))} />}
     {kind === 'TEAM' && <Select label="Equipo" optional={role === 'lineTeam'} name={`${role}-team`} value={keepOriginal && original?.kind === 'TEAM' ? original.teamId : ''} items={d.teams.filter(item => role === 'lineTeam' || allowed.includes(item.id))} />}
-    {(kind === 'GROUP_POSITION' || kind === 'MATCH_WINNER') && <Select label="Fase origen" name={`${role}-phase`} value={selected ?? ''} onChange={value => { setSourceId(Number(value)); setKeepOriginal(false) }} items={phases} />}
+    {(kind === 'GROUP_POSITION' || kind === 'MATCH_WINNER' || kind === 'MATCH_LOSER') && <Select label="Fase origen" name={`${role}-phase`} value={selected ?? ''} onChange={value => { setSourceId(Number(value)); setKeepOriginal(false) }} items={phases} />}
     {kind === 'GROUP_POSITION' && <><Select key={`${kind}-${selected}`} label="Grupo origen" name={`${role}-group`} value={keepOriginal && original?.kind === 'GROUP_POSITION' && original.sourcePhaseId === selected ? original.sourceGroupId : ''} items={d.sourceGroups[selected!] ?? []} /><Field label="Posición" name={`${role}-position`} type="number" min={1} step={1} defaultValue={keepOriginal && original?.kind === 'GROUP_POSITION' ? original.position : 1} /></>}
-    {kind === 'MATCH_WINNER' && <><Select key={`${kind}-${selected}`} label="Partido origen" name={`${role}-match`} value={keepOriginal && original?.kind === 'MATCH_WINNER' && sources.some(source => source.id === original.sourceMatchId) ? original.sourceMatchId : ''} items={sources.map(source => ({ id: source.id, name: `Ganador de ${S.matchDisplayLabel(source)} · ${source.teamA} contra ${source.teamB}` }))} />{!sources.length && <p role="status">No hay partidos eliminatorios de origen elegibles.</p>}</>}
+    {(kind === 'MATCH_WINNER' || kind === 'MATCH_LOSER') && <><Select key={`${kind}-${selected}`} label="Partido origen" name={`${role}-match`} value={keepOriginal && (original?.kind === 'MATCH_WINNER' || original?.kind === 'MATCH_LOSER') && sources.some(source => source.id === original.sourceMatchId) ? original.sourceMatchId : ''} items={sources.map(source => ({ id: source.id, name: `${kind === 'MATCH_LOSER' ? 'Perdedor' : 'Ganador'} de ${S.matchDisplayLabel(source)} · ${source.teamA} contra ${source.teamB}` }))} />{!sources.length && <p role="status">No hay partidos eliminatorios de origen elegibles.</p>}</>}
   </fieldset>
 }
 
@@ -73,7 +73,7 @@ export function MatchForm({ data: d, match, run, cancel }: { data: AdminData; ma
   })
   }}><h4 className="form-section">Programación</h4><Field label="Etiqueta del partido (opcional)" name="label" maxLength={80} required={false} defaultValue={match?.label ?? ''} /><Select label="Grupo" name="groupId" items={d.groups} value={groupId ?? ''} onChange={value => setGroupId(Number(value))} />
     <Field label="Fecha" name="date" type="date" defaultValue={match?.date} /><Select label="Jornada" name="jornada" value={match?.jornada ?? 'MORNING'} items={[{ id: 'MORNING', name: 'Mañana' }, { id: 'AFTERNOON', name: 'Tarde' }]} /><Field label="Cancha" name="court" type="number" min={1} step={1} defaultValue={match?.court ?? 1} /><Field label="Orden oficial opcional" name="sortOrder" type="number" min={1} step={1} required={false} defaultValue={match?.sortOrder ?? ''} />
-    <h4 className="form-section">Participantes</h4><div className="participant-fields">{(Object.keys(roles) as Role[]).map(role => <Participant key={`${role}-${role === 'teamA' ? groupId : ''}`} role={role} data={d} match={match} groupId={groupId!} />)}</div>{confirmed && <p>Asignaciones confirmadas: cambiar referencias requiere revisar y confirmar otra vez fase origen.</p>}
+    <h4 className="form-section">Participantes</h4><div className="participant-fields">{(Object.keys(roles) as Role[]).map(role => <Participant key={`${role}-${role === 'lineTeam' ? '' : groupId}`} role={role} data={d} match={match} groupId={groupId!} />)}</div>{confirmed && <p>Asignaciones confirmadas: cambiar referencias requiere revisar y confirmar otra vez fase origen.</p>}
     <button type="button" onClick={() => { if (confirmDiscard()) cancel() }}>VOLVER AL CALENDARIO</button>
   </Form></>
 }

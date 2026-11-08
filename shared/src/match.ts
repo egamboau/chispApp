@@ -21,11 +21,12 @@ export function matchDisplayLabel(match: { label?: string | null; phaseName?: st
 /** Match lifecycle state: scheduled, live or finished. */
 export const MatchStatusSchema = z.enum(['SCHEDULED', 'LIVE', 'FINISHED']);
 
-/** Fixed team, source group position or source match winner. */
+/** Fixed team, source group position or source match winner or loser. */
 export const MatchParticipantSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('TEAM'), teamId: CoercedIdSchema }).strict(),
   z.object({ kind: z.literal('GROUP_POSITION'), sourcePhaseId: CoercedIdSchema, sourceGroupId: CoercedIdSchema, position: CoercedIdSchema }).strict(),
   z.object({ kind: z.literal('MATCH_WINNER'), sourceMatchId: CoercedIdSchema }).strict(),
+  z.object({ kind: z.literal('MATCH_LOSER'), sourceMatchId: CoercedIdSchema }).strict(),
 ]);
 
 /** Local and visitor are required; line assignment is optional. */
@@ -52,6 +53,7 @@ export const MatchParticipantResponseSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('TEAM'), teamId: IdSchema }).strict(),
   z.object({ kind: z.literal('GROUP_POSITION'), sourcePhaseId: IdSchema, sourceGroupId: IdSchema, position: IdSchema }).strict(),
   z.object({ kind: z.literal('MATCH_WINNER'), sourceMatchId: IdSchema }).strict(),
+  z.object({ kind: z.literal('MATCH_LOSER'), sourceMatchId: IdSchema }).strict(),
 ]);
 
 /** Resolution state and original reference; hidden line details are null. */

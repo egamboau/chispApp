@@ -34,7 +34,8 @@ export interface Match {
 export type MatchParticipant =
     | { kind: 'TEAM'; teamId: number }
     | { kind: 'GROUP_POSITION'; sourcePhaseId: number; sourceGroupId: number; position: number }
-    | { kind: 'MATCH_WINNER'; sourceMatchId: number };
+    | { kind: 'MATCH_WINNER'; sourceMatchId: number }
+    | { kind: 'MATCH_LOSER'; sourceMatchId: number };
 
 export type MatchParticipants = Record<'teamA' | 'teamB', MatchParticipant> & { lineTeam?: MatchParticipant | null };
 

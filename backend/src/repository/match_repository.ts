@@ -95,7 +95,7 @@ export class MatchRepository {
             const resolvedTeamId = match[`${role}Id`]
             let reference: MatchParticipant
             if (row?.kind === 'GROUP_POSITION') reference = { kind: row.kind, sourcePhaseId: row.sourcePhaseId, sourceGroupId: row.sourceGroupId, position: row.position }
-            else if (row?.kind === 'MATCH_WINNER') reference = { kind: row.kind, sourceMatchId: row.sourceMatchId }
+            else if (row?.kind === 'MATCH_WINNER' || row?.kind === 'MATCH_LOSER') reference = { kind: row.kind, sourceMatchId: row.sourceMatchId }
             else {
                 if (role === 'lineTeam' && resolvedTeamId === null) return null
                 if (resolvedTeamId === null) throw new DatabaseConnectionError('ParticipantReferenceError', 'El equipo fijo no tiene un ID válido.', undefined)
@@ -121,9 +121,9 @@ export class MatchRepository {
                 resolvedTeam: resolvedTeamId === null ? null : { id: resolvedTeamId, name: match[role]! },
                 status: resolvedTeamId === null ? 'PENDING' : confirmed ? 'CONFIRMED' : 'RESOLVED',
             }
-            if (reference.kind === 'MATCH_WINNER' && resolvedTeamId === null) {
+            if ((reference.kind === 'MATCH_WINNER' || reference.kind === 'MATCH_LOSER') && resolvedTeamId === null) {
                 const source = this.getMatch(reference.sourceMatchId, false)
-                displayed[role] = source ? `Ganador de ${matchDisplayLabel(source)}` : 'Ganador por definir'
+                displayed[role] = source ? `${reference.kind === 'MATCH_LOSER' ? 'Perdedor' : 'Ganador'} de ${matchDisplayLabel(source)}` : `${reference.kind === 'MATCH_LOSER' ? 'Perdedor' : 'Ganador'} por definir`
             }
             if (match.status === 'SCHEDULED' && reference.kind === 'GROUP_POSITION' && !confirmed) {
                 const phase = this.dbConnection.fetchOneFromQuery<Phase>('SELECT * FROM phases WHERE id=?', reference.sourcePhaseId)!
@@ -134,7 +134,7 @@ export class MatchRepository {
         return { ...displayed, participants }
     }
 
-    /** Saves all participant sources atomically and resolves valid winners without changing started matches. */
+    /** Saves all participant sources atomically and resolves valid match outcomes without changing started matches. */
     saveParticipantMatch(match: MatchInput, participants: MatchParticipants, id?: number): Match {
         return this.dbConnection.transaction(() => {
             if (id !== undefined) {
@@ -151,7 +151,7 @@ export class MatchRepository {
                     reference.kind === 'GROUP_POSITION' ? reference.sourcePhaseId : null,
                     reference.kind === 'GROUP_POSITION' ? reference.sourceGroupId : null,
                     reference.kind === 'GROUP_POSITION' ? reference.position : null,
-                    reference.kind === 'MATCH_WINNER' ? reference.sourceMatchId : null)
+                    (reference.kind === 'MATCH_WINNER' || reference.kind === 'MATCH_LOSER') ? reference.sourceMatchId : null)
             }
             this.referenceService().refreshReferences()
             return this.getMatch(saved.id)!
@@ -201,7 +201,7 @@ export class MatchRepository {
         return this.dbConnection.executeQuery(`UPDATE matches SET ${column}=${column}+?,updatedAt=CURRENT_TIMESTAMP WHERE id=? AND status='LIVE' AND ${column}+?>=0`, delta, id, delta).changes > 0
     }
 
-    /** Corrects a finished result and refreshes dependent scheduled winners and group places in the same transaction. */
+    /** Corrects a finished result and refreshes dependent scheduled outcomes and group places in the same transaction. */
     setResult(id: number, scoreA: number, scoreB: number): boolean {
         return this.dbConnection.transaction(() => {
             const changed = this.dbConnection.executeQuery("UPDATE matches SET scoreA=?,scoreB=?,updatedAt=CURRENT_TIMESTAMP WHERE id=? AND status='FINISHED'", scoreA, scoreB, id).changes > 0
