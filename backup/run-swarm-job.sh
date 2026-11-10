@@ -2,8 +2,8 @@
 set -eu
 
 : "${BACKUP_IMAGE:?Set BACKUP_IMAGE}"
-: "${NFS_SERVER:?Set NFS_SERVER}"
-: "${NFS_EXPORT:?Set NFS_EXPORT}"
+: "${TOURNAMENT_NODE_ID:?Set TOURNAMENT_NODE_ID}"
+: "${TOURNAMENT_DATA_DIR:?Set TOURNAMENT_DATA_DIR}"
 
 if ! docker secret inspect chispapp-rclone-config >/dev/null 2>&1; then
     echo "Docker secret is missing: chispapp-rclone-config" >&2
@@ -12,7 +12,7 @@ fi
 
 timestamp=$(date -u +%Y%m%d%H%M%S)
 service_name="tournament-backup-$timestamp-${BUILD_NUMBER:-manual}-$$"
-mount="type=volume,source=tournament-backup-data,target=/data,readonly,volume-driver=local,volume-opt=type=nfs,volume-opt=device=:$NFS_EXPORT,\"volume-opt=o=addr=$NFS_SERVER,rw,nfsvers=4\""
+mount="type=bind,source=$TOURNAMENT_DATA_DIR,target=/data,readonly"
 timeout_seconds=300
 started_at=$(date +%s)
 service_created=false
@@ -32,6 +32,7 @@ docker service create --detach \
     --label "com.chispapp.backup.created=$timestamp" \
     --mode replicated-job \
     --replicas 1 \
+    --constraint "node.id==$TOURNAMENT_NODE_ID" \
     --restart-condition none \
     --with-registry-auth \
     --mount "$mount" \

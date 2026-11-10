@@ -69,8 +69,8 @@ pipeline {
         script { sendGitHubStatus('pending', 'Backing up SQLite...', 'Jenkins / Backup') }
         sh '''
           set -eu
-          : "${NFS_SERVER:?Set NFS_SERVER in Jenkins}"
-          : "${NFS_EXPORT:?Set NFS_EXPORT in Jenkins}"
+          : "${TOURNAMENT_NODE_ID:?Set TOURNAMENT_NODE_ID in Jenkins}"
+          : "${TOURNAMENT_DATA_DIR:?Set TOURNAMENT_DATA_DIR in Jenkins}"
           sh backup/run-swarm-job.sh
         '''
       }
@@ -91,8 +91,8 @@ pipeline {
         script { sendGitHubStatus('pending', 'Deploying stack...', 'Jenkins / Deploy') }
         sh '''
           set -eu
-          : "${NFS_SERVER:?Set NFS_SERVER in Jenkins}"
-          : "${NFS_EXPORT:?Set NFS_EXPORT in Jenkins}"
+          : "${TOURNAMENT_NODE_ID:?Set TOURNAMENT_NODE_ID in Jenkins}"
+          : "${TOURNAMENT_DATA_DIR:?Set TOURNAMENT_DATA_DIR in Jenkins}"
           : "${CF_ACCESS_TEAM_DOMAIN:?Set CF_ACCESS_TEAM_DOMAIN in Jenkins}"
           : "${CF_ACCESS_AUD:?Set CF_ACCESS_AUD in Jenkins}"
 
