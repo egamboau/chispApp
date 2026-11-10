@@ -5,6 +5,7 @@ database=/data/tournament.db
 backup_dir=/backups
 rclone_secret=/run/secrets/rclone.conf
 rclone_config=/tmp/rclone.conf
+remote_dir=onedrive:Documents/Jupas/ChispAppBackups
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
 snapshot="$backup_dir/.tournament-$timestamp.$$.db"
 archive="$backup_dir/tournament-$timestamp.db.gz"
@@ -45,7 +46,17 @@ fi
 
 gzip -c "$snapshot" > "$compressed"
 mv "$compressed" "$archive"
-rclone --config="$rclone_config" copyto "$archive" "onedrive:Documents/Jupas/ChispAppBackups/$(basename "$archive")"
+rclone --config="$rclone_config" copyto "$archive" "$remote_dir/$(basename "$archive")"
+
+# UTC filenames sort chronologically; prune only after the upload succeeds.
+backups=$(rclone --config="$rclone_config" lsf "$remote_dir" --files-only --max-depth 1)
+printf '%s\n' "$backups" |
+    LC_ALL=C grep -E '^tournament-[0-9]{8}T[0-9]{6}Z\.db\.gz$' |
+    LC_ALL=C sort -r |
+    tail -n +4 |
+    while IFS= read -r old_backup; do
+        rclone --config="$rclone_config" deletefile "$remote_dir/$old_backup"
+    done
 rm -f "$snapshot"
 rm -f "$rclone_config"
 trap - EXIT HUP INT TERM

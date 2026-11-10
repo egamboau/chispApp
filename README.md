@@ -192,6 +192,7 @@ El despliegue falla si faltan las variables de Access. `docker compose` usa `NOD
 ## Backup de SQLite
 
 El respaldo usa la API de backup de SQLite, valida el snapshot, lo comprime y lo sube a `onedrive:Documents/Jupas/ChispAppBackups/` sin detener la aplicación.
+Cada archivo es un respaldo completo. Después de una subida exitosa, se conservan los tres respaldos más recientes en OneDrive y se eliminan los anteriores; los archivos con otros nombres no se modifican. Esta retención se comparte entre los respaldos semanales y los previos al despliegue. Si la subida falla, no se elimina ningún respaldo.
 
 ### Configurar OneDrive
 
