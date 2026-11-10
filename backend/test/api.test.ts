@@ -635,7 +635,7 @@ test('administra fases, rangos, grupos y sanciones con destinos compartidos', as
   assert.equal((result.body.groups as ApiGroup[]).find((group) => group.id === groupIds[1])!.standings.find((row) => row.teamId === teamIds[2])!.played, 1);
   await json(`/api/matches/${crossGroupMatchId}/reopen`, { method: 'POST' });
   result = await json(`/api/phases/${phaseId}/standings`);
-  assert.equal((result.body.groups as ApiGroup[]).find((group) => group.id === groupIds[0])!.standings.find((row) => row.teamId === teamIds[0])!.played, 0);
+  assert.equal((result.body.groups as ApiGroup[]).find((group) => group.id === groupIds[0])!.standings.find((row) => row.teamId === teamIds[0])!.played, 1);
   await json(`/api/matches/${crossGroupMatchId}`, { method: 'DELETE' });
   result = await json(`/api/phases/${phaseId}/teams/${teamIds[0]}/cards`, { method: 'DELETE' });
   assert.equal(result.response.status, 204);
@@ -742,4 +742,49 @@ test('team creation honors explicit female category in a legacy male tournament'
   } finally {
     await json(`/api/teams/${created.body.id}`, { method: 'DELETE' });
   }
+});
+
+test('public live standings refresh through every score lifecycle event', async t => {
+  const tournament = (await json('/api/tournaments', { method: 'POST', body: JSON.stringify({ name: 'Live standings', active: true }) })).body;
+  const phase = (await json(`/api/tournaments/${tournament.id}/phases`, { method: 'POST', body: JSON.stringify({ name: 'Liga en vivo', type: 'TABLE', tournamentType: 'MALE', sortOrder: 1 }) })).body;
+  const group = (await json(`/api/phases/${phase.id}/groups`, { method: 'POST', body: JSON.stringify({ name: 'A' }) })).body;
+  const teams: { id: number }[] = [];
+  for (const name of ['Live A', 'Live B', 'Live Line']) {
+    const team = (await json('/api/teams', { method: 'POST', body: JSON.stringify({ tournamentId: tournament.id, name }) })).body;
+    teams.push(team);
+    await json(`/api/phases/${phase.id}/memberships`, { method: 'POST', body: JSON.stringify({ teamId: team.id, groupId: group.id }) });
+  }
+  const match = (await json('/api/matches', { method: 'POST', body: JSON.stringify({ phaseId: phase.id, groupId: group.id, date: '2026-11-07', jornada: 'MORNING', court: 1, teamAId: teams[0]!.id, teamBId: teams[1]!.id, lineTeamId: teams[2]!.id }) })).body;
+  const standings = async () => {
+    const result = await publicJson(`/api/phases/${phase.id}/standings`);
+    assert.equal(result.response.status, 200);
+    return result.body.groups[0].standings.find((row: ApiRow) => row.teamId === teams[0]!.id);
+  };
+  assert.equal((await standings()).played, 0);
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const stream = await fetch(`${base}/api/events`, { signal: controller.signal });
+  const reader = stream.body!.getReader();
+  await reader.read();
+  const update = async (action: string, type: string, body?: unknown) => {
+    const result = await json(`/api/matches/${match.id}/${action}`, { method: body ? 'PATCH' : 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
+    assert.equal(result.response.status, 200);
+    const event = new TextDecoder().decode((await reader.read()).value);
+    assert.match(event, /event: matches/);
+    assert.match(event, new RegExp(`"type":"${type}","id":${match.id}`));
+    return standings();
+  };
+  let row = await update('start', 'live');
+  assert.deepEqual([row.played, row.draws, row.points], [1, 1, 1]);
+  row = await update('score', 'score', { team: 'A', delta: 1 });
+  assert.deepEqual([row.played, row.goalsFor, row.wins, row.points], [1, 1, 1, 3]);
+  row = await update('cards', 'cards', { yellowCardsA: 2, redCardsA: 1, yellowCardsB: 0, redCardsB: 0 });
+  assert.deepEqual([row.yellowCards, row.redCards], [2, 1]);
+  row = await update('reset', 'reset');
+  assert.deepEqual([row.played, row.goalsFor, row.draws, row.points], [1, 0, 1, 1]);
+  row = await update('finish', 'finished');
+  assert.equal(row.played, 1);
+  row = await update('result', 'result', { scoreA: 3, scoreB: 2 });
+  assert.deepEqual([row.played, row.goalsFor, row.goalsAgainst, row.points], [1, 3, 2, 3]);
+  assert.deepEqual(await update('reopen', 'live'), row);
 });
