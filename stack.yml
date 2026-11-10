@@ -7,21 +7,18 @@ services:
       CF_ACCESS_TEAM_DOMAIN: ${CF_ACCESS_TEAM_DOMAIN}
       CF_ACCESS_AUD: ${CF_ACCESS_AUD}
     volumes:
-      - tournament-data:/data
+      - type: bind
+        source: ${TOURNAMENT_DATA_DIR:?Set TOURNAMENT_DATA_DIR}
+        target: /data
     networks:
       - public-ingress
     deploy:
       replicas: 1
+      placement:
+        constraints:
+          - node.id == ${TOURNAMENT_NODE_ID:?Set TOURNAMENT_NODE_ID}
       restart_policy:
         condition: on-failure
-
-volumes:
-  tournament-data:
-    driver: local
-    driver_opts:
-      type: nfs
-      o: addr=${NFS_SERVER},rw,nfsvers=4
-      device: :${NFS_EXPORT}
 
 networks:
   public-ingress:

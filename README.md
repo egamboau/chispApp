@@ -58,7 +58,7 @@ El despliegue usa Jenkins con agentes separados para construir y desplegar. Cada
 
 La imagen multistage usa la misma base Node fijada por digest para compilar y ejecutar. `npm ci` instala el lockfile raíz; la construcción ejecuta lint, typecheck, tests de los tres workspaces y build antes de eliminar dependencias de desarrollo. El runtime ejecuta Express como usuario `node`, sirve los assets compilados y no contiene Vite ni TypeScript. Jenkins aplica estas comprobaciones mediante `docker build`; solo `main` publica, respalda y despliega. Actualiza el digest de ambas etapas juntos al renovar Node.
 
-Antes del primer despliegue, crea la red y prepara el export NFS:
+Antes del primer despliegue, crea la red y prepara un directorio en el disco local del nodo elegido:
 
 ```bash
 docker swarm init # solo la primera vez
@@ -69,18 +69,31 @@ Configura un job **Pipeline from SCM** apuntando a `main` y usando `Jenkinsfile`
 
 Configura en Jenkins:
 
-- Variables `NFS_SERVER`, `NFS_EXPORT`, `CF_ACCESS_TEAM_DOMAIN` y `CF_ACCESS_AUD`.
+- Variables `TOURNAMENT_NODE_ID` (ID del nodo con el disco local), `TOURNAMENT_DATA_DIR` (ruta absoluta en ese nodo, por ejemplo `/srv/chispapp/data`), `CF_ACCESS_TEAM_DOMAIN` y `CF_ACCESS_AUD`.
+- Obtén el ID con `docker node ls`. En ese nodo, crea el directorio con `sudo install -d -o 1000 -g 1000 -m 750 /srv/chispapp/data`. Debe estar en un sistema de archivos local, no en NFS.
 
 El registry debe ser accesible como `nas-server.local:5000` desde Jenkins y todos los nodos. Usa TLS; si requiere autenticación, ejecuta `docker login nas-server.local:5000` con el usuario de Jenkins. Verifica resolución con `getent hosts nas-server.local` en cada nodo.
 
-El export NFS debe existir y ser escribible desde todos los nodos del Swarm. El pipeline consulta Git cada dos minutos, publica la imagen y ejecuta:
+Exporta también `TOURNAMENT_NODE_ID`, `TOURNAMENT_DATA_DIR`, `CF_ACCESS_TEAM_DOMAIN` y `CF_ACCESS_AUD` para despliegues manuales. El pipeline consulta Git cada dos minutos, publica la imagen y ejecuta:
 
 ```bash
 TOURNAMENT_IMAGE=nas-server.local:5000/jupas-app:sha-COMMIT \
   docker stack deploy --with-registry-auth --resolve-image always -c stack.yml tournament
 ```
 
-El servicio usa una sola réplica porque SQLite no admite escritores simultáneos desde varios nodos. El volumen `tournament-data` monta el mismo export NFSv4 desde cualquier nodo. Sin `TOURNAMENT_IMAGE`, `stack.yml` y `docker-compose.yml` conservan `tournament-display:latest` para builds locales.
+El servicio usa una sola réplica y monta `TOURNAMENT_DATA_DIR` directamente en `/data`. La aplicación y los jobs de backup quedan fijados a `TOURNAMENT_NODE_ID`; si ese nodo no está disponible, esperan en lugar de arrancar con otra base vacía. No cambies el nodo o directorio sin trasladar antes los datos. Sin `TOURNAMENT_IMAGE`, `stack.yml` y `docker-compose.yml` conservan `tournament-display:latest` para builds locales.
+
+### Migrar desde NFS al disco local
+
+Antes de desplegar esta versión:
+
+1. Ejecuta y verifica un backup con la configuración NFS anterior. Pausa los despliegues y el job semanal durante la migración.
+2. Detén todos los escritores con `docker service scale tournament_tournament=0` y espera a que sus tareas terminen (`docker service ps tournament_tournament`). No copies una base en uso.
+3. En el nodo elegido, copia **todo el contenido** del export anterior al nuevo directorio local, incluidos los archivos journal/WAL si existen. Conserva el export original sin modificar para recuperación. Asigna el directorio y sus archivos al UID/GID `1000:1000` y verifica que ese usuario pueda escribirlos.
+4. Antes de arrancar, comprueba que `tournament.db` existe, contiene los datos esperados y que `sqlite3 /srv/chispapp/data/tournament.db 'PRAGMA integrity_check;'` devuelve `ok`. Ajusta la ruta si elegiste otra.
+5. Configura las dos variables nuevas en ambos pipelines, retira las variables NFS y ejecuta el pipeline. El backup previo al despliegue debe leer la base local correctamente. Verifica los datos en la aplicación y el backup semanal; después reactiva los jobs.
+
+No elimines el volumen/export NFS durante la migración. Si necesitas volver a NFS después de aceptar escrituras locales, detén la aplicación y traslada primero la base local actualizada; restaurar el export antiguo perdería esas escrituras. El rollback de un servicio anterior a esta migración también restaura su montaje NFS, por lo que requiere este procedimiento manual.
 
 Para revertir el último despliegue sin modificar la base de datos:
 
@@ -223,9 +236,9 @@ docker secret create chispapp-rclone-config /ruta/protegida/rclone.conf
 docker secret inspect chispapp-rclone-config
 ```
 
-En producción, el pipeline principal publica `jupas-app-backup:sha-COMMIT` y ejecuta un job de Swarm antes del despliegue. El job monta el mismo export NFS en modo solo lectura e inyecta el secreto como `/run/secrets/rclone.conf`. Si el snapshot, la autenticación o la transferencia fallan, Jenkins no despliega la nueva versión.
+En producción, el pipeline principal publica `jupas-app-backup:sha-COMMIT` y ejecuta un job de Swarm antes del despliegue. El job monta el mismo directorio local en el mismo nodo en modo solo lectura e inyecta el secreto como `/run/secrets/rclone.conf`. Si el snapshot, la autenticación o la transferencia fallan, Jenkins no despliega la nueva versión.
 
-Para el respaldo semanal, crea otro job **Pipeline from SCM** apuntando a `main`, configura `Jenkinsfile.backup` como **Script Path** y conserva las variables `NFS_SERVER` y `NFS_EXPORT` en las propiedades de la carpeta. Ese pipeline ejecuta `jupas-app-backup:latest` cada martes a las 00:00, hora de Guatemala.
+Para el respaldo semanal, crea otro job **Pipeline from SCM** apuntando a `main`, configura `Jenkinsfile.backup` como **Script Path** y conserva las variables `TOURNAMENT_NODE_ID` y `TOURNAMENT_DATA_DIR` en las propiedades de la carpeta. Ese pipeline ejecuta `jupas-app-backup:latest` cada martes a las 00:00, hora de Guatemala.
 
 Los secretos de Swarm no se pueden modificar. Para renovar una autorización vencida, genera y prueba otro `rclone.conf`, localiza y elimina primero el job de backup completado que usa el secreto, y vuelve a crearlo:
 
