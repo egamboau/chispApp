@@ -87,7 +87,7 @@ export class PhaseDetailService {
         if (reference.kind === 'GROUP_POSITION') {
             const preview = this.previewPositions(reference.sourcePhaseId)
             if (!preview?.confirmedAt || preview.stale || !preview.canConfirm) return null
-            return this.getStandings(reference.sourcePhaseId)?.groups.find(group => group.id === reference.sourceGroupId)?.standings.find(row => row.position === reference.position && !row.requiresTiebreaker)?.teamId ?? null
+            return this.getStandings(reference.sourcePhaseId, false)?.groups.find(group => group.id === reference.sourceGroupId)?.standings.find(row => row.position === reference.position && !row.requiresTiebreaker)?.teamId ?? null
         }
         if (visiting.has(reference.sourceMatchId)) return null
         visiting.add(reference.sourceMatchId)
@@ -182,7 +182,7 @@ export class PhaseDetailService {
         return this.repository.deleteTeamCards(phaseId, teamId)
     }
 
-    getStandings(phaseId: number): PhaseStandings | undefined {
+    getStandings(phaseId: number, includeLive = true): PhaseStandings | undefined {
         const phase = this.phaseService.getPhaseById(phaseId)
         if (!phase) return undefined
         if (phase.type !== 'TABLE') return { phase, hasStandings: false, message: 'Esta fase eliminatoria no tiene tabla.', rules: [], groups: [] }
@@ -190,7 +190,7 @@ export class PhaseDetailService {
         const rules = this.getRules(phase.id)
         const sanctions = new Map(this.repository.getSanctions(phase.id).map(item => [item.teamId, item.reason]))
         const teamCards = new Map(this.repository.getTeamCards(phase.id).map(item => [item.teamId, item]))
-        const matches = this.repository.getFinishedMatches(phase.id)
+        const matches = this.repository.getStandingsMatches(phase.id, includeLive)
         const groups = this.repository.getGroups(phase.id).map(group => ({
             ...group,
             standings: PhaseDetailService.calculateGroupStandings(this.repository.getGroupMembers(phase.id, group.id), matches, rules, sanctions, teamCards),
@@ -200,7 +200,7 @@ export class PhaseDetailService {
 
     /** Previews current standings, match assignments and group places; reports conflicts and changes since confirmation. */
     previewPositions(phaseId: number) {
-        const table = this.getStandings(phaseId)
+        const table = this.getStandings(phaseId, false)
         if (!table) return undefined
         const errors: string[] = []
         if (!table.hasStandings) errors.push('Solo se pueden confirmar posiciones de una fase de tabla.')

@@ -179,8 +179,8 @@ export class PhaseDetailRepository {
         return this.dbConnection.executeQuery('DELETE FROM phase_team_cards WHERE phaseId=? AND teamId=?', phaseId, teamId).changes > 0
     }
 
-    getFinishedMatches(phaseId: number): Match[] {
-        return this.dbConnection.fetchAllFromParameterizedQuery<Match>("SELECT * FROM matches WHERE phaseId=? AND status='FINISHED'", phaseId)
+    getStandingsMatches(phaseId: number, includeLive: boolean): Match[] {
+        return this.dbConnection.fetchAllFromParameterizedQuery<Match>("SELECT * FROM matches WHERE phaseId=? AND (status='FINISHED' OR (? AND status='LIVE'))", phaseId, Number(includeLive))
     }
 
     getScoring(tournamentId: number, tournamentType: string): ScoringRow[] {

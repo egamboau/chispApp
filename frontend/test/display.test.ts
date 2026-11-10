@@ -295,3 +295,52 @@ test('live navigation exposes only the tournament selector', async () => {
   assert.doesNotMatch(html, /Categoría de las fases|aria-label="Fase"/)
   assert.match(html, /aria-pressed="true">EN JUEGO/)
 })
+
+test('matches SSE reloads live standings while retaining tournament, category and phase', async t => {
+  const selected = { ...phase, id: 3, tournamentType: 'FEMALE' } as const
+  let points = 1
+  let onMatches: () => void = () => {}
+  class Events {
+    addEventListener(name: string, callback: () => void) { if (name === 'matches') onMatches = callback }
+    close() {}
+  }
+  const original = globalThis.EventSource
+  globalThis.EventSource = Events as unknown as typeof EventSource
+  t.after(() => { globalThis.EventSource = original })
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    if (path === '/api/tournaments?active=true') return Response.json([
+      { id: 1, name: 'Otra copa', active: true, currentPhaseId: 1, currentMalePhaseId: 1, currentFemalePhaseId: null, legacyType: null },
+      { id: 2, name: 'Copa elegida', active: true, currentPhaseId: 1, currentMalePhaseId: 1, currentFemalePhaseId: 3, legacyType: null },
+    ])
+    if (path === '/api/tournaments/2/phases') return Response.json([phase, selected])
+    if (path === '/api/matches?phaseId=3') return Response.json([])
+    if (path === '/api/phases/3/scoring') return Response.json({ phase: selected, tables: [] })
+    if (path === '/api/phases/3/standings') return Response.json({
+      phase: selected, hasStandings: true, rules: [], groups: [{ id: 1, phaseId: 3, name: 'A', standings: [{
+        teamId: 1, teamName: 'Equipo en vivo', played: 1, wins: points === 3 ? 1 : 0,
+        draws: points === 1 ? 1 : 0, losses: 0, goalsFor: points === 3 ? 2 : 0, goalsAgainst: 0,
+        goalDifference: points === 3 ? 2 : 0, points, yellowCards: 0, redCards: 0,
+        sanctioned: false, sanctionReason: null, position: 1, requiresTiebreaker: false,
+        destination: null, possibleDestinations: [], tiebreakerRule: null,
+      }] }],
+    })
+    assert.fail(`Unexpected request: ${path}`)
+  })
+  const selection = { tournamentId: 2, phaseId: 3, category: 'FEMALE' as const }
+  const signal = new AbortController().signal
+  const initial = await loadDisplay(selection, signal)
+  assert.equal(initial.standings?.groups[0]?.standings[0]?.points, 1)
+  let pending = Promise.resolve(initial)
+  const cleanup = subscribeDisplay(() => { pending = loadDisplay(selection, signal) }, () => {})
+  t.after(cleanup)
+  points = 3
+  onMatches()
+  const refreshed = await pending
+  assert.equal(refreshed.tournament?.id, 2)
+  assert.equal(refreshed.phase?.id, 3)
+  assert.equal(refreshed.phase?.tournamentType, 'FEMALE')
+  assert.equal(refreshed.standings?.groups[0]?.standings[0]?.goalsFor, 2)
+  const html = renderToStaticMarkup(createElement(Standings, { data: refreshed.standings! }))
+  assert.match(html, /Equipo en vivo/)
+  assert.match(html, /<strong>3<\/strong>/)
+})
